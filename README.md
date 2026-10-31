@@ -51,7 +51,7 @@ Pentru dezvoltare și verificări locale sunt necesare Python 3.12 și Node.js 2
 | `LITEAPI_API_KEY`, `LITEAPI_ENVIRONMENT=live`           | Cotații Nuitee pentru cazare și zboruri, conform accesului contului                                     |
 | `DUFFEL_ACCESS_TOKEN`, `DUFFEL_ENVIRONMENT=live`        | Furnizor alternativ pentru zboruri                                                                      |
 | `DISTRIBUSION_API_KEY`, `DISTRIBUSION_ENVIRONMENT=live` | Autocare; necesită și activarea fluxului Offers                                                         |
-| `APL_API_KEY`                                           | Cotații Airport Pickups London pentru transferuri în UK, în GBP per vehicul; fără comandă sau rezervare |
+| `APL_API_KEY`                                           | Cotații Airport Pickups London în GBP per vehicul și import manual al unui segment inițial aeroport–hotel; fără rezervare |
 | `PUBLIC_BASE_URL`, `OPERATOR_TOKEN`                     | URL accesibil pasagerilor și autentificarea operatorilor                                                |
 
 Prezența unei chei înseamnă configurare, nu acces verificat. Conturile sandbox nu furnizează inventar live. Căutările nu efectuează plăți sau rezervări. [Configurare și limite](docs/live-mode.md), [date geografice și hoteliere](docs/real-data.md), [cereri către furnizori](backend/app/providers/README.md).
@@ -60,11 +60,22 @@ Pozițiile Flightradar24 au timestamp și sursă. Nu indică disponibilitatea bi
 
 O rută rutieră calculată nu este un vehicul disponibil. Stațiile de autocar păstrează pozițiile reale; transferurile aeroport–stație trebuie obținute separat. Lipsa unui serviciu sau a accesului la furnizor rămâne vizibilă.
 
-Cotațiile APL păstrează prețul exact în GBP per vehicul și afișează alături o estimare aproximativă în EUR, calculată pe server din cursul ECB. Politica produsului admite aceste estimări pentru comparație, cu sursa și data vizibile și o vechime maximă de trei zile calendaristice, evaluată în Europe/Berlin. Lipsa unui curs utilizabil păstrează cotația GBP și lasă estimarea EUR indisponibilă. Prețul și cursul trebuie reverificate înainte de rezervare; decontarea în EUR nu este garantată.
+Cotațiile APL păstrează prețul exact în GBP per vehicul și afișează alături o estimare în EUR, calculată pe server din cursul ECB. Politica `ecb_reference_v1` permite folosirea explicită a estimării în planificare, cu sursa și data vizibile și o vechime maximă de trei zile calendaristice, evaluată în Europe/Berlin. Lipsa unui curs utilizabil păstrează cotația GBP, dar împiedică importul. Prețul și cursul trebuie reverificate înainte de rezervare; decontarea în EUR nu este garantată.
 
-Estimarea nu adaugă transferul într-un itinerar sau în bugetul EUR. Obținerea unui traseu rutier datat, cu durată/sosire verificabile, și importul opțiunii APL rămân nefinalizate. Adaptorul Google TRANSIT are teste offline, dar nu este conectat la fluxul operațional; un orar fără locuri sau tarif complet nu devine inventar disponibil.
+Simpla afișare a cotației nu adaugă inventar; importul separat verifică sursele și condițiile de mai jos. Adaptorul Google TRANSIT are teste offline, dar nu este conectat la fluxul operațional; un orar fără locuri sau tarif complet nu devine inventar disponibil.
 
 Lista de resurse distinge cotațiile expirate sau cu prospețime necunoscută de inventarul curent. Inspectorul arată ora sursei și fie valabilitatea explicită, fie fereastra locală de 120 de secunde, în UTC. Acest termen local nu este o expirare declarată de furnizor și nu anulează o rezervare înregistrată. Afișarea se actualizează fără apeluri noi către furnizori; backendul decide în continuare eligibilitatea.
+
+## Transfer privat inițial către hotel
+
+1. În **Operation data → Private transfers**, selectează grupul de adulți și o proprietate hotelieră deja identificată prin surse. Sunt necesare accesul APL, Google Routes pe server și metadatele Nuitee ale proprietății.
+2. Introdu punctul inițial de întâlnire, coordonatele, numărul de bagaje și ora viitoare de preluare. Confirmarea punctului este o ipoteză declarată de operator despre pasageri; nu este o verificare a terminalului făcută de Google sau APL. Originea aeroportuară a grupului rămâne neschimbată.
+3. Caută cotațiile. Serverul verifică adresa și coordonatele aceleiași proprietăți, apoi cere prețul APL și traseul Google pentru ora indicată. Adresa hotelului nu este text liber. Neconcordanțele și datele lipsă rămân motive explicite de blocare.
+4. Importă o opțiune eligibilă. Segmentul păstrează GBP, estimarea EUR, traseul datat și punctul declarat. Poate fi folosit numai ca primul segment al acelui grup; capacitatea descrie oferta pentru grup, nu stocul flotei. Totalurile care includ conversia rămân etichetate ca estimări și în propunerea pasagerului.
+
+Aplicația respinge punctele aflate la peste 10 km de referința aeroportului și conexiunile unde capătul rutier Google se află la peste 100 m de punctul cerut. Aceste limite sunt verificări geografice ale aplicației, nu dovezi de acces pietonal sau în terminal. Sosirea este o estimare de condus; nu inventează timp de încărcare ori mers pe jos. Cotația importată folosește o fereastră locală de 120 de secunde de la primire, păstrând necunoscute ora cotației și expirarea declarate de furnizor.
+
+Fluxul este **manual și numai din punctul inițial al aeroportului către hotel**. Nu reîmprospătează prețul camerei, nu obține returul și nu conectează automat terminalul la un zbor. Importul nu creează o ofertă completă, o rezervare sau pasageri recuperați. Dovezile din browser și de la furnizori sunt consemnate separat în [raportul de verificare](docs/verification/report.md).
 
 ## Decizii și voce
 
@@ -109,11 +120,11 @@ La 31 octombrie 2026, instanța principală a verificat fluxul real **FR24 → c
 
 Prin interfață au fost importate nouă cotații hoteliere EUR și cele nouă proprietăți reale din zona LHR, folosind politicile furnizorului; o proprietate a fost exclusă cu motiv explicit. O comandă text în română a pornit apoi căutarea pentru cazul numit, în limita de patru apeluri: o interpretare și trei apeluri ale căutării. Zece cotații Nuitee au produs o propunere pentru doi pasageri, fără excepții; căutarea a durat 7,21 secunde, fără timpul interpretării. Grupul inițial a fost păstrat și nu au fost create rezervări.
 
-Versiunea `fe47825`, livrată pe aceeași instanță, a trecut **775 de teste backend și 203 frontend**, buildul și verificarea formatării; ambele rulări CI au trecut. Interfața reală a afișat cele șase prețuri APL originale împreună cu estimările ECB din 30 octombrie 2026; de exemplu, GBP 76 a apărut alături de aproximativ EUR 91,15, la cursul 1 EUR = 0,83380 GBP. Au fost verificate și etichetele `Validity expired` și `Quote stale`, cu fereastra de 120 de secunde în UTC. Starea existentă a fost păstrată. Importul APL într-un itinerar rămâne nefinalizat, iar un traseu complet cu hotel și transferuri fizice rămâne de verificat.
+Versiunea `fe47825`, livrată pe aceeași instanță, a trecut **775 de teste backend și 203 frontend**, buildul și verificarea formatării; ambele rulări CI au trecut. Interfața reală a afișat cele șase prețuri APL originale împreună cu estimările ECB din 30 octombrie 2026; de exemplu, GBP 76 a apărut alături de aproximativ EUR 91,15, la cursul 1 EUR = 0,83380 GBP. Au fost verificate și etichetele `Validity expired` și `Quote stale`, cu fereastra de 120 de secunde în UTC. Starea existentă a fost păstrată. Acestea sunt dovezi istorice pentru afișare și prospețime; importul manual APL descris mai sus a fost implementat ulterior. Un traseu complet cu hotel și transferuri fizice rămâne o verificare separată.
 
 O probă separată pe `fe47825`, cu vorbire sintetizată și client Python, a verificat delegarea reală, înregistrarea cererii, răspunsul vocal și închiderea GPT-Live, cu utilizare finală de 33 de secunde. A consumat exact patru apeluri backend și a primit zece cotații Nuitee, dar pasul Decisions nu a aprobat un plan; nimic nu a fost aplicat. Recunoașterea datei a greșit „31 octombrie” ca „30–31 octombrie”, iar verificarea inițială a acceptat eronat subșirul `31`. Proba nu validează recuperarea completă sau fidelitatea datei. Nu a fost repetată contra cost.
 
-Protecția pentru data asociată cazului și clasificarea distinctă a răspunsurilor Decisions au fost corectate și testate offline după probă, dar nu sunt încă livrate pe instanța `fe47825` descrisă aici. [Raportul](docs/verification/report.md#synthesized-spoken-request--partial-verification) separă dovezile de aceste corecții. Microfonul fizic, clientul vocal din browser, redarea audibilă și întreruperea rămân de verificat. Google a randat geografia reală; aceasta nu validează toate modelele 3D sau exploatarea continuă a conturilor. Credențialele, payloadurile FR24, tokenurile pasagerilor, audio și capturile consolelor private nu sunt publicate.
+Protecția pentru data asociată cazului și clasificarea distinctă a răspunsurilor Decisions au fost corectate și testate offline după probă și fac parte din implementarea curentă. Proba istorică de pe `fe47825` nu verifică aceste corecții. [Raportul](docs/verification/report.md#synthesized-spoken-request--partial-verification) separă dovezile de aceste corecții. Microfonul fizic, clientul vocal din browser, redarea audibilă și întreruperea rămân de verificat. Google a randat geografia reală; aceasta nu validează toate modelele 3D sau exploatarea continuă a conturilor. Credențialele, payloadurile FR24, tokenurile pasagerilor, audio și capturile consolelor private nu sunt publicate.
 
 [Ghidul backend](docs/backend.md) descrie invariantele și limitele. [Măsurătorile locale](docs/benchmark-results.json) includ 180–300 de pasageri, mediană/p95 și mediul CPU; măsoară solverul și SQLite, fără a pretinde latență AI. Poți repeta măsurarea:
 
@@ -152,6 +163,8 @@ backend/.venv/bin/python scripts/backup.py backend/data/recovery.sqlite3 backups
 
 Snapshotul verificat are permisiuni `0600` și omite cache-ul observațiilor de trafic. Scriptul refuză suprascrierea unei destinații existente. Comanda de mai sus privește baza locală; baza Docker se află în volumul `recovery_data`, nu în `backend/data`. Restaurarea se face cu serviciul oprit, după salvarea stării curente. O copie simplă a fișierului `.sqlite3` în timpul rulării poate omite datele din WAL; folosește scriptul.
 
+Căutările private de transfer păstrează identitatea cererii separat de cache-ul temporar, limitat la 64 de răspunsuri și cel mult 120 de secunde. Repetarea aceleiași cereri nu retrimite furnizorii; un rezultat necunoscut cere analiză și o încercare nouă explicită. Backupul elimină acest cache și marchează cererile aflate în curs ca rezultat necunoscut. Restaurarea nu reia apelurile. Importurile finalizate își păstrează confirmarea idempotentă chiar după expirarea cache-ului.
+
 Feedul FR24 are un cache separat: `OBSERVATION_RETENTION_SECONDS=3600` implicit. Datele expirate sunt excluse la citire și curățate periodic chiar dacă feedul este oprit, cât timp aplicația rulează. Snapshoturile operaționale și rezultatele persistate de idempotency nu arhivează observațiile. Aceasta este politica tehnică a cache-ului, nu o garanție privind licența providerului. Pentru replay și orice altă utilizare verifică termenii contului. Istoricul operațional are o politică de retenție separată, încă de stabilit pentru un pilot de durată. Materialele 3D locale au atribuirea în manifestul lor; atribuirea Google rămâne vizibilă în hartă.
 
 ## Ce rămâne de verificat cu echipa
@@ -159,7 +172,7 @@ Feedul FR24 are un cache separat: `OBSERVATION_RETENTION_SECONDS=3600` implicit.
 - O sesiune GPT-Live în browser cu microfon fizic, recunoaștere corectă a cererii, recuperare validată, redare și întrerupere; proba Python cu vorbire sintetizată a verificat doar etapele descrise mai sus.
 - Fluxul de poziții FR24 pe hartă, separat de lookup-ul de cursă deja verificat; limitele abonamentului echipei.
 - Un itinerar complet cu hotel și legături fizice verificate; importul hotelier prin interfață este verificat, dar nu dovedește existența unui transfer.
-- Finalizarea și verificarea traseelor rutiere datate și a importului APL în itinerarii; afișarea cotațiilor GBP și a estimărilor ECB este deja verificată.
+- Verificarea vizuală și operațională a noului flux APL este urmărită separat în raport; importul inițial către hotel nu dovedește un retur sau o recuperare completă.
 - Verificările de facturare Google și restricțiile cheii; fotogrammetria detaliată a terminalului și randarea/alinierea modelelor GLB.
 - Profilul vizual pe ecranul/proiectorul evenimentului și fidelitatea față de mockupurile fotorealiste.
 

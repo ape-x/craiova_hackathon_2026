@@ -34,6 +34,8 @@ SSE connections are intentionally long-lived. Keep the five-second graceful-shut
 | `app/store.py` | SQLite transactions, version checks, expiry, idempotency, audit, polling ledger and telemetry |
 | `app/main.py` | HTTP, SSE, authentication, lifecycle, input limits and shared observation polling |
 | `app/providers/` | Actual provider contracts; no direct authority to mutate the world |
+| `app/transfer_planning.py` | Scoped private-transfer source receipts, short-lived cache, initial-point creation and atomic import |
+| `app/pricing.py`, `app/initial_position.py` | Typed GBP/ECB evidence, app-receipt freshness and first-leg-only operator position assumptions |
 
 An AI command is interpreted into typed events and strategies, applied to a private projection, solved against current inventory, and passed to Decisions for selection. The server rechecks the world version and exact feasibility before applying the events and all holds in one transaction. Model calls happen outside that transaction. An unknown ID, malformed response, provider error or stale version prevents partial application. A visual-only or ambiguous interpretation with no events/strategies produces an idempotent explanation and leaves the operational world unchanged.
 
@@ -55,6 +57,46 @@ An AI command is interpreted into typed events and strategies, applied to a priv
 The allocator enumerates at most 64 complete routes per party, up to four legs, and compares four group orderings per strategy. Recovery count is ranked first within a candidate, then party priority and the strategy objective. AI may choose a feasible lower-recovery candidate to reflect a stated tradeoff; feasibility remains mandatory. **Global optimality is not proved**, and an exception can mean the bounded allocator did not find a shared allocation, not that mathematical impossibility was proved. No airline fare rules, crew legality, runway performance, fuel planning or certified diversion suitability are modeled.
 
 ## Persistence, concurrency and events
+
+### Manual private-transfer boundary
+
+The authenticated `/api/transfers/planning-quotes` flow handles one initial UK
+airport meeting-point → existing sourced hotel leg. It preserves the group's
+airport origin and creates a separate `meeting_point` node. A typed,
+fingerprinted operator assumption authorizes that point only as the selected
+group's first leg; there is no synthetic airport-to-point edge or later
+terminal-to-flight shortcut. Exact property metadata and a future Google driving
+prediction are sourced before import. A room quote may remain stale, and no
+return transport, hotel booking or complete recovery is implied.
+
+The imported resource uses `transport_mode='private_transfer'`, one eligible
+group and `capacity_scope='private_vehicle_quote'`. Capacity is the quoted party,
+not supplier fleet stock. Typed `price_evidence` preserves the GBP vehicle price
+and ECB EUR estimate in both Resource and Leg; Itinerary/Plan summaries identify
+estimated components. The accepted `ecb_reference_v1` policy permits numeric EUR
+planning comparisons without promising EUR settlement. Supplier quote time and
+expiry stay null; typed app-receipt freshness is 120 seconds. The independent
+validator checks the evidence and current policy, and passenger/Decisions
+representations retain the estimate distinction.
+
+`transfer_quote_receipts` records dispatch before external I/O and retains request
+identity separately from `transfer_quote_cache`. The source cache holds at most
+64 entries for at most 120 seconds and is periodically purged even when traffic
+polling is paused. One planning search runs at a time across workers. Completed
+search retries replay a retained result; changed payloads conflict. Pending or
+unknown dispatches return `applied:null` and never silently repeat provider work.
+Expired cache cannot be refreshed with the same key. An import atomically writes
+its node/resource, scoped retirement, audit and idempotency receipt; accepted
+import replay survives cache expiry. Newer imported revisions cannot be replaced
+by an older cached fare, and unrelated/confirmed records remain protected.
+
+The backup script removes transient transfer source caches and marks dispatched
+receipts unknown in the copy. Completed search receipts with no restored cache
+report expiration; no historical search automatically resumes. Recorded
+operational resource evidence remains distinct from the transient search cache.
+Receipts are part of operational history, not an unlimited-retention guarantee.
+
+### Shared operational transactions
 
 SQLite uses WAL, a 15-second busy timeout and `BEGIN IMMEDIATE` for mutations. The operational world, complete inventory changes, audit records and idempotency result commit together. Stale `expected_version` receives HTTP409. Expired holds are released before validation; that expiry is committed even if it makes the requested plan stale. Identical idempotent retries return the original result; reuse with a different payload is rejected. Treat a replayed world as a historical response and fetch the latest world before issuing a new mutation.
 

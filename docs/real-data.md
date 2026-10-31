@@ -13,6 +13,7 @@ adds inventory, holds rooms, reserves seats or modifies the recovery scenario.
 | Airport transfer route | OSRM using OpenStreetMap | Road distance and estimated driving time for a car profile. It is not a scheduled coach service, vehicle quote or live-traffic measurement. |
 | Hotel room offers | Booking.com Demand API 3.3, when configured | Full-stay prices returned for the selected dates, adults and rooms, joined with property names from the details endpoint. No booking is placed. |
 | Hotel room offers | Nuitee / LiteAPI, preferred by automatic selection when configured for live use | A validated offer per hotel for all requested rooms and adults, preferring complete mandatory costs. Supplier booking amount and additional mandatory fees remain separately visible; no prebooking or payment is performed. |
+| Private-transfer planning | APL, exact LiteAPI property metadata, dated Google Routes and ECB | A manually selected initial UK airport meeting-point → hotel leg. GBP remains the supplier price; EUR and driving arrival are planning estimates. Import does not book a vehicle or establish a complete itinerary. |
 
 **Compare hotel prices** opens the public Momondo hotel search and provides a
 copyable summary of the airport, dates, guests and rooms. The search summary is
@@ -41,6 +42,7 @@ restrictions for production.
 
 ```dotenv
 GOOGLE_MAPS_SERVER_API_KEY=
+APL_API_KEY=
 BOOKING_DEMAND_API_TOKEN=
 BOOKING_AFFILIATE_ID=
 BOOKING_BOOKER_COUNTRY=ro
@@ -81,9 +83,70 @@ and does not retry or follow redirects automatically.
 
 Search is explicit, without background polling. Successful hotel records are
 cached for one hour, OSRM routes for five minutes and supplier offers for one minute.
-Google Places and Routes content is not placed in the backend cache. The
+`/api/real-data/search` does not put Google Places/Routes content in its reference
+cache. The separate private-transfer flow below uses a bounded, short-lived
+server receipt so an import can use verified source results. The
 in-process reference cache holds at most 64 entries and coalesces same-source
 work. Errors are not cached. Results include at most ten hotel records and ten offers.
+
+## Manual initial airport-to-hotel transfer
+
+Open **Private transfers** in the live data dialog. Select an existing adult-only
+group and sourced hotel property, then provide the group's initial meeting-point
+label/coordinates, explicit suitcase count and future pickup time. Confirm the
+point as operator-provided passenger input. It is not an airport or supplier
+assertion that the passengers are there, and it does not establish an arriving
+flight's terminal connection. Unsupported accessibility or child-seat needs
+block this flow rather than being assumed satisfied.
+
+The server first retrieves the exact LiteAPI hotel ID's metadata. Coordinates
+must agree with the existing `HP-…` property node; its postal address, city and
+country come from that record, not an editable destination field. Missing usable
+metadata prevents further APL/Routes work. Existing geography can be used even
+when a previous room quote is stale; no bed price or room availability is refreshed
+by the transfer search.
+
+APL receives that property address, the declared airport pickup, party size,
+suitcases and exact London pickup date/time. Google Routes receives the exact
+coordinates and future RFC3339 departure time. These independent requests run
+concurrently after property validation. A missing Google server key, provider
+failure or Google's fallback computation is not replaced by an OSRM or
+current-time estimate. Unknown APL terminal/expiry fields remain unknown;
+conflicting airport, direction, terminal or destination evidence blocks import.
+
+The response keeps requested and road-snapped coordinates separate, with their
+offsets. Application screening limits are 10 km from the catalog airport
+reference for the initial point and 100 m for either road snap. Passing these
+checks does not verify pedestrian access or a terminal connection. Driving
+seconds retain their source precision; only the importer rounds arrival upward
+to an operation minute. Loading and walking are not included unless the source
+establishes them. A bounded Google `OVERVIEW` encoded polyline may be shown as the
+sourced road path; missing geometry stays unavailable rather than being invented.
+
+Choose an importable vehicle option to add the planning leg. The server-held
+`quote_id` supplies all price and route data. A distinct `MP-…` meeting point is
+eligible only as that group's first leg; the group's airport origin is not
+rewritten. The quoted party capacity is not fleet stock, a supplier reservation
+or extra sellable seats. The accepted `ecb_reference_v1` policy preserves original
+GBP and dated estimated EUR through resources, itinerary legs, Decisions and the
+passenger view. Missing/stale FX leaves GBP visible but blocks import. Revalidate
+the supplier price and currency conversion before booking; EUR settlement is
+not guaranteed.
+
+The source receipt/cache is usable for at most 120 seconds, with a possibly
+earlier pickup/cutoff. This is application policy; APL's supplier quote time and
+expiry remain null. Repeat the same serialized request/key to recover a known
+result without another dispatch. An unknown dispatch is never retried
+automatically; starting another search is an explicit new attempt with possible
+provider cost. Backups omit the transient cache and cannot resume in-flight
+searches. Imports use version checks, immutable revisions and atomic scoped
+updates, preserving unrelated and confirmed allocations.
+
+This is a manual initial airport-point → hotel leg, not automatic hotel recovery.
+It supplies no return journey or terminal-to-flight connection, and by itself
+creates no offer or booking. Browser and provider evidence is tracked in the
+[verification report](verification/report.md), separately from implementation and
+mocked tests.
 
 ## Verification and limits
 
@@ -122,8 +185,10 @@ hotel-details record. The property is never placed at the search airport.
 A complete itinerary must contain independently sourced connections to and from
 that location; no shuttle, fare or vehicle capacity is inferred from a room quote.
 
-Stay timestamps are explicit operator-confirmed inputs. Their calendar dates
-are checked in the actual property's time zone, including daylight-saving
+Stay timestamps are explicit planning inputs. They require either validation
+against the exact property's sourced stay policy or a separately declared
+agreement with the property; an unchecked override does not imply confirmation.
+Their calendar dates are checked in the actual property's time zone, including daylight-saving
 changes. Offline lookup uses pinned `timezonefinder` 9.2.0,
 `timezonefinder-data` 4.2026.5 and IANA `tzdata` 2026.6. No Google Time Zone API
 or extra API key is required. The geographic boundaries come from
@@ -140,6 +205,9 @@ clock rules, not evidence of hotel availability.
 - [OpenStreetMap attribution](https://www.openstreetmap.org/copyright)
 - [Google Nearby Search](https://developers.google.com/maps/documentation/places/web-service/nearby-search)
 - [Google Compute Routes](https://developers.google.com/maps/documentation/routes/compute_route_directions)
+- [Google dated route request and response](https://developers.google.com/maps/documentation/routes/reference/rest/v2/TopLevel/computeRoutes)
+- [Airport Pickups London API](https://mcp.airport-pickups-london.com/docs)
+- [ECB reference rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html)
 - [Booking Demand authentication](https://developers.booking.com/demand/docs/development-guide/authentication)
 - [Booking 3.3 search](https://developers.booking.com/demand/docs/open-api/3.3/demand-api/accommodations/accommodations/search)
 - [Booking 3.3 OpenAPI](https://developers.booking.com/_bundle/demand/docs/open-api/3.3/demand-api.json?download)
