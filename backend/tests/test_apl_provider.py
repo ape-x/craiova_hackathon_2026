@@ -78,7 +78,28 @@ async def test_registered_quote_sends_exact_explicit_request_and_preserves_unkno
     assert result["options"][0]["duration_seconds"] is result["options"][0]["arrival_at"] is None
     assert result["options"][0]["accessibility_confirmed"] is False
     assert "test-only-apl-key" not in json.dumps(result)
-    assert "meeting_point" not in result  # No implication that a driver has been assigned.
+    assert result["meeting_point"] == quote()["meeting_point"]
+    assert "departure_terminal" not in result  # Supplier instructions never assign a flight terminal.
+
+
+@pytest.mark.asyncio
+async def test_optional_meeting_instructions_preserve_lines_and_only_documented_fields():
+    payload = quote()
+    payload["meeting_point"] = {"name":"Heathrow T5", "instructions":"Go to the meeting point.\nRead the supplier sign.", "driver":"not-retained"}
+    result = await run_quote(payload)
+    assert result["meeting_point"] == {"name":"Heathrow T5", "instructions":"Go to the meeting point.\nRead the supplier sign."}
+    payload.pop("meeting_point")
+    assert (await run_quote(payload))["meeting_point"] is None
+
+
+@pytest.mark.parametrize("value",["T5",{"name":"x"*501},{"instructions":"x"*4097},{"instructions":True},{"instructions":"bad\x00text"}])
+@pytest.mark.asyncio
+async def test_malformed_meeting_instructions_are_not_silently_truncated(value):
+    payload = quote()
+    payload["meeting_point"] = value
+    with pytest.raises(ProviderError) as failure:
+        await run_quote(payload)
+    assert failure.value.code == "invalid_response"
 
 
 @pytest.mark.parametrize("override", [

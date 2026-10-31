@@ -33,6 +33,22 @@ def _text(value, maximum=2000, *, required=False):
     return value.strip()
 
 
+def _meeting_point(value):
+    """Supplier pickup instructions only; not a driver or flight terminal."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("Invalid meeting instructions")
+    name = _text(value.get("name"), 500)
+    instructions = value.get("instructions")
+    if instructions is not None:
+        if (not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 4096
+                or any(ord(character) < 32 and character not in "\n\r\t" for character in instructions)):
+            raise ValueError("Invalid meeting instructions")
+        instructions = instructions.strip()
+    return {"name": name, "instructions": instructions} if name is not None or instructions is not None else None
+
+
 class APLQuoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     origin: str = Field(min_length=2, max_length=500)
@@ -191,6 +207,7 @@ class APLProvider:
                 "resolved_address": _text(payload.get("resolved_address")), "pickup_terminal": _text(payload.get("pickup_terminal"), 100)},
             "price_basis": _text(payload.get("price_basis")),
             "provider_duration_text": _text(payload.get("duration"), 200),
+            "meeting_point": _meeting_point(payload.get("meeting_point")),
             "options": options,
             "message": None if any(option["fits_request"] for option in options) else "No quoted vehicle fits the stated passenger and suitcase counts.",
         }

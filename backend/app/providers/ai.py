@@ -567,7 +567,7 @@ class AIProvider(HTTPProvider):
             "world": {
                 **fields(world, ("version", "epoch", "sim_time", "budget", "currency", "mode")),
                 "airports": [fields(airport, ("id", "available", "diversion_eligible", "weather")) for airport in world.get("airports", [])],
-                "resources": [fields(resource, ("id", "kind", "origin", "destination", "departure", "arrival", "capacity", "accessible", "available", "cost_per_person", "quote_total_cost", "budget_total_cost", "quote_rooms", "capacity_scope", "requires_revalidation", "source", "transport_mode", "price_evidence", "quote_freshness", "initial_position_assumption")) for resource in world.get("resources", [])],
+                "resources": [fields(resource, ("id", "kind", "origin", "destination", "departure", "arrival", "capacity", "accessible", "available", "cost_per_person", "quote_total_cost", "budget_total_cost", "quote_rooms", "capacity_scope", "requires_revalidation", "source", "transport_mode", "price_evidence", "quote_freshness", "initial_position_assumption", "airport_arrival_assumption")) for resource in world.get("resources", [])],
                 "groups": [fields(group, ("id", "size", "origin", "destination", "deadline", "ready_at", "accessible", "budget", "priority", "status", "source")) for group in world.get("groups", [])],
             },
             "validated_candidates": summaries,
@@ -590,6 +590,7 @@ class AIProvider(HTTPProvider):
         if world.get("mode")=="live":
             policy = policy.replace("simulated passenger recovery plans", "non-binding recovery proposals using sourced inventory") + " Quoted capacity covers only the requested party, not verified total stock. Never claim that a quote or passenger preference is a supplier hold or booking. Passenger groups may be explicitly marked synthetic for testing."
             policy += " Typed cost_evidence identifies approved ECB reference estimates used for planning: original GBP remains the supplier price, EUR is approximate and settlement is not guaranteed. Preserve this distinction when comparing costs. An initial_position_assumption is an operator-declared starting fact for the named group, not a sourced transfer or tracked position."
+            policy += " An airport_arrival_assumption binds an operator-declared dropoff and processing allowance to one exact onward flight. This is airport-level planning: the flight departure terminal remains unknown, the allowance is not airline guidance, and gate access or successful boarding is not guaranteed."
         single = len(candidates) == 1
         # Boolean choice values are explicitly supported by Decisions. These
         # are two genuine actions (approve/reject), not a fabricated second plan.

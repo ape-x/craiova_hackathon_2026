@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .scenario_schema import STRUCTURED_PAYLOADS, WeatherDefinition
 from .pricing import AplPriceEvidence, AplQuoteFreshness, CostEvidence
 from .initial_position import InitialPositionAssumption
+from .airport_arrival import AirportArrivalAssumption
 
 
 def canonical_id(value: str | None) -> str | None:
@@ -65,6 +66,7 @@ class Resource(Model):
     price_evidence: AplPriceEvidence | None = None
     quote_freshness: AplQuoteFreshness | None = None
     initial_position_assumption: InitialPositionAssumption | None = None
+    airport_arrival_assumption: AirportArrivalAssumption | None = None
 
 
 class PassengerGroup(Model):
@@ -99,6 +101,7 @@ class Leg(Model):
     transport_mode: Literal["private_transfer"] | None = None
     price_evidence: AplPriceEvidence | None = None
     initial_position_assumption: InitialPositionAssumption | None = None
+    airport_arrival_assumption: AirportArrivalAssumption | None = None
 
 
 class Itinerary(Model):

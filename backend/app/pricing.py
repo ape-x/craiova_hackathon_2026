@@ -229,7 +229,14 @@ def app_receipt_deadline(resource) -> datetime | None:
     if resource.quote_freshness is None:
         return None
     freshness = AplQuoteFreshness.model_validate(_plain(resource.quote_freshness))
-    return aware_timestamp(freshness.received_at) + timedelta(seconds=freshness.max_age_seconds)
+    deadline = aware_timestamp(freshness.received_at) + timedelta(seconds=freshness.max_age_seconds)
+    if getattr(resource, "airport_arrival_assumption", None) is not None:
+        route = resource.provenance.get("google_route")
+        if not isinstance(route, dict):
+            return None
+        route_receipt = aware_timestamp(route.get("fetched_at"))
+        deadline = min(deadline, route_receipt + timedelta(seconds=RECEIPT_MAX_AGE_SECONDS))
+    return deadline
 
 
 def cost_summary(legs) -> CostEvidence | None:

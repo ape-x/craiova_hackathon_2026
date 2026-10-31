@@ -14,6 +14,7 @@ from .models import Allocation, Itinerary, Leg, PassengerGroup, Plan, Resource, 
 from .airport_catalog import lookup_airport
 from .weather import departure_allowed, landing_allowed, passenger_arrival_pending
 from .initial_position import valid_initial_position
+from .airport_arrival import valid_airport_arrival
 from .pricing import APL_SOURCE, app_receipt_deadline, aware_timestamp, cost_summary, matching_cost_summary, valid_apl_resource_price
 
 
@@ -143,6 +144,12 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
                 return False
         if resource_blocked_by_incident(world,r,g):
             return False
+    receipt = r.provenance.get("apl_quote", {})
+    request = receipt.get("request", {}) if isinstance(receipt, dict) else {}
+    returned_to_airport = (r.airport_arrival_assumption is not None or r.provenance.get("direction") == "hotel_to_airport"
+        or (r.source == APL_SOURCE and isinstance(request, dict) and request.get("expected_direction") == "to_hub"))
+    if returned_to_airport and not valid_airport_arrival(world, r, g):
+        return False
     declared_start = r.initial_position_assumption is not None
     if declared_start and (used_ids or current != g.origin or not valid_initial_position(world, r, g)):
         return False
@@ -159,26 +166,40 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
     return True
 
 
+def connection_minutes(previous: Resource | None, resource: Resource) -> int | None:
+    """A declared airport allowance replaces the generic connection default."""
+    assumption = previous.airport_arrival_assumption if previous is not None else None
+    if assumption is not None:
+        if resource.kind != "flight" or resource.id != assumption.onward_resource_id or resource.origin != assumption.airport_id:
+            return None
+        return assumption.processing_minutes
+    return 30 if resource.kind == "flight" else 10 if previous is not None else 0
+
+
 def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Itinerary]:
     if passenger_arrival_pending(world,group):
         return []
     options = []
     expansions = 0
     max_legs = 6 if world.mode=="live" else 4
+    resources = {resource.id: resource for resource in world.resources}
     ready = max(world.sim_time, group.ready_at)
     def visit(location, minute, legs, seen, cost):
         nonlocal expansions
         expansions += 1
         if expansions>4000:
             return
-        if location==group.destination and legs:
+        previous = resources[legs[-1].resource_id] if legs else None
+        if location==group.destination and legs and previous.airport_arrival_assumption is None:
             if any(leg.kind in ("bus","flight") for leg in legs):
                 options.append(Itinerary(legs=legs,arrival=legs[-1].arrival,total_cost=round(cost,2),cost_evidence=cost_summary(legs)))
             return
         if len(legs)>=max_legs or len(options)>=limit:
             return
         for r in sorted(world.resources,key=lambda x:(x.departure,x.id)):
-            connection = 30 if r.kind=="flight" else 10 if legs else 0
+            connection = connection_minutes(previous, r)
+            if connection is None:
+                continue
             if not resource_feasible(world,r,group,location,minute+connection,{x.resource_id for x in legs}):
                 continue
             if r.kind!="hotel" and r.destination in seen and not any(leg.kind=="hotel" for leg in legs):
@@ -191,7 +212,8 @@ def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Iti
                 continue
             leg = Leg(resource_id=r.id,kind=r.kind,origin=r.origin,destination=r.destination,departure=r.departure,arrival=r.arrival,cost=price,
                 transport_mode=r.transport_mode, price_evidence=r.price_evidence.model_copy(deep=True) if r.price_evidence else None,
-                initial_position_assumption=r.initial_position_assumption.model_copy(deep=True) if r.initial_position_assumption else None)
+                initial_position_assumption=r.initial_position_assumption.model_copy(deep=True) if r.initial_position_assumption else None,
+                airport_arrival_assumption=r.airport_arrival_assumption.model_copy(deep=True) if r.airport_arrival_assumption else None)
             visit(r.destination,r.arrival,legs+[leg],seen if r.kind=="hotel" else seen|{r.destination},cost+price)
     visit(group.origin,ready,[],{group.origin},0)
     return options
@@ -230,11 +252,15 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
             errors.append(f"{g.id}: empty journey")
         elif not any(leg.kind in ("flight","bus") for leg in alloc.itinerary.legs):
             errors.append(f"{g.id}: accommodation alone is not a recovered journey")
+        previous = None
         for leg in alloc.itinerary.legs:
             r = resources.get(leg.resource_id)
             if not r:
                 errors.append(f"{g.id}: unknown resource {leg.resource_id}"); continue
-            connection = 30 if r.kind=="flight" else 10 if seen_legs else 0
+            connection = connection_minutes(previous, r)
+            if connection is None:
+                errors.append(f"{g.id}: airport return must connect to its exact onward flight")
+                connection = 0
             if not resource_feasible(world,r,g,location,minute+connection,seen_legs):
                 errors.append(f"{g.id}: unavailable, inaccessible or discontinuous {r.id}")
             if world.mode!="live" and r.departure//1440 > minute//1440:
@@ -242,7 +268,7 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
             expected_price = resource_cost(r,g)
             if (leg.origin,leg.destination,leg.departure,leg.arrival,leg.kind)!=(r.origin,r.destination,r.departure,r.arrival,r.kind) or not math.isfinite(leg.cost) or abs(leg.cost-expected_price)>0.005:
                 errors.append(f"{g.id}: tampered leg {r.id}")
-            if leg.price_evidence != r.price_evidence or leg.transport_mode != r.transport_mode or leg.initial_position_assumption != r.initial_position_assumption:
+            if leg.price_evidence != r.price_evidence or leg.transport_mode != r.transport_mode or leg.initial_position_assumption != r.initial_position_assumption or leg.airport_arrival_assumption != r.airport_arrival_assumption:
                 errors.append(f"{g.id}: missing or changed source/price evidence for {r.id}")
             if r.price_evidence is not None and leg.cost != expected_price:
                 errors.append(f"{g.id}: inconsistent EUR estimate for {r.id}")
@@ -251,6 +277,9 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
             subtotal += expected_price
             location,minute = r.destination,r.arrival
             seen_legs.add(r.id)
+            previous = r
+        if previous is not None and previous.airport_arrival_assumption is not None:
+            errors.append(f"{g.id}: airport return has no bound onward flight")
         if location != g.destination:
             errors.append(f"{g.id}: incomplete destination journey")
         if minute > g.deadline:
