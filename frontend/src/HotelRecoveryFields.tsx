@@ -1,6 +1,6 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import type { PassengerGroup } from './types';
-import { hotelRecoveryTimeline } from './hotelRecovery';
+import { hotelRecoveryTimeline, savedHotelRecoveryInputs } from './hotelRecovery';
 import type { DeclaredRecoveryPointForm, HotelRecoveryForm } from './hotelRecovery';
 import { utcTimestamp } from './recoveryCase';
 import './hotelRecovery.css';
@@ -79,11 +79,15 @@ export default function HotelRecoveryFields({
   value,
   onChange,
   group,
+  disabled = false,
 }: {
   value: HotelRecoveryForm;
   onChange: (value: HotelRecoveryForm) => void;
   group?: PassengerGroup;
+  disabled?: boolean;
 }) {
+  const [reviewed, setReviewed] = useState(false);
+  const saved = savedHotelRecoveryInputs(group);
   const timeline = hotelRecoveryTimeline(value.checkout_at);
   const update = <Key extends keyof HotelRecoveryForm>(key: Key, next: HotelRecoveryForm[Key]) =>
     onChange({ ...value, [key]: next });
@@ -102,6 +106,53 @@ export default function HotelRecoveryFields({
           booking or hold is made.
         </p>
       </div>
+      {group && (
+        <section className="hotel-recovery-saved" aria-label="Earlier operator configuration">
+          <strong>Earlier operator configuration</strong>
+          {saved.state === 'ready' ? (
+            <>
+              <p>
+                Saved inputs for this group are available to review. Loading them replaces the
+                current form values; nothing is submitted or searched.
+              </p>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={disabled}
+                onClick={() => {
+                  if (disabled) return;
+                  onChange(saved.form);
+                  setReviewed(true);
+                }}
+              >
+                Review saved inputs
+              </button>
+              <p className="field-hint">
+                Dates stay exactly as saved, including past dates. Check the times and reconfirm
+                both reported points. Current case eligibility, prices and availability still need
+                checking.
+              </p>
+              {reviewed && (
+                <p role="status">
+                  Saved inputs loaded for review. Both point confirmations are cleared; your
+                  provider-call limit is unchanged.
+                </p>
+              )}
+            </>
+          ) : (
+            <p>
+              {saved.state === 'unavailable'
+                ? 'Saved inputs are unavailable or invalid. Reconfigure this group using the fields below.'
+                : 'No saved inputs for this group. Configure the fields below for this attempt.'}
+            </p>
+          )}
+          <p className="field-hint">
+            Typed search: minimum 10 provider calls. Voice reuse: minimum 11 total calls — 1
+            interpretation + 10 recovery-job calls. State the total allowance explicitly; a saved
+            configuration never supplies or increases it.
+          </p>
+        </section>
+      )}
       <fieldset className="hotel-recovery-section">
         <legend>
           <span>1</span> Initial airport pickup

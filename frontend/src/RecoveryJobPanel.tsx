@@ -614,9 +614,11 @@ export default function RecoveryJobPanel({
                   transfers are included in this explicit cap.
                 </p>
                 <HotelRecoveryFields
+                  key={hotelGroup?.id ?? 'unselected'}
                   value={hotelFields}
                   onChange={setHotelFields}
                   group={hotelGroup}
+                  disabled={locked || active || loading}
                 />
               </>
             )}

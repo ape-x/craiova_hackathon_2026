@@ -122,6 +122,7 @@ export interface PassengerGroup {
   priority: number;
   source?: string;
   adult_count?: number | null;
+  provenance?: Record<string, unknown>;
 }
 export interface Leg {
   resource_id: string;

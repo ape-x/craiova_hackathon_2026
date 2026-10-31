@@ -13,6 +13,18 @@
 .hotel-recovery-intro > p:last-child {
   margin-bottom: 0;
 }
+.hotel-recovery-saved {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.hotel-recovery-saved p:last-child {
+  margin-bottom: 0;
+}
 .hotel-recovery-section {
   margin: 22px 0;
   padding: 16px;

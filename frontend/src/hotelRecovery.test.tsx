@@ -6,10 +6,11 @@ import {
   hotelRecoveryGroupIssue,
   hotelRecoveryInput,
   hotelRecoveryTimeline,
+  savedHotelRecoveryInputs,
 } from './hotelRecovery';
 import type { HotelRecoveryForm } from './hotelRecovery';
 import { api, TransportError } from './api';
-import type { RecoveryJob, RecoveryJobResponse, World } from './types';
+import type { PassengerGroup, RecoveryJob, RecoveryJobResponse, World } from './types';
 import { RecoveryJobDetails } from './RecoveryJobPanel';
 
 const now = Date.parse('2026-11-01T12:00:00Z');
@@ -283,5 +284,147 @@ describe('hotel recovery presentation', () => {
     expect(html).toContain('outside the requested hotel interval');
     expect(html).not.toContain('no mandatory rest requirement was assumed');
     expect(html).toContain('Proposals are not supplier bookings');
+  });
+});
+
+function savedGroup(
+  profile: unknown = {
+    schema_version: 1,
+    source: 'operator_requested',
+    scope_fingerprint: 'a'.repeat(64),
+    inputs: makeInput(),
+  },
+): PassengerGroup {
+  return { ...world.groups[0], provenance: { hotel_recovery_profile: profile } };
+}
+
+describe('explicit review of earlier hotel inputs', () => {
+  it('copies exact saved instants into UTC form values without advancing dates, reusing confirmations or exposing a call allowance', () => {
+    const inputs = {
+      ...makeInput(),
+      pickup_at: '2026-11-02T16:00:00+02:00',
+      checkin_at: '2026-11-02T17:00:00+02:00',
+      checkout_at: '2026-11-03T13:00:00+02:00',
+    };
+    const group = savedGroup({
+      schema_version: 1,
+      source: 'operator_requested',
+      scope_fingerprint: 'a'.repeat(64),
+      inputs,
+    });
+    const before = structuredClone(group);
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2030-01-01T00:00:00Z'));
+    const saved = savedHotelRecoveryInputs(group);
+    expect(saved.state).toBe('ready');
+    if (saved.state !== 'ready') throw new Error('Expected saved inputs');
+    expect(saved.form).toEqual({
+      ...form,
+      onward_airport_code: 'LHR',
+      initial_point: { ...form.initial_point, confirmed: false },
+      airport_dropoff: { ...form.airport_dropoff, confirmed: false },
+    });
+    expect(saved.form).not.toHaveProperty('max_provider_calls');
+    saved.form.initial_point.label = 'Edited in this form';
+    expect(group).toEqual(before);
+  });
+
+  it('requires fresh point confirmation and the current explicit typed limit when reviewed values are resubmitted', () => {
+    const saved = savedHotelRecoveryInputs(savedGroup());
+    if (saved.state !== 'ready') throw new Error('Expected saved inputs');
+    expect(() => hotelRecoveryInput(saved.form, ['G1'], world, 10, now)).toThrow(
+      'Confirm the initial meeting point',
+    );
+    const reconfirmed = {
+      ...saved.form,
+      initial_point: { ...saved.form.initial_point, confirmed: true },
+      airport_dropoff: { ...saved.form.airport_dropoff, confirmed: true },
+    };
+    expect(() => hotelRecoveryInput(reconfirmed, ['G1'], world, 8, now)).toThrow(
+      'has not been increased',
+    );
+    expect(hotelRecoveryInput(reconfirmed, ['G1'], world, 10, now)).toEqual(makeInput());
+  });
+
+  it('distinguishes missing profiles from malformed, unsupported or expanded profiles', () => {
+    expect(savedHotelRecoveryInputs(undefined)).toEqual({ state: 'absent' });
+    expect(savedHotelRecoveryInputs(world.groups[0])).toEqual({ state: 'absent' });
+    const valid = {
+      schema_version: 1,
+      source: 'operator_requested',
+      scope_fingerprint: 'a'.repeat(64),
+      inputs: makeInput(),
+    };
+    for (const profile of [
+      null,
+      [],
+      { ...valid, schema_version: 2 },
+      { ...valid, source: 'supplier' },
+      { ...valid, scope_fingerprint: 'A'.repeat(64) },
+      { ...valid, job_id: 'JOB1' },
+      { ...valid, max_provider_calls: 26 },
+      { ...valid, inputs: { ...valid.inputs, max_provider_calls: 26 } },
+      { ...valid, inputs: { ...valid.inputs, rooms: '1' } },
+      { ...valid, inputs: { ...valid.inputs, rooms: undefined } },
+    ]) {
+      expect(savedHotelRecoveryInputs(savedGroup(profile))).toEqual({ state: 'unavailable' });
+    }
+  });
+
+  it('rejects malformed instants, inconsistent intervals and unverified points rather than guessing replacements', () => {
+    const valid = {
+      schema_version: 1,
+      source: 'operator_requested',
+      scope_fingerprint: 'a'.repeat(64),
+      inputs: makeInput(),
+    };
+    for (const change of [
+      { pickup_at: '2026-11-02T14:00' },
+      { pickup_at: '2026-11-02T14:00:01Z' },
+      { pickup_at: '2026-11-02T14:00:00.000001Z' },
+      { checkin_at: '2026-02-30T15:00:00Z' },
+      { checkout_at: '2026-11-02T14:00:00Z' },
+      { minimum_rest_minutes: 1201 },
+      { initial_point: { ...valid.inputs.initial_point, confirmed: false } },
+      { airport_dropoff: { ...valid.inputs.airport_dropoff, latitude: '51.471' } },
+      { airport_dropoff: { ...valid.inputs.airport_dropoff, longitude: Infinity } },
+      { airport_dropoff: { ...valid.inputs.airport_dropoff, departure_terminal: 'T5' } },
+    ])
+      expect(
+        savedHotelRecoveryInputs(savedGroup({ ...valid, inputs: { ...valid.inputs, ...change } })),
+      ).toEqual({ state: 'unavailable' });
+  });
+
+  it('renders an explicit locked review action without replacing edits or issuing requests on render', () => {
+    const changed = vi.fn(),
+      fetcher = vi.fn();
+    vi.stubGlobal('fetch', fetcher);
+    const html = renderToStaticMarkup(
+      <HotelRecoveryFields
+        group={savedGroup()}
+        value={{ ...form, pickup_at: '2026-11-04T14:00' }}
+        onChange={changed}
+        disabled
+      />,
+    );
+    expect(html).toContain('Review saved inputs');
+    expect(html).toMatch(/<button[^>]+disabled=""[^>]*>Review saved inputs<\/button>/);
+    expect(html).toContain('value="2026-11-04T14:00"');
+    expect(html).toContain('replaces the current form values');
+    expect(html).toContain('nothing is submitted or searched');
+    expect(html).toContain('Dates stay exactly as saved, including past dates');
+    expect(html).toContain('minimum 10 provider calls');
+    expect(html).toContain('minimum 11 total calls');
+    expect(html).toContain('1 interpretation + 10 recovery-job calls');
+    expect(changed).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('gives a clear reconfigure state for invalid profiles without a working prefill action', () => {
+    const html = renderToStaticMarkup(
+      <HotelRecoveryFields group={savedGroup(null)} value={form} onChange={() => {}} />,
+    );
+    expect(html).toContain('Saved inputs are unavailable or invalid');
+    expect(html).toContain('Reconfigure this group');
+    expect(html).not.toContain('Review saved inputs');
   });
 });

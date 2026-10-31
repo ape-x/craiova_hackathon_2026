@@ -1,6 +1,7 @@
 import type { HotelRecoveryInput, PassengerGroup, World } from './types';
 import { utcInputToIso } from './liveData';
 import { isAirportNode } from './locationNodes';
+import { sourceInstant } from './resourceFreshness';
 
 export interface DeclaredRecoveryPointForm {
   label: string;
@@ -34,6 +35,124 @@ export function emptyHotelRecoveryForm(): HotelRecoveryForm {
     airport_dropoff: { label: '', latitude: '', longitude: '', confirmed: false },
     airport_processing_minutes: '',
   };
+}
+
+export type SavedHotelRecoveryInputs =
+  { state: 'absent' } | { state: 'unavailable' } | { state: 'ready'; form: HotelRecoveryForm };
+
+function profileRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  return (
+    Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key))
+  );
+}
+function savedMinute(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::00(?:\.0{1,6})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+  )
+    throw new Error('Saved time is not an explicit whole-minute instant.');
+  const instant = sourceInstant(value);
+  if (instant === null || instant % 60_000 !== 0) throw new Error('Saved time is invalid.');
+  return new Date(instant).toISOString().slice(0, 16);
+}
+function savedInteger(value: unknown, min: number, max: number): string {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max)
+    throw new Error('Saved number is invalid.');
+  return String(value);
+}
+function savedPoint(value: unknown): DeclaredRecoveryPointForm {
+  const data = profileRecord(value);
+  if (
+    !data ||
+    !exactKeys(data, ['label', 'latitude', 'longitude', 'confirmed']) ||
+    typeof data.label !== 'string' ||
+    data.label.trim().length < 2 ||
+    data.label.length > 160 ||
+    /[\u0000-\u001f\u007f]/.test(data.label) ||
+    data.confirmed !== true ||
+    typeof data.latitude !== 'number' ||
+    typeof data.longitude !== 'number' ||
+    !Number.isFinite(data.latitude) ||
+    !Number.isFinite(data.longitude) ||
+    Math.abs(data.latitude) > 90 ||
+    Math.abs(data.longitude) > 180
+  )
+    throw new Error('Saved point is invalid.');
+  return {
+    label: data.label,
+    latitude: String(data.latitude),
+    longitude: String(data.longitude),
+    confirmed: false,
+  };
+}
+
+/** Reads earlier server-held inputs only; never asserts current scope or supplier eligibility. */
+export function savedHotelRecoveryInputs(
+  group: PassengerGroup | undefined,
+): SavedHotelRecoveryInputs {
+  const provenance = profileRecord(group?.provenance);
+  if (!provenance || !Object.hasOwn(provenance, 'hotel_recovery_profile'))
+    return { state: 'absent' };
+  try {
+    const profile = profileRecord(provenance.hotel_recovery_profile);
+    if (
+      !profile ||
+      !exactKeys(profile, ['schema_version', 'source', 'scope_fingerprint', 'inputs']) ||
+      profile.schema_version !== 1 ||
+      profile.source !== 'operator_requested' ||
+      typeof profile.scope_fingerprint !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(profile.scope_fingerprint)
+    )
+      throw new Error('Saved configuration is invalid.');
+    const inputs = profileRecord(profile.inputs);
+    if (
+      !inputs ||
+      !exactKeys(inputs, [
+        'checkin_at',
+        'checkout_at',
+        'rooms',
+        'minimum_rest_minutes',
+        'initial_point',
+        'pickup_at',
+        'suitcases',
+        'onward_airport_code',
+        'airport_dropoff',
+        'airport_processing_minutes',
+      ]) ||
+      typeof inputs.onward_airport_code !== 'string' ||
+      !/^[A-Z]{3}$/.test(inputs.onward_airport_code)
+    )
+      throw new Error('Saved inputs are invalid.');
+    const form: HotelRecoveryForm = {
+      checkin_at: savedMinute(inputs.checkin_at),
+      checkout_at: savedMinute(inputs.checkout_at),
+      rooms: savedInteger(inputs.rooms, 1, 30),
+      minimum_rest_minutes: savedInteger(inputs.minimum_rest_minutes, 0, 10080),
+      initial_point: savedPoint(inputs.initial_point),
+      pickup_at: savedMinute(inputs.pickup_at),
+      suitcases: savedInteger(inputs.suitcases, 0, 200),
+      onward_airport_code: inputs.onward_airport_code,
+      airport_dropoff: savedPoint(inputs.airport_dropoff),
+      airport_processing_minutes: savedInteger(inputs.airport_processing_minutes, 1, 720),
+    };
+    const pickup = Date.parse(form.pickup_at + 'Z'),
+      checkin = Date.parse(form.checkin_at + 'Z'),
+      checkout = Date.parse(form.checkout_at + 'Z');
+    if (
+      pickup >= checkin ||
+      checkout <= checkin ||
+      Number(form.minimum_rest_minutes) * 60_000 > checkout - checkin
+    )
+      throw new Error('Saved intervals are inconsistent.');
+    return { state: 'ready', form };
+  } catch {
+    return { state: 'unavailable' };
+  }
 }
 
 /** Early input guidance only; server validates UK coverage, source policy and all connections. */
