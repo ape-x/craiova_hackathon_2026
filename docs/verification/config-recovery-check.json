@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-31",
+  "reported_error": "AI is not configured; structured scenario controls and deterministic solver remain available",
+  "findings": {
+    "current_instances_configured": true,
+    "docker_backend_recently_recreated": true,
+    "precise_origin_of_earlier_503": "not reproduced after backend recreation",
+    "dotenv_default_depended_on_cwd": true,
+    "frontend_config_was_loaded_only_once": true
+  },
+  "live_checks": [
+    {
+      "port": 8080,
+      "http": 200,
+      "seconds": 1.48,
+      "applied": false,
+      "focus_id": "B12",
+      "version_before": 30,
+      "version_after": 30
+    },
+    {
+      "port": 8000,
+      "http": 200,
+      "seconds": 1.5,
+      "applied": false,
+      "focus_id": "B12",
+      "version_before": 13,
+      "version_after": 13
+    }
+  ],
+  "fixes": [
+    "Resolve default dotenv relative to backend module; retain environment and explicit dotenv overrides.",
+    "Refresh provider flags on SSE open/reconnect, fallback poll and manual refresh; coalesce reads and abort on cleanup."
+  ],
+  "regressions": {
+    "backend_configuration": 4,
+    "frontend_connection": 8
+  },
+  "secrets_included": false
+}

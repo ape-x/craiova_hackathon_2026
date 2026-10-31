@@ -1,11 +1,14 @@
 from typing import Literal
+from pathlib import Path
 from urllib.parse import urlsplit
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False, hide_input_in_errors=True)
+    # Loading credentials must not depend on the shell/IDE working directory.
+    # Explicit environment variables and Settings(_env_file=...) still override.
+    model_config = SettingsConfigDict(env_file=Path(__file__).resolve().parents[1] / ".env", extra="ignore", case_sensitive=False, hide_input_in_errors=True)
     environment: Literal["development","test","production"] = "development"
     database_path: str = "data/recovery.sqlite3"
     operator_token: str = ""
