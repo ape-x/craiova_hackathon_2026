@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from datetime import date
 
 from pydantic import ValidationError
 
@@ -40,10 +41,86 @@ def literal_call_limit(text):
     return min(values) if values else None
 
 
-def mentioned(text, identifier):
+def _reference_pattern(identifier):
     # Spoken flight numbers may contain spaces/hyphens between their characters.
     chars = re.sub(r"[\s-]", "", normalized(identifier))
-    return bool(chars and re.search(r"(?<![a-z0-9])" + r"[\s-]*".join(map(re.escape, chars)) + r"(?![a-z0-9])", normalized(text)))
+    return re.compile(r"(?<![a-z0-9])" + r"[\s-]*".join(map(re.escape, chars)) + r"(?![a-z0-9])") if chars else None
+
+
+def mentioned(text, identifier):
+    pattern = _reference_pattern(identifier)
+    return bool(pattern and pattern.search(normalized(text)))
+
+
+_MONTHS = {name: number for number, names in enumerate((
+    ("ianuarie", "january"), ("februarie", "february"), ("martie", "march"),
+    ("aprilie", "april"), ("mai", "may"), ("iunie", "june"),
+    ("iulie", "july"), ("august",), ("septembrie", "september"),
+    ("octombrie", "october"), ("noiembrie", "november"), ("decembrie", "december"),
+), 1) for name in names}
+_MONTH = "(?:" + "|".join(_MONTHS) + ")"
+_DATE_PATTERNS = (
+    (re.compile(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?!\w)"), "ymd"),
+    (re.compile(r"(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?!\w)"), "dmy"),
+    (re.compile(r"(\d{1,2})(?:st|nd|rd|th)?\s*(" + _MONTH + r")\s*,?\s*(\d{4})(?!\w)"), "dmy"),
+    (re.compile(r"(" + _MONTH + r")\s*(\d{1,2})(?:st|nd|rd|th)?\s*,?\s*(\d{4})(?!\w)"), "mdy"),
+)
+_DATE_INTRO = r"(?:(?:din\s+data\s+de|de\s+pe|dated|date|data|din|from|on|pe)\s*)?"
+_DATE_RANGE = r"(?:[-–—/.]|to|through|until|and|or|si|sau|pana\s+la)"
+_DATE_HINT = re.compile(r"^(?:\d+(?:\s*[-/.–—]|\s*" + _DATE_RANGE + r"\s*\d|\s*" + _MONTH + r"(?![a-z])|\s*[a-z]+\s*,?\s*\d{4})|" + _MONTH + r"\s*\d|(?:today|tomorrow|yesterday|azi|maine|ieri)\b)")
+
+
+def _read_reference_date(value):
+    """Return an attached date and its consumed length; ambiguous dates fail closed."""
+    for pattern, order in _DATE_PATTERNS:
+        match = pattern.match(value)
+        if not match:
+            continue
+        parts = {key: _MONTHS[part] if part in _MONTHS else int(part)
+                 for key, part in zip(order, match.groups())}
+        if order == "dmy" and match[2].isdigit() and 1 <= parts["d"] <= 12 and 1 <= parts["m"] <= 12 and parts["d"] != parts["m"]:
+            raise ValueError("numeric date has ambiguous month/day order")
+        parsed = date(parts["y"], parts["m"], parts["d"]).isoformat()
+        # An exact first date must not conceal a following range/alternative.
+        remainder = value[match.end():]
+        if re.match(r"^\s*" + _DATE_RANGE + r"\s*(?:\d|" + _MONTH + r")", remainder):
+            raise ValueError("ambiguous case date")
+        if remainder.lstrip().startswith(",") and _DATE_HINT.match(remainder.lstrip()[1:].lstrip()):
+            raise ValueError("multiple case dates")
+        return parsed, match.end()
+    if _DATE_HINT.match(value):
+        raise ValueError("invalid or ambiguous case date")
+    return None
+
+
+def reference_date(text, identifiers):
+    """Only dates attached to a case/flight name bind its identity.
+
+    A later 'search alternatives for DATE' clause remains supplier instructions,
+    not a second incident date. This deliberately bounded parser is not a
+    general natural-language calendar or ASR confidence estimator.
+    """
+    value, dates = normalized(text), set()
+    for identifier in identifiers:
+        pattern = _reference_pattern(identifier)
+        if pattern is None:
+            continue
+        for reference in pattern.finditer(value):
+            suffix = re.sub(r"^[\s,():]*" + _DATE_INTRO, "", value[reference.end():], count=1)
+            found = _read_reference_date(suffix)
+            if found:
+                dates.add(found[0])
+            # Also support 'flight dated DATE REF', without borrowing a date
+            # from an unrelated preceding search or passenger deadline clause.
+            prefix = re.search(r"\b(?:flight|zbor(?:ul|ului)?|case|caz(?:ul|ului)?)\s+" + _DATE_INTRO + r"([^,;]{1,70})\s*$", value[:reference.start()])
+            if prefix:
+                before = prefix[1].strip()
+                found = _read_reference_date(before)
+                if found and not before[found[1]:].strip():
+                    dates.add(found[0])
+    if len(dates) > 1:
+        raise ValueError("conflicting case dates")
+    return next(iter(dates), None)
 
 
 class LiveCommands:
@@ -120,9 +197,13 @@ class LiveCommands:
         matches = [case for case in world.incidents if mentioned(request.text, case.id)]
         if not matches:
             matches = [case for case in world.incidents if mentioned(request.text, case.requested_flight_number)]
-            dates = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", request.text)
-            if dates:
-                matches = [case for case in matches if case.date_utc in dates]
+        try:
+            dated = [(case, reference_date(request.text, (case.id, case.requested_flight_number))) for case in matches]
+        except ValueError:
+            return self._reply(request, world, "Data asociată cazului sau zborului este ambiguă ori invalidă. Precizează o singură dată exactă, de exemplu YYYY-MM-DD, lângă identificatorul zborului sau cazului. Nu am pornit căutarea. Interpretarea a folosit 1 apel.")
+        matches = [case for case, explicit_date in dated if explicit_date is None or explicit_date == case.date_utc]
+        if dated and not matches:
+            return self._reply(request, world, "Data asociată cazului sau zborului nu corespunde unui caz existent. Verifică data și identificatorul; nu am pornit căutarea. Interpretarea a folosit 1 apel.")
         if len(matches) != 1:
             choices = "; ".join(f"{case.id}: {case.requested_flight_number}, {case.date_utc}" for case in matches[:5])
             return self._reply(request, world, "Specifică explicit un singur caz sau zbor existent și data dacă există mai multe cazuri. Nu am pornit nicio căutare. Interpretarea a folosit 1 apel." + (" Cazuri: " + choices if choices else ""))

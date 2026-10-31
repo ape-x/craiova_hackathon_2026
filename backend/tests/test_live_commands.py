@@ -182,6 +182,112 @@ async def test_shared_flight_requires_date_or_exact_case_id(command_setup):
     assert response["recovery_job"]["incident_id"] == "RC-ONE"
 
 
+@pytest.mark.parametrize("reference", [
+    "RO321 on 2026-11-01", "RO 321 din 1 noiembrie 2026",
+    "RO321 din1noiembrie2026", "RO321 on 1 November 2026",
+    "RO321 on November 1, 2026", "RO321 on 2026/11/01",
+    "RO321 on 2026.11.01",
+    "RC-ONE din 1 noiembrie 2026", "flight dated 1 November 2026 RO321",
+])
+@pytest.mark.asyncio
+async def test_attached_exact_named_or_numeric_date_selects_the_case(command_setup, reference):
+    _, store, service, jobs, _ = command_setup
+    def add_case(world):
+        second = world.incidents[0].model_copy(deep=True)
+        second.id, second.date_utc, second.group_ids = "RC-TWO", "2026-11-02", []
+        world.incidents.append(second)
+    store.mutate("second-dated-case", {}, store.read().version, add_case)
+    response = await service.command(request(store, "Recover " + reference))
+    assert response["recovery_job"]["incident_id"] == "RC-ONE"
+    assert not jobs.list("RC-TWO")["jobs"]
+
+
+@pytest.mark.parametrize("reference", [
+    "RO321 din 31–1 noiembrie 2026", "RO321 din 31 - 1 noiembrie 2026",
+    "RO321 din 31 sau 1 noiembrie 2026",
+    "RO321 on 2026-11-01/2026-11-02",
+    "RO321 on 1 November 2026 or 2 November 2026",
+    "RO321 on 2 November 2026", "RO321 on 2026-11-02",
+    "RC-ONE din 2 noiembrie 2026", "RC-ONE on 2026-11-02",
+    "RO321 din 31 noiembrie 2026", "RO321 on 131 November 2026",
+    "RO321 on 2026-11-010", "RO321 on tomorrow",
+    "RO321 on 01/11/2026", "RO321 din 1 noiembrie",
+    "RO321 on 1 November 2026, 2 November 2026",
+    "RC-ONE on 2026-11-01, RO321 on 2026-11-02",
+])
+@pytest.mark.asyncio
+async def test_ambiguous_invalid_or_conflicting_attached_date_never_queues(command_setup, reference):
+    _, store, service, jobs, ai = command_setup
+    before = store.read()
+    req = request(store, "Recover " + reference)
+    result = await service.command(req)
+    assert result["applied"] is False and "Data asociată" in result["explanation"]
+    assert result["command_interpretation_calls"] == 1 and not jobs.list("RC-ONE")["jobs"]
+    assert store.read().version == before.version and store.read().groups == before.groups
+    assert (await service.command(req))["replayed"]
+    assert len(ai.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_real_probe_date_range_is_rejected_even_for_a_unique_flight(command_setup):
+    _, store, service, jobs, _ = command_setup
+    def change_case(world):
+        world.incidents[0].requested_flight_number = "EK5"
+        world.incidents[0].date_utc = "2026-10-31"
+    store.mutate("probe-case-shape", {}, store.read().version, change_case)
+    response = await service.command(request(store,
+        "Caută recuperarea zborului EK5 din 30-31 octombrie 2026 pentru toate grupurile cazului, cu maximum patru apeluri în total"))
+    assert "Data asociată" in response["explanation"] and response["applied"] is False
+    assert not jobs.list("RC-ONE")["jobs"]
+
+
+@pytest.mark.parametrize("case_date", ["31/10/2026", "31.10.2026", "31-10-2026", "31 octombrie 2026"])
+@pytest.mark.asyncio
+async def test_unambiguous_october_case_date_and_november_search_date_remain_distinct(command_setup, case_date):
+    _, store, service, jobs, _ = command_setup
+    def change_case(world):
+        world.incidents[0].requested_flight_number = "EK5"
+        world.incidents[0].date_utc = "2026-10-31"
+    store.mutate("exact-probe-case-shape", {}, store.read().version, change_case)
+    text = f"Recuperează EK5 din{case_date}, caută alternative pentru2noiembrie2026 cu maximum patru apeluri"
+    response = await service.command(request(store, text))
+    job = response["recovery_job"]
+    assert job["incident_id"] == "RC-ONE" and job["max_provider_calls"] == 3
+    assert jobs.ledger.get(job["id"], private=True)["_request"]["instructions"] == text
+
+
+@pytest.mark.asyncio
+async def test_search_date_does_not_disambiguate_two_incident_dates(command_setup):
+    _, store, service, jobs, ai = command_setup
+    def add_case(world):
+        second = world.incidents[0].model_copy(deep=True)
+        second.id, second.date_utc, second.group_ids = "RC-TWO", "2026-11-02", ["G2"]
+        world.incidents[0].group_ids = ["G1"]
+        world.groups[1].incident_id = "RC-TWO"
+        world.incidents.append(second)
+    store.mutate("ambiguous-case-shape", {}, store.read().version, add_case)
+    ai.result["recovery"]["incident_id"] = None
+    response = await service.command(request(store, "Recover RO321, search alternatives for 2026-11-02"))
+    assert "RC-ONE" in response["explanation"] and "RC-TWO" in response["explanation"]
+    assert not jobs.list("RC-ONE")["jobs"] and not jobs.list("RC-TWO")["jobs"]
+
+
+@pytest.mark.parametrize("text", [
+    "Recuperează RO321 din1noiembrie2026, caută alternative pentru2noiembrie2026",
+    "Recover RO321 on 2026-11-01, search alternatives for 2026-11-02",
+    "Recover RC-ONE on 1 November 2026 and search alternatives for 2 November 2026",
+    "Recover RO321; search alternatives for 2026-11-02",
+    "Search alternatives for 2026-11-02 for flight RO321",
+])
+@pytest.mark.asyncio
+async def test_alternative_travel_date_is_preserved_separately_from_case_identity(command_setup, text):
+    _, store, service, jobs, _ = command_setup
+    response = await service.command(request(store, text))
+    job = response["recovery_job"]
+    assert job["incident_id"] == "RC-ONE"
+    assert jobs.ledger.get(job["id"], private=True)["_request"]["instructions"] == text
+
+
 @pytest.mark.parametrize("recovery,events", [
     (intent(group_ids=["OUT"], all_linked_groups=False), []),
     (intent(group_ids=["G1"], all_linked_groups=False), []),  # not explicitly named
