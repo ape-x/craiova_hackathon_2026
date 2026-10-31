@@ -327,7 +327,7 @@ function PassengerJourney({ token }: { token: string }) {
                     <span>
                       <Clock3 size={15} /> Arrival{' '}
                       {live
-                        ? (sourcedArrival(offer, state.resources) ??
+                        ? (sourcedArrival(offer, state.resources, state.epoch) ??
                           `${formatOperationTime(state.epoch, offer.itinerary.arrival)} · Europe/Bucharest operations time`)
                         : formatTime(offer.itinerary.arrival)}
                     </span>

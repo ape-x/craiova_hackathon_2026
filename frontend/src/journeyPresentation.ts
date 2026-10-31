@@ -31,9 +31,25 @@ function record(value: unknown): Record<string, unknown> | null {
     ? (value as Record<string, unknown>)
     : null;
 }
+function absoluteInstant(value: unknown): number {
+  if (typeof value !== 'string') return NaN;
+  const match =
+    /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2})(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return NaN;
+  const calendar = `${match[1]}:${match[2] ?? '00'}`;
+  const wall = Date.parse(`${calendar}${match[3] ?? ''}Z`);
+  if (!Number.isFinite(wall) || new Date(wall).toISOString().slice(0, 19) !== calendar) return NaN;
+  if (
+    match[4] !== 'Z' &&
+    (Number(match[4].slice(1, 3)) > 14 ||
+      Number(match[4].slice(4)) > 59 ||
+      (Number(match[4].slice(1, 3)) === 14 && Number(match[4].slice(4)) !== 0))
+  )
+    return NaN;
+  return Date.parse(value);
+}
 function segmentTime(value: unknown, local: unknown, airport: string): SegmentTime | null {
-  if (typeof value !== 'string' || !/(Z|[+-]\d{2}:\d{2})$/.test(value)) return null;
-  const instant = Date.parse(value);
+  const instant = absoluteInstant(value);
   if (!Number.isFinite(instant)) return null;
   // Nuitee supplies both the absolute instant and the airport-local wall clock.
   // Derive only their stated offset; do not guess an airport's time zone.
@@ -55,7 +71,11 @@ function segmentTime(value: unknown, local: unknown, airport: string): SegmentTi
   }
   return { instant, label: `${datedTime.format(instant)} UTC · ${airport}` };
 }
-export function flightSegments(resource: Resource | undefined): PresentedFlightSegment[] {
+export function flightSegments(
+  resource: Resource | undefined,
+  epoch: string,
+  leg?: Pick<Resource, 'origin' | 'destination' | 'departure' | 'arrival'>,
+): PresentedFlightSegment[] {
   const raw = resource?.kind === 'flight' ? resource.provenance?.segments : null;
   if (!resource || !Array.isArray(raw) || raw.length === 0 || raw.length > 10) return [];
   const result: PresentedFlightSegment[] = [];
@@ -90,9 +110,24 @@ export function flightSegments(resource: Resource | undefined): PresentedFlightS
       waitBeforeMinutes: previous ? (departure.instant - previous.arrival.instant) / 60000 : 0,
     });
   }
-  return result[0].origin === resource.origin && result.at(-1)?.destination === resource.destination
-    ? result
-    : [];
+  const first = result[0],
+    last = result.at(-1)!;
+  const epochInstant = absoluteInstant(epoch);
+  const departure = Math.floor((first.departure.instant - epochInstant) / 60000);
+  const arrival = Math.ceil((last.arrival.instant - epochInstant) / 60000);
+  if (
+    first.origin !== resource.origin ||
+    last.destination !== resource.destination ||
+    departure !== resource.departure ||
+    arrival !== resource.arrival ||
+    (leg &&
+      (leg.origin !== resource.origin ||
+        leg.destination !== resource.destination ||
+        leg.departure !== departure ||
+        leg.arrival !== arrival))
+  )
+    return [];
+  return result;
 }
 export function waitingTime(minutes: number): string {
   const whole = Math.ceil(minutes);
@@ -100,10 +135,14 @@ export function waitingTime(minutes: number): string {
     ? `${Math.floor(whole / 60)} h${whole % 60 ? ` ${whole % 60} min` : ''}`
     : `${whole} min`;
 }
-export function sourcedArrival(offer: Offer, resources: Resource[]): string | null {
+export function sourcedArrival(offer: Offer, resources: Resource[], epoch: string): string | null {
   const leg = offer.itinerary.legs.at(-1);
+  if (!leg || leg.arrival !== offer.itinerary.arrival) return null;
   return (
-    flightSegments(resources.find((item) => item.id === leg?.resource_id)).at(-1)?.arrival.label ??
-    null
+    flightSegments(
+      resources.find((item) => item.id === leg.resource_id),
+      epoch,
+      leg,
+    ).at(-1)?.arrival.label ?? null
   );
 }

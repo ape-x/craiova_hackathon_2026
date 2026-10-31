@@ -40,7 +40,11 @@ export function ItineraryView({
         const Icon = leg.kind === 'bus' ? BusFront : leg.kind === 'hotel' ? BedDouble : Plane;
         const segments =
           world?.mode === 'live'
-            ? flightSegments(world.resources?.find((resource) => resource.id === leg.resource_id))
+            ? flightSegments(
+                world.resources?.find((resource) => resource.id === leg.resource_id),
+                world.epoch,
+                leg,
+              )
             : [];
         if (segments.length)
           return (

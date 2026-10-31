@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ItineraryView } from './Inspector';
-import { flightSegments, sourcedArrival } from './journeyPresentation';
+import { flightSegments as presentSegments, sourcedArrival } from './journeyPresentation';
 import type { Offer, Resource } from './types';
 
+const epoch = '2026-10-31T00:00:00+02:00';
+const flightSegments = (value: Resource) => presentSegments(value, epoch);
 const segments = [
   {
     mode: 'flight',
@@ -34,8 +36,8 @@ const resource: Resource = {
   name: 'Example Air',
   origin: 'LHR',
   destination: 'OTP',
-  departure: 1980,
-  arrival: 2835,
+  departure: 2100,
+  arrival: 2955,
   capacity: 2,
   accessible: false,
   available: true,
@@ -55,15 +57,62 @@ const offer = {
         kind: 'flight',
         origin: 'LHR',
         destination: 'OTP',
-        departure: 1980,
-        arrival: 2835,
+        departure: 2100,
+        arrival: 2955,
       },
     ],
-    arrival: 2835,
+    arrival: 2955,
   },
 } as Offer;
 
 describe('sourced passenger journey presentation', () => {
+  it('rejects normalized impossible absolute dates and schedule facts inconsistent with the validated plan', () => {
+    expect(
+      flightSegments({
+        ...resource,
+        provenance: {
+          segments: [{ ...segments[0], departure_at: '2026-02-30T09:00:00Z' }, segments[1]],
+        },
+      }),
+    ).toEqual([]);
+    expect(flightSegments({ ...resource, arrival: resource.arrival - 120 })).toEqual([]);
+    const staleOffer = {
+      ...offer,
+      itinerary: {
+        ...offer.itinerary,
+        arrival: 2835,
+        legs: [{ ...offer.itinerary.legs[0], arrival: 2835 }],
+      },
+    };
+    expect(sourcedArrival(staleOffer, [resource], epoch)).toBeNull();
+    const html = renderToStaticMarkup(
+      <ItineraryView offer={staleOffer} world={{ mode: 'live', epoch, resources: [resource] }} />,
+    );
+    expect(html).toContain('Europe/Bucharest operations time');
+    expect(html).not.toContain('local at');
+  });
+  it('accepts source seconds only within the authoritative floor/ceil minute bounds', () => {
+    const rounded = {
+      ...resource,
+      arrival: resource.arrival + 1,
+      provenance: {
+        segments: [
+          {
+            ...segments[0],
+            departure_at: '2026-11-01T09:00:30Z',
+            departure_local: '2026-11-01T09:00:30',
+          },
+          {
+            ...segments[1],
+            arrival_at: '2026-11-01T23:15:10Z',
+            arrival_local: '2026-11-02T01:15:10',
+          },
+        ],
+      },
+    };
+    expect(flightSegments(rounded)).toHaveLength(2);
+    expect(flightSegments({ ...rounded, departure: rounded.departure + 1 })).toEqual([]);
+  });
   it('shows both actual flight legs, the ten-hour connection and endpoint-local dates', () => {
     const html = renderToStaticMarkup(
       <ItineraryView
@@ -78,7 +127,9 @@ describe('sourced passenger journey presentation', () => {
     expect(html).toContain('connection at');
     expect(html).toContain('01 Nov 2026, 09:00 · local at LHR (UTC+00:00)');
     expect(html).toContain('01 Nov 2026, 11:55 · local at ZRH (UTC+01:00)');
-    expect(sourcedArrival(offer, [resource])).toBe('02 Nov 2026, 01:15 · local at OTP (UTC+02:00)');
+    expect(sourcedArrival(offer, [resource], epoch)).toBe(
+      '02 Nov 2026, 01:15 · local at OTP (UTC+02:00)',
+    );
     expect(html).not.toContain('Europe/Bucharest operations time');
   });
   it('labels UTC explicitly when the supplier has no local clock, without assuming Bucharest', () => {
