@@ -181,7 +181,7 @@ export default function LiveDataDialog({
       const result = await action();
       onApplied(result);
       if (mounted.current) {
-        setSuccess(`${message} · state v${result.world.version}`);
+        setSuccess(`${result.explanation || message} · state v${result.world.version}`);
         setUncertain(null);
       }
     } catch (cause) {
@@ -244,10 +244,6 @@ export default function LiveDataDialog({
     resetNotice();
     if (hotelNeedsAdults) {
       setError('The current hotel supplier requires an adult-only group.');
-      return;
-    }
-    if (!hotel.stay_times_confirmed) {
-      setError('Confirm the planned stay times with the property before continuing.');
       return;
     }
     void send(
@@ -643,9 +639,10 @@ export default function LiveDataDialog({
           )}
           <fieldset disabled={busy || Boolean(uncertain)} className="live-form-fieldset">
             <p className="field-hint">
-              Fetch current supplier offers for one imported passenger group. The server checks the
-              group, dates and quote expiry. These quotes are unbooked until separately confirmed
-              with the supplier.
+              Fetch current supplier offers for one passenger group. The server checks room
+              occupancy, property-local dates, published check-in and check-out policies, mandatory
+              costs and quote freshness. Missing or incompatible stay policies are excluded. Quotes
+              do not reserve rooms or provide airport transfers.
             </p>
             <div className="live-form-grid">
               <Field label="Passenger group">
@@ -694,12 +691,12 @@ export default function LiveDataDialog({
                 />
               </Field>
               <UtcField
-                label="Confirmed stay start"
+                label="Planned stay start"
                 value={hotel.checkin_at}
                 onChange={(value) => setHotel((previous) => ({ ...previous, checkin_at: value }))}
               />
               <UtcField
-                label="Confirmed stay end"
+                label="Planned stay end"
                 value={hotel.checkout_at}
                 onChange={(value) => setHotel((previous) => ({ ...previous, checkout_at: value }))}
               />
@@ -725,14 +722,13 @@ export default function LiveDataDialog({
                     stay_times_confirmed: event.target.checked,
                   }))
                 }
-                required
               />
-              I confirmed these planned check-in and check-out times with the property.
+              Optional override: I separately agreed these stay times with the property.
             </label>
             <button
               className="primary-button"
               type="submit"
-              disabled={!world.groups.length || !hotel.stay_times_confirmed || hotelNeedsAdults}
+              disabled={!world.groups.length || hotelNeedsAdults}
             >
               <RefreshCw size={14} /> Fetch and add current quotes
             </button>

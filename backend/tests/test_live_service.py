@@ -308,10 +308,9 @@ async def test_hotel_provider_failure_does_not_mutate_or_fall_back(ops):
     assert ops.store.read().version == before and ops.store.read().resources == []
 
 
-def test_hotel_stay_times_require_confirmation_and_matching_dates(ops):
+def test_hotel_stay_times_allow_policy_validation_but_require_matching_dates(ops):
     ops.manifest(manifest_request(ops))
-    with pytest.raises(ValidationError):
-        hotel_request(ops, stay_times_confirmed=False)
+    assert hotel_request(ops, stay_times_confirmed=False).stay_times_confirmed is False
     with pytest.raises(ValidationError):
         hotel_request(ops, checkin_at=now()-timedelta(days=3))
     valid = hotel_request(ops)

@@ -78,6 +78,8 @@ Trecerea peste miezul nopții nu creează singură o obligație de cazare. Aște
 
 Costurile obligatorii ale hotelului sunt separate de suma de bază a furnizorului. Taxele incluse nu sunt adăugate din nou. Taxele lipsă sau într-o monedă fără conversie admisă lasă totalul pentru buget necunoscut și împiedică folosirea cotației într-un plan complet calculat.
 
+La importul unei cotații hoteliere, serverul poate verifica automat intervalul de check-in și limita de checkout din politica proprietății exacte, în fusul orar derivat din coordonatele sale. Fără o oră finală de check-in publicată, este admisă automat numai ora exactă de început; sosirea târzie nu este presupusă. Politicile incomplete, contradictorii, expirate, cu instrucțiuni speciale sau cu ore locale ambigue exclud proprietatea și păstrează motivul. Operatorul poate declara separat că a convenit orele cu proprietatea; această declarație are proveniență distinctă și nu reprezintă o rezervare. Niciuna dintre căi nu creează un transfer până la hotel.
+
 Bugetele sunt verificate față de costurile documentate ale propunerii, nu față de o plată viitoare garantată. Cotațiile pot expira și necesită revalidare. Prețul APL rămâne în GBP. Un curs ECB, chiar cu o marjă explicită a operatorului, poate descrie numai o estimare sau o alocație de planificare; nu devine preț EUR al furnizorului și nu garantează costul de decontare. Conversia FX nu este conectată la solver.
 
 ## 6. Propunere, preferință și confirmare
@@ -134,7 +136,9 @@ Context regional pentru recuperarea pasagerilor. Produsul nu emite instrucțiuni
 
 Modelele nu decid singure dacă o capacitate, un preț sau un transfer este valid. Backendul reverifică înainte de aplicare. Nicio decizie live nu este înlocuită cu un răspuns prestabilit când API-ul eșuează.
 
-Legătura directă dintre comanda vocală/text și pornirea unei căutări durabile în cazul selectat este în curs de implementare. Până la confirmarea implementării și verificării ei, intrarea verificată este formularul cazului. O sesiune WebRTC reușită cu sunet sintetic nu validează microfonul, delegarea, redarea și întreruperea într-o conversație reală.
+Comenzile vocale/text pot porni o căutare durabilă pentru un caz existent, identificat explicit prin ID sau printr-un zbor fără ambiguitate în cererea curentă. Sunt admise numai grupurile deja legate de acel caz; rezervările confirmate și alocările din afara selecției sunt protejate. Confirmarea vocală de pornire descrie cererea înregistrată, nu un itinerar final sau o rezervare.
+
+Limita comenzii include apelul de interpretare: implicit opt apeluri în total, dintre care cel mult șapte pentru căutarea durabilă. Formularul cazului are separat limita apelurilor propriei căutări. O interpretare cu rezultat necunoscut nu este retrimisă automat. Implementarea are teste offline; verificarea live a acestei intrări vocale/text este încă în așteptare. Formularul cazului are deja proba reală descrisă mai jos. O sesiune WebRTC reușită cu sunet sintetic nu validează microfonul, delegarea, redarea și întreruperea într-o conversație reală.
 
 Cheile private rămân pe server. Cheia publică Maps pentru browser necesită restricțiile aplicației. Contextul temporar FR24 nu este copiat în exporturile portabile sau backupurile operaționale; retenția și drepturile furnizorilor rămân explicite.
 
@@ -146,9 +150,12 @@ La 31 octombrie 2026 au fost observate următoarele rezultate pe instanța princ
 - O căutare durabilă a folosit patru apeluri: Responses, două căutări Nuitee paralele și Decisions. Au fost întoarse 20 de cotații și înregistrată o propunere validă pentru doi pasageri, fără excepții; grupul existent din afara selecției a rămas neatins.
 - Circuitul căutării a durat aproximativ 12,1 secunde într-o singură rulare. Nu este o promisiune de latență sau o medie/p95.
 - Interfața APL a afișat șase cotații reale în GBP per vehicul pentru o călătorie UK, fără rezervare sau reținere.
-- O probă Nuitee a întors zece cotații hoteliere complete pentru LHR, cu coordonate reale și fusul Europe/London. Importul lor prin interfață într-un itinerar complet nu este încă verificat.
+- O probă Nuitee a întors zece cotații hoteliere complete pentru LHR, cu coordonate reale și fusul Europe/London. Prețurile hoteliere au fost afișate și prin interfață; importul lor într-un itinerar complet cu transferuri nu este încă verificat.
+- Pasagerul a acceptat o propunere reală ca preferință, după care cotația a expirat în mod normal. Nu a fost creată o rezervare la furnizor.
 
 Probele nu demonstrează acoperire universală, disponibilitate viitoare, rezervări reale sau recuperare automată completă cu hotel și transfer. [Raportul detaliat](verification/report.md) menține această separare și rezultatele testelor.
+
+Validarea automată a orelor șederii pe baza politicii proprietății este implementată separat; nu este inclusă în probele reale de mai sus.
 
 ## 10. Criterii de acceptare ale fluxului live asistat
 

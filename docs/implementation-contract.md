@@ -32,7 +32,7 @@ Operator endpoints require operator authentication. Mutations use `expected_vers
 | `POST /api/live/generate-passengers` | Explicit planning assumptions only; creates no transport or hotel inventory |
 | `POST /api/live/resources` | Operator-documented dated service with evidence, price, capacity and validity |
 | `POST /api/real-data/search` | Reference hotels/routes and supplier hotel offers; no operational import or booking |
-| `POST /api/live/hotel-quotes` | Group-specific complete hotel quotes at actual property nodes; confirmed stay times required |
+| `POST /api/live/hotel-quotes` | Group-specific complete hotel quotes at actual property nodes; sourced stay-policy validation or separately declared property-agreed times |
 | `POST /api/live/travel/search`, `POST /api/live/travel/import` | Separate dated supplier search and server-held quote import |
 | `GET /api/transfers/status`, `POST /api/transfers/quote` | APL UK price snapshots in GBP per vehicle; no import, booking, duration guarantee or EUR budget conversion |
 | `POST /api/live/offers/{id}/confirm` | Explicit operator booking references for every segment of a real passenger group's proposal |
@@ -40,7 +40,8 @@ Operator endpoints require operator authentication. Mutations use `expected_vers
 | `POST /api/offers/{id}/accept` | Record live passenger preference; no supplier booking |
 | `POST /api/offers/{id}/decline` | Decline an eligible proposed/accepted offer and release its local segment records atomically |
 | `POST /api/passenger/{token}/constraints` | Update supported group constraints and invalidate the impacted proposal |
-| `POST /api/commands`, `POST /api/replan` | Existing validated AI/solver operations; only sourced inventory can satisfy live plans |
+| `POST /api/commands` | Validated commands; explicit existing-case recovery intent can queue a scoped durable job and return its receipt |
+| `POST /api/replan` | Validated AI/solver operation over sourced inventory; not an unrestricted supplier search |
 | `POST /api/voice/session` | Server-mediated GPT-Live session and bounded lifecycle |
 | `POST /api/traffic/start`, `POST /api/traffic/stop` | Explicit shared FR24 collection with persistent request/credit budget |
 
@@ -58,6 +59,14 @@ Current automatic sourcing covers flight offers. Responses selects eligible date
 
 The live solver supports up to six itinerary legs, including physical hotel transfers. It validates elapsed time and dates; it does not apply the internal simulation's epoch-day rule as a mandatory live hotel requirement. Waiting summaries use the actual location's time zone when known and disclose unknown zones. There is currently no structured mandatory-rest policy in the group schema; free-form instructions do not establish a new validated constraint. A hotel alone is never a recovered journey.
 
+## Manual hotel import and stay policy
+
+The hotel-import request shape is unchanged. With `stay_times_confirmed=false`, the server fetches metadata for the exact property even when the rate already contains coordinates, bounded to ten properties with concurrency three. Property-coordinate IANA time zones and the pinned time-zone data anchor the supplied check-in window and checkout cutoff to the quoted dates. A bounded check-in window may span midnight; absent `checkin_end`, only the exact published start is automatically accepted.
+
+Missing, unsupported or conflicting policy times, special check-in instructions, source/property identity or freshness mismatches, and ambiguous/nonexistent daylight-saving boundaries exclude the property with a reason. Successful provenance contains `stay_times_source='supplier_policy'`, `stay_times_confirmed=false` and `stay_policy_validation` with source, property ID, time zone and dated bounds. `stay_times_confirmed=true` remains a separate `operator_confirmed` declaration that the stay times were agreed with the property; it is not a supplier booking.
+
+The response preserves `skipped_incomplete_pricing` and adds `skipped_stay_policy` and `hotel_exclusions[{hotel_id,code,message}]`. If every option is excluded, HTTP422 leaves the operation unchanged. No policy result implies a shuttle, physical transfer or reserved room. This automatic policy path is implemented; live operational import and a complete hotel-plus-transfer itinerary remain separate verification gates.
+
 ## Mutation, retry and budget boundaries
 
 SQLite is authoritative for versions, allocations, the job ledger and idempotency. Provider calls occur outside world transactions; a compare-and-apply step rechecks source freshness and current constraints before committing. Scoped jobs preserve all out-of-scope allocations, including proposed and accepted ones.
@@ -74,9 +83,15 @@ The planner's EUR budget checks use documented complete costs. Missing mandatory
 
 Google TRANSIT currently has a pure request/response adapter and offline tests only. Stops and schedules do not establish seat availability; incomplete fares remain unknown, and missing walking durations do not pass a walking limit. There is no connected public-transit inventory or automatic booking path.
 
+Passenger itineraries expand validated supplier flight segments and connection waits. Source-local clocks include explicit UTC offsets; missing local clocks use labeled UTC. Source endpoints must reconcile with the epoch and authoritative resource/offer-leg times using departure-floor and arrival-ceiling minute bounds. Invalid calendar dates or inconsistent provenance use the explicitly labeled Europe/Bucharest operations-time summary instead. The passenger arrival summary uses the same validated final segment.
+
 ## AI and voice status
 
-The real Responses → supplier searches → Decisions case workflow has live evidence. Existing voice transport/lifecycle has a separate bounded provider check. The new scoped voice/text-to-job bridge is in progress; it must not be described as shipped or microphone-verified until its implementation and checks are reported. For now the verified entry point for automatic sourcing is the case form.
+The scoped voice/text-to-job bridge is implemented. The current request must name an existing case ID or an unambiguous flight, with a date when needed to distinguish cases. Only already-linked groups are eligible; externally confirmed groups are protected. A recovery intent does not invoke a global replan. A queued receipt includes `incident_id`, `recovery_job`, `command_interpretation_calls` and `recovery_total_call_limit`; the UI opens the matching case and polls the existing job panel.
+
+The default command allowance is eight calls total: one interpretation plus at most seven job calls. A stated limit of four permits one interpretation plus three job calls; a limit of three or less returns clarification without a job. The manual form's default allowance remains eight job calls. Parsed intent is cached, job creation and the command receipt are atomic, and unknown/crashed interpretation is never automatically reissued. A voice acknowledgement confirms only the recorded request, not a completed plan or booking.
+
+The real Responses → supplier searches → Decisions case-form workflow has live evidence. The scoped command bridge has offline coverage; its live runtime check is still pending. Existing voice transport/lifecycle has a separate bounded provider check using synthetic silence.
 
 Model/provider errors remain explicit. The app does not execute arbitrary model code, invent supplier stock or substitute a scripted AI result. Full microphone, delegation, playback and interruption testing remains a separate acceptance gate.
 

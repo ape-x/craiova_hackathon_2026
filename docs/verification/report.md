@@ -6,7 +6,7 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 Release `7afa194` was deployed to the sole active application at `http://localhost:8080`, preserving the existing operation. The subsequent source-exclusion display fix was committed as `1412aff`; it distinguishes rejected alternatives from unresolved requirements without discarding recorded reasons.
 
-The last full backend run passed **689 tests**. A subsequent focused run passed **29 tests**, including two added regressions. The last full frontend run passed **174 tests**; the subsequent focused job-display run passed **15 tests**, including three added regressions, plus strict TypeScript and changed-file formatting. These focused counts overlap the full suites and are not added together as a new full-suite total. Existing build notices are recorded below.
+The last full backend run passed **689 tests**. Subsequent focused runs included **29 tests** for the preceding slice, **88 tests** for the scoped command bridge and **30 tests** at its publication boundary. The latest full frontend run passed **188 tests**. The supplier-segment presentation changes in `769e416` also passed **seven focused tests** and strict TypeScript, covering impossible calendar dates, source/itinerary schedule reconciliation, connection waits and explicit clock fallbacks. Focused counts overlap the full suites and are not added together as a new full-suite total. Existing build notices are recorded below.
 
 ### Real flight case and sourced recovery
 
@@ -16,6 +16,8 @@ The real durable job ran from **18:23:47 to 18:23:59 UTC**, approximately **12.1
 
 This establishes one real case-form → provider searches → validated proposal flow. It is not a latency guarantee, automatic booking, seat hold or proof of universal route coverage. Some returned alternatives were rejected by validation; those exclusions do not invalidate the successful selected proposal. The current UI separates exclusions/search outcomes, actual missing requirements and informational overnight waits.
 
+The passenger subsequently accepted the proposal as a preference. The quote later expired normally; no supplier booking was created. This verifies the distinction between passenger acceptance and an external reservation, not continuing availability after expiry.
+
 ### Real APL transfer quotes
 
 The configured Airport Pickups London account returned six live vehicle quotes in the actual UI for **Heathrow Terminal 5 → W1K 1LN, 2 November 2026 at 14:00 Europe/London, two passengers and two suitcases**. The amounts were **GBP 76, 88, 112, 88, 117 and 136 per vehicle**, preserving the supplier's currency and price scope. These are a dated verification snapshot, not current offers or recommendations.
@@ -24,13 +26,15 @@ No booking, driver dispatch or supplier hold occurred. Supplier expiry, structur
 
 ### Real hotel metadata and remaining integration boundary
 
-A live Nuitee rate probe for LHR returned **ten complete hotel quotes** with real property coordinates and the coordinate-derived **Europe/London** time zone. The hotel is represented at its own physical node, not at the airport. This verifies the supplier response and location/time-zone path; **UI import and a complete hotel-plus-transfer itinerary have not yet been verified**.
+A live Nuitee rate probe for LHR returned **ten complete hotel quotes** with real property coordinates and the coordinate-derived **Europe/London** time zone. Hotel prices were also displayed through the actual UI. The hotel is represented at its own physical node, not at the airport. These checks verify supplier prices, their display and the location/time-zone path; **operational import and a complete hotel-plus-transfer itinerary have not yet been verified**.
+
+Automatic property-policy validation is implemented for manual imports with `stay_times_confirmed=false`. It reads the exact property's sourced check-in/checkout rules in the property-local time zone and reports excluded options, rather than assuming late check-in. The separate operator-agreed override remains explicit. No live import result for this new policy path is included in the rate/display checks above.
 
 Google TRANSIT and ECB reference FX adapters have offline tests but no connected product endpoint/UI or solver integration. Transit schedules do not establish seat availability; absent fares remain unknown. An ECB estimate or explicit operator allowance is not a supplier EUR charge or guaranteed settlement.
 
 ### Voice and public evidence
 
-The scoped voice/text-to-recovery-job bridge is in progress and is not included in the verified case-form result above. The earlier real GPT-Live check used synthetic silence and verified transport/closure only. A real microphone session with delegation, playback, interruption and final close remains a distinct acceptance gate.
+The scoped voice/text-to-recovery-job bridge is implemented and committed as `3ebf215`, with offline backend/frontend coverage. It resolves an explicitly named existing case or unambiguous flight, preserves linked-group scope, counts interpretation within the command allowance and persists a queued-job receipt without reissuing unknown interpretation. Its live runtime check is still pending and is not included in the verified case-form result above. The earlier real GPT-Live check used synthetic silence and verified transport/closure only. A real microphone session with delegation, playback, interruption and final close remains a distinct acceptance gate.
 
 This record deliberately publishes no raw FR24 payload, private case/job/group identifier, passenger token, account contact, credential or private account screenshot. The public flight number, route, aggregate counts, times and quote snapshot above are the bounded verification evidence.
 
@@ -188,7 +192,7 @@ The local Three.js scene is an interactive architectural illustration with origi
 - Real GPT-Live microphone session, delegation, playback, interruption and final session close/usage.
 - Continuous FR24 position display with original timestamps and agreed account usage/retention; the authorized flight lookup/case flow is already verified above.
 - Hotel quote import through the UI and a complete sourced itinerary including independently verified property transfers.
-- Scoped voice/text-to-job implementation and its separate end-to-end checks; case-form sourcing is already verified.
+- Live scoped voice/text-to-job end-to-end checks; implementation and offline coverage are complete, and case-form sourcing is already verified.
 - Determine the cause of Google's billing warning and confirm billing health; configure appropriate key restrictions.
 - Verify surveyed terminal photogrammetry and precise alignment against current airport data; authored GLB rendering/orientation now has browser evidence.
 - Review visual fidelity on the event display.

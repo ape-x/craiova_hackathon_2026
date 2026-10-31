@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .airport_catalog import lookup_airport
 from .hotel_location import property_location, property_zone
+from .hotel_policy import HotelPolicyError, validate_stay_policy
 from .live_data import (
     ManifestImport, ManualResourceInput, PassengerGenerationInput, _new_airports,
     aware, identifier, prepare_generated_passengers, prepare_manifest, prepare_resource, relative_minute,
@@ -86,8 +87,6 @@ class HotelQuoteImport(Mutation):
 
     @model_validator(mode="after")
     def confirmed_stay(self):
-        if not self.stay_times_confirmed:
-            raise ValueError("Confirm the property's check-in and checkout times")
         # Exact date validation requires each supplier property's coordinates.
         # Reject clearly impossible inputs here, before any supplier request.
         if any(abs((instant.date()-day).days) > 1 for instant, day in ((self.checkin_at,self.checkin),(self.checkout_at,self.checkout))):
@@ -235,12 +234,14 @@ class LiveOperations:
         if self.real_data.provider.hotel_offer_provider != "liteapi":
             raise DomainError(503, "Choose the live Nuitee / LiteAPI supplier to import complete hotel quotes")
         quotes = await self.real_data.provider.offers({"code": airport["code"], "name": airport["name"], "latitude": airport["lat"], "longitude": airport["lon"]}, query)
+        if not isinstance(quotes, list) or len(quotes) > 10 or any(not isinstance(quote, dict) for quote in quotes):
+            raise DomainError(502, "Supplier returned an invalid hotel quote list")
         gate = asyncio.Semaphore(3)
         async def locate(quote):
             pricing = quote.get("pricing")
             if not isinstance(pricing, dict) or pricing.get("status") != "complete":
                 return quote
-            if quote.get("latitude") is not None and quote.get("longitude") is not None:
+            if request.stay_times_confirmed and quote.get("latitude") is not None and quote.get("longitude") is not None:
                 return quote
             async with gate:
                 location = await self.real_data.provider.hotel_location(quote["id"])
@@ -250,8 +251,7 @@ class LiveOperations:
             if isinstance(result, BaseException):
                 raise result
         quotes = located
-        resources = self._quote_resources(world, request, group, quotes, departure, arrival)
-        skipped = len(quotes) - len(resources)
+        resources, skipped, exclusions = self._quote_resources(world, request, group, quotes, departure, arrival)
 
         def apply(current):
             self._hotel_context(current, request)
@@ -277,18 +277,22 @@ class LiveOperations:
                 raise DomainError(422, f"Operation limit is {MAX_AIRPORTS} airport, station and property locations")
             current.resources.extend(resources)
             audit(current, "live-hotel-quotes", "Imported supplier hotel quotes for the selected group; no booking or room hold was made.", group.id,
-                  {"resource_ids": [resource.id for resource in resources], "rooms": request.rooms, "supplier": "Nuitee / LiteAPI", "skipped_incomplete_pricing": skipped})
+                  {"resource_ids": [resource.id for resource in resources], "rooms": request.rooms, "supplier": "Nuitee / LiteAPI", "skipped_incomplete_pricing": skipped,
+                   "skipped_stay_policy": len(exclusions), "hotel_exclusions": exclusions})
             explanation = f"Imported {len(resources)} supplier hotel quotes at their actual property locations. Ground connections are required for a complete itinerary; quotes require revalidation before booking."
             if skipped:
                 explanation += f" Skipped {skipped} quotes with unresolved mandatory costs."
-            return {"applied": True, "explanation": explanation, "focus_id": group.id, "skipped_incomplete_pricing": skipped}
+            if exclusions:
+                explanation += f" Excluded {len(exclusions)} properties whose sourced stay policy did not validate the requested times. " + " ".join(dict.fromkeys(item["message"] for item in exclusions))
+            return {"applied": True, "explanation": explanation, "focus_id": group.id, "skipped_incomplete_pricing": skipped,
+                    "skipped_stay_policy": len(exclusions), "hotel_exclusions": exclusions}
         return self.store.mutate("live-hotels:" + request.idempotency_key, request.model_dump(), world.version, apply, request_started=started)
 
     @staticmethod
     def _quote_resources(world, request, group, quotes, departure, arrival):
         if not isinstance(quotes, list) or len(quotes) > 10:
             raise DomainError(502, "Supplier returned an invalid hotel quote list")
-        resources, seen = [], set()
+        resources, seen, exclusions, skipped = [], set(), [], 0
         for quote in quotes:
             try:
                 if not isinstance(quote, dict) or quote.get("provider") != "liteapi" or quote.get("currency") != "EUR":
@@ -310,14 +314,23 @@ class LiveOperations:
                 raise DomainError(502, "Supplier returned an incomplete, mismatched or stale hotel quote") from exc
             seen.add(hotel_id)
             if budget_total is None:
+                skipped += 1
                 continue
             try:
                 node, location = property_location(quote)
             except (ValueError, KeyError, TypeError) as exc:
                 raise DomainError(502, "Supplier property coordinates or time zone could not be verified") from exc
             local = property_zone(location["timezone"])
-            if request.checkin_at.astimezone(local).date() != request.checkin or request.checkout_at.astimezone(local).date() != request.checkout:
-                raise DomainError(422, "Stay times must match the selected dates in each property's local time zone")
+            policy_validation = None
+            if request.stay_times_confirmed:
+                if request.checkin_at.astimezone(local).date() != request.checkin or request.checkout_at.astimezone(local).date() != request.checkout:
+                    raise DomainError(422, "Stay times must match the selected dates in each property's local time zone")
+            else:
+                try:
+                    policy_validation = validate_stay_policy(quote, request, location["timezone"], now=utcnow())
+                except HotelPolicyError as exc:
+                    exclusions.append({"hotel_id": hotel_id, "code": exc.code, "message": exc.message})
+                    continue
             local_id = "HQ-" + hashlib.sha256((group.id + "|" + hotel_id + "|" + reference).encode()).hexdigest()[:28].upper()
             resources.append(Resource(id=local_id, kind="hotel", name=name[:140], origin=node.id,
                 destination=node.id, departure=departure, arrival=arrival, capacity=request.rooms,
@@ -326,13 +339,17 @@ class LiveOperations:
                 valid_until=expires_at.isoformat() if expires_at else None, requires_revalidation=True,
                 external_offer_id=reference, capacity_scope="quoted_request", provenance={
                     **copy.deepcopy(quote), "checkin_at": request.checkin_at.isoformat(), "checkout_at": request.checkout_at.isoformat(),
-                    "stay_times_source": "operator_confirmed", "stay_times_confirmed": True,
+                    "stay_times_source": "operator_confirmed" if request.stay_times_confirmed else "supplier_policy",
+                    "stay_times_confirmed": request.stay_times_confirmed, "stay_policy_validation": policy_validation,
                     "property_location": location, "search_airport": request.airport_code,
                     "ground_connections_verified": False,
                 }))
         if quotes and not resources:
+            if exclusions:
+                raise DomainError(422, "No hotel quote passed the sourced stay-policy checks. " + " ".join(dict.fromkeys(item["message"] for item in exclusions)),
+                                  {"hotel_exclusions": exclusions, "skipped_stay_policy": len(exclusions), "skipped_incomplete_pricing": skipped})
             raise DomainError(422, "Hotel quotes have unresolved mandatory costs; review the supplier price breakdown before importing a fully budgeted option")
-        return resources
+        return resources, skipped, exclusions
 
     def confirm(self, offer_id: str, request: ExternalConfirmation):
         def apply(world):
