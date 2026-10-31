@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .base import HTTPProvider, ProviderError, secret_value
 from ..models import EventType, canonical_id
+from ..hotel_recovery_profile import hotel_profile_summary
 from ..pricing import APL_SOURCE, matching_cost_summary
 from ..airport_catalog import lookup_airport, match_airports, nearby_airports
 from ..scenario_schema import (
@@ -84,6 +85,18 @@ explicitly identified in the current request; copy their existing IDs. Never
 create, move, count-infer or silently exclude groups. Confirmed bookings are protected.
 Use balanced unless fastest/lowest_cost was requested. modes contains flight
 unless the request explicitly asks for bus/hotel (include requested modes).
+For a complete saved hotel journey, modes MUST contain flight, hotel and bus.
+If one explicitly selected group has hotel_recovery_profile.configured=true,
+a request to recalculate its complete journey reuses that saved hotel workflow.
+An explicitly flight-only search remains flight-only. Requests for hotel recovery
+without a saved configuration still identify the hotel modes so the backend can
+ask for typed setup; never silently downgrade them to a flight-only search.
+The profile summary contains operator inputs, not supplier facts or available
+inventory. Reuse its exact dates; do not infer coordinates, advance a past pickup,
+or copy an allowance from history. Additional requested dates, times, pickup,
+rooms or other hotel-input changes require requires_input_changes=true and typed setup.
+The saved hotel job requires at least 10 job calls, plus this interpretation:
+11 total. Do not raise the default total 8 or an explicit lower limit to fit it.
 Search coverage may be incomplete; a queued job is not a found journey or booking.
 max_total_calls is the explicit maximum number of API/provider calls, INCLUDING
 this interpretation. Copy its EXACT current-request phrase into
@@ -251,11 +264,18 @@ server-generated passenger IDs. Return only the requested strict schema.
 
 def compact_world(world: dict) -> dict:
     """Do not send passenger access tokens, raw observations or full audit history."""
+    groups = []
+    for group in world.get("groups", []):
+        item = {k: v for k, v in group.items() if k not in ("token", "members", "provenance")}
+        summary = hotel_profile_summary(world, group)
+        if summary is not None:
+            item["hotel_recovery_profile"] = summary
+        groups.append(item)
     return {
         key: world.get(key) for key in ("version", "epoch", "sim_time", "budget", "currency", "mode", "airports")
     } | {
         "resources": [{k:v for k,v in resource.items() if k not in ("provenance","external_offer_id")} for resource in world.get("resources",[])],
-        "groups": [{k: v for k, v in group.items() if k not in ("token", "members", "provenance")} for group in world.get("groups", [])],
+        "groups": groups,
         "offers": [{k: o.get(k) for k in ("id", "group_id", "status", "itinerary")} for o in world.get("offers", []) if o.get("status") in ("held", "proposed", "accepted", "confirmed")],
         "incidents": [{k: item.get(k) for k in ("id", "kind", "description", "requested_flight_number", "date_utc", "unavailable_airport_code", "group_ids", "status")} for item in world.get("incidents", [])],
     }

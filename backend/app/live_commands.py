@@ -15,6 +15,8 @@ from pydantic import ValidationError
 from .providers.ai import LiveRecoveryIntent
 from .providers.base import ProviderError
 from .recovery_jobs import RecoveryJobRequest
+from .hotel_recovery import HotelRecoveryInputs, REQUIRED_CALLS, validate_hotel_job
+from .hotel_recovery_profile import HotelRecoveryProfileError, read_hotel_recovery_profile
 from .store import DomainError, Store, utcnow
 
 
@@ -27,8 +29,19 @@ _NUMBERS = {
     "three": 3, "trei": 3, "four": 4, "patru": 4, "five": 5, "cinci": 5,
     "six": 6, "sase": 6, "seven": 7, "sapte": 7, "eight": 8, "opt": 8,
     "nine": 9, "noua": 9, "ten": 10, "zece": 10,
+    "eleven": 11, "unsprezece": 11, "twelve": 12, "doisprezece": 12, "douasprezece": 12,
+    "thirteen": 13, "treisprezece": 13, "fourteen": 14, "paisprezece": 14,
+    "fifteen": 15, "cincisprezece": 15, "sixteen": 16, "saisprezece": 16,
+    "seventeen": 17, "saptesprezece": 17, "eighteen": 18, "optsprezece": 18,
+    "nineteen": 19, "nouasprezece": 19, "twenty": 20, "douazeci": 20,
 }
-_COUNT = r"(\d+|" + "|".join(_NUMBERS) + r")"
+for _unit, _english, _romanian in ((1, "one", "unu"), (2, "two", "doua"), (3, "three", "trei"),
+                                 (4, "four", "patru"), (5, "five", "cinci"), (6, "six", "sase"), (7, "seven", "sapte")):
+    _NUMBERS["twenty " + _english] = 20 + _unit
+    _NUMBERS["twenty-" + _english] = 20 + _unit
+    _NUMBERS["douazeci si " + _romanian] = 20 + _unit
+_NUMBERS.update({"douazeci si un": 21, "douazeci si doi": 22})
+_COUNT = r"(\d+|" + "|".join(re.escape(word) for word in sorted(_NUMBERS, key=len, reverse=True)) + r")"
 _CALL_UNIT = r"\s*(?:de\s+)?(?:(?:api|provider|supplier|external|total)\s+){0,3}(?:calls?|apeluri|apel)\b"
 _CALL_LIMIT = re.compile(r"\b(?:maximum|maxim|max|at most|no more than|cel mult|limit(?:a)?)(?: to| of| de)?\s*" + _COUNT + _CALL_UNIT)
 _TRAILING_LIMIT = re.compile(r"\b" + _COUNT + _CALL_UNIT + r"\s+(?:maximum|maxim|max|in total|total|overall)\b")
@@ -93,23 +106,26 @@ def _read_reference_date(value):
     return None
 
 
-def reference_date(text, identifiers):
+def _reference_dates(text, identifiers):
     """Only dates attached to a case/flight name bind its identity.
 
     A later 'search alternatives for DATE' clause remains supplier instructions,
     not a second incident date. This deliberately bounded parser is not a
     general natural-language calendar or ASR confidence estimator.
     """
-    value, dates = normalized(text), set()
+    value, dates, spans = normalized(text), set(), []
     for identifier in identifiers:
         pattern = _reference_pattern(identifier)
         if pattern is None:
             continue
         for reference in pattern.finditer(value):
-            suffix = re.sub(r"^[\s,():]*" + _DATE_INTRO, "", value[reference.end():], count=1)
+            intro = re.match(r"^[\s,():]*" + _DATE_INTRO, value[reference.end():])
+            start = reference.end() + intro.end()
+            suffix = value[start:]
             found = _read_reference_date(suffix)
             if found:
                 dates.add(found[0])
+                spans.append((start, start + found[1]))
             # Also support 'flight dated DATE REF', without borrowing a date
             # from an unrelated preceding search or passenger deadline clause.
             prefix = re.search(r"\b(?:flight|zbor(?:ul|ului)?|case|caz(?:ul|ului)?)\s+" + _DATE_INTRO + r"([^,;]{1,70})\s*$", value[:reference.start()])
@@ -118,9 +134,41 @@ def reference_date(text, identifiers):
                 found = _read_reference_date(before)
                 if found and not before[found[1]:].strip():
                     dates.add(found[0])
+                    start = prefix.start(1) + len(prefix[1]) - len(prefix[1].lstrip())
+                    spans.append((start, start + found[1]))
     if len(dates) > 1:
         raise ValueError("conflicting case dates")
-    return next(iter(dates), None)
+    return next(iter(dates), None), spans
+
+
+def reference_date(text, identifiers):
+    return _reference_dates(text, identifiers)[0]
+
+
+def hotel_input_time_requested(text, identifiers):
+    """Saved inputs cannot silently replace another requested date or time.
+
+    Exact case dates are identity, not hotel edits. Other temporal instructions
+    require the typed form, even when the model missed requires_input_changes.
+    This is deliberately bounded to saved-profile reuse, not general searches.
+    """
+    value = normalized(text)
+    _, spans = _reference_dates(text, identifiers)
+    for start, end in sorted(spans, reverse=True):
+        value = value[:start] + " " * (end - start) + value[end:]
+    temporal = (
+        r"[0-9]{1,4}\s*[-/.]\s*[0-9]{1,2}",
+        r"[0-9]{1,2}(?:st|nd|rd|th)?\s*" + _MONTH,
+        _MONTH + r"\s*[0-9]{1,2}",
+        r"[0-9]{1,2}:[0-9]{2}",
+        r"\b(?:tomorrow|today|yesterday|tonight|maine|poimaine|azi|astazi|ieri|diseara|weekend|week|saptamana|monday|tuesday|wednesday|thursday|friday|saturday|sunday|luni|marti|miercuri|joi|vineri|sambata|duminica)\b",
+        r"\b(?:at|by|after|before|la|dupa|inainte de|pana la)\s*(?:ora\s*)?" + _COUNT + r"\b",
+        r"\b" + _COUNT + r"\s*(?:minutes?|hours?|days?|nights?|minute|ore|zile|nopti)\b",
+        r"\b(?:check.?in|check.?out|pickup|preluare)\s*(?:at|la)?\s*" + _COUNT + r"\b",
+        r"\b(?:earlier|later|early|late|mai devreme|mai tarziu)\b",
+        r"\b(?:change|move|shift|delay|advance|schimba|schimb|muta|aman|devanseaza|modifica)\b.{0,50}\b(?:date|time|data|ora|check.?in|check.?out|pickup|preluare)\b",
+    )
+    return any(re.search(pattern, value) for pattern in temporal)
 
 
 class LiveCommands:
@@ -243,10 +291,29 @@ class LiveCommands:
                 return self._reply(request, world, "Numește explicit grupurile existente legate de acest caz; nu am selectat un subset presupus. Nicio căutare pornită; interpretarea a folosit 1 apel.")
         if not groups or len(groups) > 24 or set(groups) & confirmed:
             return self._reply(request, world, "Selectează între 1 și 24 de grupuri legate de caz, fără rezervări confirmate. Nu am pornit căutarea și nu am înlocuit rezervări. Interpretarea a folosit 1 apel.")
+        hotel_inputs = None
+        hotel_requested = "hotel" in intent.modes or bool(re.search(
+            r"\b(?:hotel(?:ul|ului|uri)?|cazare|cazarea|accommodation)\b", normalized(request.text)))
+        if hotel_requested:
+            if len(groups) != 1 or set(intent.modes) != {"flight", "hotel", "bus"}:
+                return self._reply(request, world, "Recuperarea cu hotel salvat necesită un singur grup explicit și întregul traseu: hotel, ambele transferuri și zbor. Nu am extins sau redus cererea. Interpretarea a folosit 1 apel.", recovery_total_call_limit=total_limit)
+            if hotel_input_time_requested(request.text, (case.id, case.requested_flight_number)):
+                return self._reply(request, world, "Cererea conține date sau ore suplimentare față de identitatea cazului. Revizuiește-le în formularul hotelului; nu le-am ignorat și nu am schimbat configurația salvată. Nicio căutare pornită; interpretarea a folosit 1 apel.", recovery_total_call_limit=total_limit)
+            try:
+                hotel_inputs = HotelRecoveryInputs.model_validate(read_hotel_recovery_profile(world, linked[groups[0]]))
+            except (HotelRecoveryProfileError, ValidationError):
+                return self._reply(request, world, "Configurația hotelului lipsește, este invalidă sau nu mai corespunde acestui grup și traseu. Completează formularul și finalizează prima planificare pentru a salva datele. Nu am presupus coordonate sau date și nu am pornit căutarea. Interpretarea a folosit 1 apel.", recovery_total_call_limit=total_limit)
+            if allowance < REQUIRED_CALLS:
+                return self._reply(request, world, f"Traseul cu hotel necesită minimum {REQUIRED_CALLS + 1} apeluri în total: 1 interpretare și {REQUIRED_CALLS} pentru job. Limita cerută este {total_limit}; interpretarea a folosit 1 și rămân {max(0, allowance)}. Nu am pornit căutarea și nu am mărit limita.", recovery_total_call_limit=total_limit)
         job_request = RecoveryJobRequest(expected_version=world.version,
             idempotency_key="live-command-" + Store.fingerprint({"key": request.idempotency_key, "scenario": world.scenario_id}),
             group_ids=groups, objective=intent.objective, modes=intent.modes,
-            max_provider_calls=allowance, instructions=request.text)
+            max_provider_calls=allowance, instructions=request.text, hotel_recovery=hotel_inputs)
+        if hotel_inputs is not None:
+            try:
+                validate_hotel_job(world, job_request)
+            except DomainError as exc:
+                return self._reply(request, world, "Configurația salvată nu mai este validă pentru condițiile actuale. Revizuiește formularul înainte de o nouă căutare; nu am avansat preluarea și nu am înlocuit limitele actuale. " + exc.message + " Interpretarea a folosit 1 apel.", recovery_total_call_limit=total_limit)
 
         def receipt(conn, receipt_world, result):
             job = result["job"]
@@ -254,6 +321,10 @@ class LiveCommands:
                 f"{len(groups)} grupuri, job {job['id']}. Limita totală: {total_limit} apeluri — 1 interpretare și cel mult {allowance} apeluri ale jobului. "
                 "Urmărește progresul în panoul cazului; această confirmare nu dovedește găsirea unui itinerar sau efectuarea unei rezervări.")
             skipped = sorted(set(linked) & confirmed)
+            if hotel_inputs is not None:
+                explanation += (f" Am reutilizat exact configurația hotelului: intrare {hotel_inputs.checkin_at.isoformat()}, "
+                    f"ieșire {hotel_inputs.checkout_at.isoformat()}, preluare {hotel_inputs.pickup_at.isoformat()}. "
+                    "Sunt date declarate, nu rezervări sau tarife salvate.")
             if skipped:
                 explanation += f" {len(skipped)} grupuri cu rezervări confirmate au rămas în afara căutării."
             response = {"world": self.store._with_observations(conn, receipt_world).model_dump(mode="json"),

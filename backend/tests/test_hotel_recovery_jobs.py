@@ -9,6 +9,7 @@ import pytest
 from app.airport_catalog import lookup_airport
 from app.hotel_policy import source_stay_policy
 from app.hotel_recovery import HotelRecoveryInputs
+from app.hotel_recovery_profile import PROFILE_KEY, build_hotel_recovery_profile, read_hotel_recovery_profile
 from app.models import Airport, Itinerary, Leg, Offer, Reservation, Resource
 from app.providers.base import ProviderError
 from app.providers.ecb_rates import EcbRates
@@ -163,6 +164,57 @@ async def test_full_package_counts_each_source_and_atomically_commits_only_chose
     assert len(rows)==2
     assert {item.provenance["quote_sequence"] for item in world.resources if item.source=="Airport Pickups London"}=={row[0] for row in rows}
     assert jobs.start("CASE",request)["replayed"] is True and fx.calls==1
+
+
+@pytest.mark.asyncio
+async def test_success_saves_stable_profile_before_both_transfer_fingerprints(package):
+    from app.airport_arrival import valid_airport_arrival
+    from app.initial_position import initial_position_fingerprint, valid_initial_position
+    store,jobs,ai,travel,sources,fx,inputs=package
+    assert PROFILE_KEY not in store.read().groups[0].provenance
+    jobs.start("CASE",package_request(store,inputs))
+    result=await run_next(jobs)
+    assert result["status"]=="completed",result
+    world=store.read()
+    group=world.groups[0]
+    expected=build_hotel_recovery_profile(world,group,HotelRecoveryInputs.model_validate(inputs))
+    assert group.provenance[PROFILE_KEY]==expected
+    assert read_hotel_recovery_profile(world,group)==HotelRecoveryInputs.model_validate(inputs).model_dump(mode="json")
+    projected_group=next(item for item in ai.decisions[0][0]["groups"] if item["id"]==group.id)
+    assert projected_group["provenance"][PROFILE_KEY]==expected
+    assert set(expected)=={"schema_version","source","scope_fingerprint","inputs"}
+    outbound=next(item for item in world.resources if item.initial_position_assumption is not None)
+    inbound=next(item for item in world.resources if item.airport_arrival_assumption is not None)
+    fingerprint=initial_position_fingerprint(world,group)
+    assert outbound.initial_position_assumption.group_fingerprint==fingerprint
+    assert inbound.airport_arrival_assumption.group_fingerprint==fingerprint
+    assert valid_initial_position(world,outbound,group) and valid_airport_arrival(world,inbound,group)
+    missing_profile=group.model_copy(deep=True)
+    missing_profile.provenance.pop(PROFILE_KEY)
+    assert not valid_initial_position(world,outbound,missing_profile)
+    assert not valid_airport_arrival(world,inbound,missing_profile)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome",["blocked","unknown","rollback"])
+async def test_failed_package_preserves_previous_profile_and_foreign_state(package,monkeypatch,outcome):
+    store,jobs,ai,travel,sources,fx,inputs=package
+    previous=HotelRecoveryInputs.model_validate(inputs|{"minimum_rest_minutes":240})
+    def previous_profiles(world):
+        for group in world.groups:
+            group.provenance[PROFILE_KEY]=build_hotel_recovery_profile(world,group,previous)
+    store.mutate("saved-profile-fixture",{},store.read().version,previous_profiles)
+    if outcome=="blocked": sources.incomplete=True
+    elif outcome=="unknown": sources.return_error=True
+    else:
+        def reject(*args): raise DomainError(409,"Fixture atomic receipt rollback")
+        monkeypatch.setattr(jobs.ledger,"complete_in_transaction",reject)
+    before=store.read().model_dump(mode="json")
+    jobs.start("CASE",package_request(store,inputs))
+    result=await run_next(jobs)
+    assert result["status"] in ("blocked","unknown_outcome","needs_review"),result
+    assert store.read().model_dump(mode="json")==before
+    assert read_hotel_recovery_profile(store.read(),store.read().groups[0])["minimum_rest_minutes"]==240
 
 
 @pytest.mark.parametrize("change",[{"max_provider_calls":9},{"group_ids":["G1","G2"]},{"modes":["flight","hotel"]}])
@@ -361,6 +413,7 @@ async def test_unrelated_confirmed_booking_and_reservation_remain_exact(package)
     def foreign(world):
         group=world.groups[1]
         group.status="confirmed"
+        group.provenance[PROFILE_KEY]=build_hotel_recovery_profile(world,group,HotelRecoveryInputs.model_validate(inputs))
         resource=Resource(id="FOREIGN",kind="flight",name="External booked flight",origin=group.origin,destination=group.destination,
             departure=group.ready_at+60,arrival=group.ready_at+120,capacity=1,cost_per_person=100,source="nuitee",booking_status="confirmed",eligible_group_ids=[group.id],quote_total_cost=100)
         world.resources.append(resource)

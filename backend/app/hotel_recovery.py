@@ -12,6 +12,7 @@ from pydantic import Field, field_validator, model_validator
 
 from .airport_catalog import lookup_airport
 from .hotel_location import coordinate_timezone, property_location, property_zone
+from .hotel_recovery_profile import PROFILE_KEY, build_hotel_recovery_profile
 from .live_service import HotelQuoteImport, LiveOperations, _hotel_budget_total
 from .live_travel import append_travel_quote, retire_travel_quotes
 from .models import Model, Strategy
@@ -216,6 +217,8 @@ async def run_hotel_recovery(jobs, job, owner, world, started):
     group = next(item for item in projected.groups if item.id==group_id)
     requirement = inputs.requirement().model_dump(mode="json")
     group.provenance[REQUIREMENT_KEY] = requirement
+    profile = build_hotel_recovery_profile(projected,group,inputs)
+    group.provenance[PROFILE_KEY] = copy.deepcopy(profile)
     epoch = aware_timestamp(world.epoch)
     earliest = inputs.return_pickup+timedelta(minutes=inputs.airport_processing_minutes)
     query = TravelSearchRequest(kind="flight",origin_code=inputs.onward_airport_code,destination_code=group.destination,
@@ -397,6 +400,7 @@ async def run_hotel_recovery(jobs, job, owner, world, started):
             raise DomainError(409,"Hotel recovery scope changed before commit")
         current_group=next(item for item in current.groups if item.id==group_id)
         current_group.provenance[REQUIREMENT_KEY]=copy.deepcopy(requirement)
+        current_group.provenance[PROFILE_KEY]=copy.deepcopy(profile)
         retire_travel_quotes(current,group_id,superseded)
         for quote,identity in imported:
             if identity in chosen: append_travel_quote(current,quote,option["query"],current_group,"flight")
