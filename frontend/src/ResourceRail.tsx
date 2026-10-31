@@ -21,7 +21,7 @@ import RealDataDialog from './RealDataDialog';
 import RecoveryCases from './RecoveryCases';
 import { isAirportNode, locationKindLabel } from './locationNodes';
 import { privateTransfer } from './priceEvidence';
-import { locationName, resourceTitle } from './resourceLabels';
+import { flightQuotePresentation, locationName, resourceTitle } from './resourceLabels';
 import {
   liveResourceStatus,
   recordedBooking,
@@ -58,13 +58,20 @@ export default function ResourceRail({
   const now = useFreshnessClock(world.mode === 'live');
   const closeRealData = useCallback(() => setShowRealData(false), []);
   const search = useDeferredValue(query.toLowerCase());
-  const resources = world.resources.filter(
-    (item) =>
-      item.kind === tab &&
-      `${item.id} ${item.name} ${item.origin} ${item.destination} ${locationName(world, item.origin)} ${locationName(world, item.destination)}`
+  const resources = world.resources
+    .filter((item) => item.kind === tab)
+    .map((resource) => ({
+      resource,
+      flightLabel:
+        world.mode === 'live' && resource.kind === 'flight' && resource.source !== 'synthetic'
+          ? flightQuotePresentation(resource, world.epoch)
+          : null,
+    }))
+    .filter(({ resource: item, flightLabel }) =>
+      `${item.id} ${item.name} ${flightLabel?.identities.join(' ') ?? ''} ${item.origin} ${item.destination} ${locationName(world, item.origin)} ${locationName(world, item.destination)}`
         .toLowerCase()
         .includes(search),
-  );
+    );
   const groups = world.groups.filter((item) =>
     `${item.id} ${item.name} ${item.destination}`.toLowerCase().includes(search),
   );
@@ -269,7 +276,7 @@ export default function ResourceRail({
                 )}
               </button>
             ))
-          : resources.map((resource) => {
+          : resources.map(({ resource, flightLabel }) => {
               const count = availableUnits(world, resource.id);
               const freshness = resourceFreshness(resource, now);
               const booked = world.mode === 'live' && recordedBooking(world, resource);
@@ -288,7 +295,7 @@ export default function ResourceRail({
                   className={`resource-row ${privateTransfer(resource) ? 'private-transfer-row' : ''} ${selectedId === resource.id ? 'selected' : ''}`}
                   title={
                     liveStatus
-                      ? `${resourceTitle(resource)} · ${resource.id}. ${liveStatus.label}. ${freshness.detail}${booked ? ' A booking confirmation is recorded separately.' : ''}`
+                      ? `${flightLabel ? `${flightLabel.title} · ${flightLabel.detail} · ${flightLabel.identities.join(' · ')}` : resourceTitle(resource)} · ${resource.id}. ${liveStatus.label}. ${freshness.detail}${booked ? ' A booking confirmation is recorded separately.' : ''}`
                       : undefined
                   }
                 >
@@ -305,7 +312,8 @@ export default function ResourceRail({
                     }
                   />
                   <span className="resource-name">
-                    <strong>{resourceTitle(resource)}</strong>
+                    <strong>{flightLabel?.title ?? resourceTitle(resource)}</strong>
+                    {flightLabel && <small>{flightLabel.detail}</small>}
                     {privateTransfer(resource) && <small>Private transfer</small>}
                     <small>
                       {locationName(world, resource.origin)} <span aria-hidden="true">→</span>{' '}

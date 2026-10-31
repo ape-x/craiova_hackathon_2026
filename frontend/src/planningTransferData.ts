@@ -2,6 +2,7 @@ import type { TransferQuoteResult } from './transferQuoteData';
 import type { AirportArrivalAssumption, World } from './types';
 import { utcInputToIso } from './liveData';
 import { freshnessTime, resourceFreshness, sourceInstant } from './resourceFreshness';
+import { flightQuotePresentation } from './resourceLabels';
 
 export interface PlanningTransferForm {
   direction?: 'initial_airport_to_hotel' | 'hotel_to_airport';
@@ -151,6 +152,7 @@ export function returnFlightChoices(world: World, groupId: string, now: number) 
                   : null;
       return {
         resource,
+        flightLabel: flightQuotePresentation(resource, world.epoch),
         eligible: reason === null,
         reason,
         departureLabel: departure === null ? 'Departure unavailable' : freshnessTime(departure),

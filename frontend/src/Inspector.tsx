@@ -134,6 +134,11 @@ export function ItineraryView({
               {transfer && (
                 <SupplierMeetingInstructions
                   value={resourceMeetingEvidence(resource?.provenance)}
+                  context={
+                    airportArrivalEvidence(leg.airport_arrival_assumption)
+                      ? 'hotel_to_airport'
+                      : undefined
+                  }
                 />
               )}
               <span>
@@ -416,7 +421,10 @@ function ResourceFacts({
       )}
       <AirportArrivalDetails assumption={resource.airport_arrival_assumption} />
       {transfer && (
-        <SupplierMeetingInstructions value={resourceMeetingEvidence(resource.provenance)} />
+        <SupplierMeetingInstructions
+          value={resourceMeetingEvidence(resource.provenance)}
+          context={arrival ? 'hotel_to_airport' : undefined}
+        />
       )}
       <div className="fact-list">
         <span>

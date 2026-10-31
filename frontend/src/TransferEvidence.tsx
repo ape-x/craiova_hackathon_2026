@@ -27,18 +27,26 @@ export function AirportArrivalDetails({ assumption }: { assumption: unknown }) {
   );
 }
 
-export function SupplierMeetingInstructions({ value }: { value: unknown }) {
+export function SupplierMeetingInstructions({
+  value,
+  context,
+}: {
+  value: unknown;
+  context?: 'hotel_to_airport';
+}) {
   const meeting = supplierMeetingEvidence(value);
   if (!meeting) return null;
   return (
-    <section className="transfer-evidence" aria-label="Supplier meeting instructions">
-      <strong>APL supplier meeting instructions</strong>
+    <section className="transfer-evidence" aria-label="APL meeting guidance">
+      <strong>APL meeting guidance</strong>
       {meeting.name && <span>{meeting.name}</span>}
       {meeting.instructions && (
         <span className="supplier-instructions-text">{meeting.instructions}</span>
       )}
       <span>
-        Supplier pickup instructions; these do not establish the flight’s departure terminal.
+        {context === 'hotel_to_airport'
+          ? 'Guidance returned by APL for this hotel-to-airport quote. Airport meeting guidance does not verify hotel pickup instructions or the flight’s departure terminal.'
+          : 'Source guidance only. Its applicability to the requested pickup or flight departure terminal has not been verified.'}
       </span>
     </section>
   );

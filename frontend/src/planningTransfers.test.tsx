@@ -352,7 +352,8 @@ describe('scoped private-transfer planning UI', () => {
     expect(html).toContain('Operator processing allowance: 120 minutes');
     expect(html).toContain('Departure terminal unknown');
     expect(html).toContain('not airline guidance or guaranteed boarding');
-    expect(html).toContain('APL supplier meeting instructions');
+    expect(html).toContain('APL meeting guidance');
+    expect(html).toContain('does not verify hotel pickup instructions');
     expect(html).toContain('Hotel reception');
     expect(html).toContain('Ask for the driver');
     expect(html).toContain('£76.00');
@@ -369,6 +370,29 @@ describe('scoped private-transfer planning UI', () => {
         blockers: [{ code: 'source_unavailable', message: 'Source property unavailable' }],
       }),
     ).toContain('Source property unavailable');
+  });
+
+  it('preserves generic airport guidance on a hotel return without presenting it as verified hotel pickup instructions', () => {
+    const html = results({
+      ...returnQuote,
+      transfer: {
+        ...returnQuote.transfer!,
+        meeting_point: {
+          name: 'Heathrow T5 ARRIVALS',
+          instructions: 'Meet by the arrivals meeting area.',
+        },
+      },
+    });
+    expect(html).toContain('APL meeting guidance');
+    expect(html).toContain('Heathrow T5 ARRIVALS');
+    expect(html).toContain('Meet by the arrivals meeting area.');
+    expect(html).toContain('Guidance returned by APL for this hotel-to-airport quote');
+    expect(html).toContain(
+      'does not verify hotel pickup instructions or the flight’s departure terminal',
+    );
+    expect(html).not.toContain('Supplier pickup instructions;');
+    expect(html).toContain('Add planning leg');
+    expect(html).not.toContain('disabled=""');
   });
 
   it('keeps a return retry bound to the same exact flight and declared drop-off', async () => {

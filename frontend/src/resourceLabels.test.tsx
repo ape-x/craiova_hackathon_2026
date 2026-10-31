@@ -252,7 +252,8 @@ describe('imported transfer selection in the live geographic workspace', () => {
     expect(html).toContain('Operator processing allowance: 120 minutes');
     expect(html).toContain('Departure terminal unknown');
     expect(html).toContain('not airline guidance or guaranteed boarding');
-    expect(html).toContain('APL supplier meeting instructions');
+    expect(html).toContain('APL meeting guidance');
+    expect(html).toContain('does not verify hotel pickup instructions');
     expect(html).toContain('Hotel reception');
     expect(html).toContain('14:00:00 UTC');
     expect(html).not.toContain('Initial meeting point:');
@@ -263,6 +264,9 @@ describe('imported transfer selection in the live geographic workspace', () => {
     );
     expect(safe).not.toContain('<script>');
     expect(safe).toContain('&lt;script&gt;');
+    expect(safe).toContain(
+      'Its applicability to the requested pickup or flight departure terminal has not been verified',
+    );
     expect(
       renderToStaticMarkup(
         <SupplierMeetingInstructions value={{ name: null, instructions: 42 }} />,

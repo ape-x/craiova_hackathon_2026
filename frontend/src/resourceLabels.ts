@@ -1,5 +1,6 @@
 import type { Resource, World } from './types';
 import { privateTransfer } from './priceEvidence';
+import { flightSegments } from './journeyPresentation';
 import {
   freshnessTime,
   recordedBooking,
@@ -22,6 +23,37 @@ export function resourceTitle(resource: Resource): string {
   if (!privateTransfer(resource)) return resource.id;
   const name = cleanLabel(resource.name);
   return name && name !== resource.id ? name : 'APL private transfer';
+}
+
+/** Labels only source segments that reconcile with the authoritative resource schedule. */
+export function flightQuotePresentation(resource: Resource, epoch: string) {
+  const segments = flightSegments(resource, epoch);
+  const identities = segments.map((segment) => {
+    const carrier = cleanLabel(segment.carrier);
+    const number = cleanLabel(segment.flightNumber);
+    return carrier && number
+      ? `${carrier} ${number}`
+      : (carrier ?? (number ? `Flight ${number}` : null));
+  });
+  const reference = resource.id.slice(-8);
+  const connectionLabel =
+    segments.length > 1
+      ? `${segments.length - 1} connection${segments.length > 2 ? 's' : ''}`
+      : segments.length === 1
+        ? '1 flight segment'
+        : null;
+  return {
+    title: identities[0] ?? 'Flight quote',
+    detail: [
+      !identities[0] ? 'Flight identity unavailable' : null,
+      connectionLabel,
+      `quote ${reference}`,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    reference,
+    identities: identities.filter((identity): identity is string => identity !== null),
+  };
 }
 
 export function locationName(world: Pick<World, 'airports'>, id: string): string {

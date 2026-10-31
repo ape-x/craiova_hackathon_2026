@@ -80,7 +80,10 @@ export function PlanningTransferResults({
           <p>Quote record: {result.onward_flight.resource_id}</p>
         </details>
       )}
-      <SupplierMeetingInstructions value={result.transfer?.meeting_point} />
+      <SupplierMeetingInstructions
+        value={result.transfer?.meeting_point}
+        context={returning ? 'hotel_to_airport' : undefined}
+      />
       {result.hotel && (
         <p>
           {result.hotel.address}
@@ -421,10 +424,10 @@ export default function PlanningTransfers({
                     onChange={(event) => change('onward_resource_id', event.target.value)}
                   >
                     <option value="">Choose a sourced quote for this group</option>
-                    {flights.map(({ resource, reason, eligible, departureLabel }) => (
+                    {flights.map(({ resource, flightLabel, reason, eligible, departureLabel }) => (
                       <option key={resource.id} value={resource.id} disabled={!eligible}>
-                        {resource.name} · {resource.origin} → {resource.destination} ·{' '}
-                        {departureLabel} · ref {resource.id.slice(-8)}
+                        {flightLabel.title} · {flightLabel.detail} · {resource.origin} →{' '}
+                        {resource.destination} · {departureLabel}
                         {reason ? ` · ${reason}` : ''}
                       </option>
                     ))}
