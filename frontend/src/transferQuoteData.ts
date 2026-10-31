@@ -23,12 +23,38 @@ export interface TransferStatus {
   booking_supported: false;
 }
 
+export interface TransferFxReference {
+  source: 'European Central Bank';
+  source_url: string;
+  base_currency: 'EUR';
+  rate_date: string;
+  retrieved_at: string;
+  as_of: string;
+  age_calendar_days: number;
+  age_timezone: 'Europe/Berlin';
+  max_age_days: number;
+  source_units_per_eur: string | null;
+}
+
+export interface TransferFx {
+  state: 'ready' | 'unavailable' | 'stale_rate' | 'missing_rate' | 'not_requested';
+  source: 'European Central Bank';
+  source_url: string;
+  reference: TransferFxReference | null;
+  cache: 'fresh' | 'cached' | null;
+  settlement_guaranteed: false;
+  revalidation_required: true;
+  message: string;
+  code?: string;
+}
+
 export interface TransferQuoteResult {
   provider: string;
   source_url: string;
   received_at: string;
   source_quoted_at: string | null;
   expires_at: string | null;
+  fx?: TransferFx;
   request: TransferQuoteRequest & {
     transfer_date: string;
     transfer_time: string;
@@ -46,6 +72,12 @@ export interface TransferQuoteResult {
     id: string;
     car_type: string;
     price: { amount: string; currency: 'GBP' };
+    eur_reference_estimate?: {
+      amount: string;
+      currency: 'EUR';
+      kind: 'ecb_reference_estimate';
+      rounding: 'half_even_to_cent';
+    } | null;
     price_scope: 'per_vehicle';
     max_passengers: number;
     max_suitcases: number;
@@ -140,6 +172,69 @@ export function transferPrice(amount: string): string {
   if (!/^\d+(\.\d+)?$/.test(amount)) return 'Price unavailable';
   const [whole, fraction = ''] = amount.split('.');
   return `£${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction.padEnd(2, '0')}`;
+}
+
+export function transferFxReference(fx: TransferFx | undefined): TransferFxReference | null {
+  const reference = fx?.reference;
+  if (
+    !reference ||
+    fx?.source !== 'European Central Bank' ||
+    reference.source !== fx.source ||
+    reference.base_currency !== 'EUR' ||
+    typeof reference.source_url !== 'string' ||
+    !reference.source_url.startsWith('https://www.ecb.europa.eu/') ||
+    reference.source_url !== fx.source_url ||
+    typeof reference.rate_date !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(reference.rate_date)
+  )
+    return null;
+  const date = Date.parse(`${reference.rate_date}T00:00:00Z`);
+  if (
+    !Number.isFinite(date) ||
+    new Date(date).toISOString().slice(0, 10) !== reference.rate_date ||
+    !Number.isInteger(reference.age_calendar_days) ||
+    reference.age_calendar_days < 0 ||
+    !Number.isInteger(reference.max_age_days) ||
+    reference.max_age_days < 0 ||
+    reference.age_timezone !== 'Europe/Berlin'
+  )
+    return null;
+  return reference;
+}
+
+export function transferFxReady(fx: TransferFx | undefined): boolean {
+  const reference = transferFxReference(fx);
+  const rate = reference?.source_units_per_eur;
+  return (
+    fx?.state === 'ready' &&
+    fx.settlement_guaranteed === false &&
+    fx.revalidation_required === true &&
+    reference !== null &&
+    reference.age_calendar_days <= reference.max_age_days &&
+    typeof rate === 'string' &&
+    /^\d+(?:\.\d+)?$/.test(rate) &&
+    /[1-9]/.test(rate)
+  );
+}
+
+// The server supplies the Decimal estimate. Never recalculate or round money in the browser.
+export function transferEuroEstimate(
+  option: TransferQuoteResult['options'][number],
+  fx: TransferFx | undefined,
+): string | null {
+  const estimate = option.eur_reference_estimate;
+  if (
+    !transferFxReady(fx) ||
+    !estimate ||
+    estimate.currency !== 'EUR' ||
+    estimate.kind !== 'ecb_reference_estimate' ||
+    estimate.rounding !== 'half_even_to_cent' ||
+    typeof estimate.amount !== 'string' ||
+    !/^\d+\.\d{2}$/.test(estimate.amount)
+  )
+    return null;
+  const [whole, fraction] = estimate.amount.split('.');
+  return `€${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction}`;
 }
 
 export function londonTimestamp(value: string): string {

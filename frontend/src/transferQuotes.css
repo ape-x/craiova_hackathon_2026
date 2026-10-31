@@ -107,6 +107,47 @@
 .transfer-vehicle p {
   margin: 9px 0 0;
 }
+.transfer-fx {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.transfer-fx > strong {
+  color: var(--text);
+}
+.transfer-fx-unavailable > strong {
+  color: var(--amber);
+}
+.transfer-fx p {
+  margin: 7px 0 0;
+}
+.transfer-fx-reference {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 14px;
+  margin-top: 5px;
+}
+.transfer-fx-reference a {
+  color: var(--cyan);
+  text-decoration: underline;
+}
+.transfer-euro-estimate {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.transfer-euro-estimate span {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+}
 @media (max-width: 580px) {
   .transfer-fields,
   .transfer-vehicle-grid {

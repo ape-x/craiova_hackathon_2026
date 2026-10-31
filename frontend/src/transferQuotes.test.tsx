@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import TransferQuotes, { TransferQuoteResults } from './TransferQuotes';
-import { londonPickup, transferPrice, transferRequest } from './transferQuoteData';
-import type { TransferQuoteForm, TransferQuoteResult } from './transferQuoteData';
+import {
+  londonPickup,
+  transferEuroEstimate,
+  transferPrice,
+  transferRequest,
+} from './transferQuoteData';
+import type { TransferFx, TransferQuoteForm, TransferQuoteResult } from './transferQuoteData';
 
 const form: TransferQuoteForm = {
   origin: 'Heathrow Terminal 5',
@@ -54,6 +59,38 @@ function result(): TransferQuoteResult {
   };
 }
 
+function fxResult(): TransferQuoteResult {
+  const quote = result();
+  quote.fx = {
+    state: 'ready',
+    source: 'European Central Bank',
+    source_url: 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml',
+    reference: {
+      source: 'European Central Bank',
+      source_url: 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml',
+      base_currency: 'EUR',
+      rate_date: '2030-10-31',
+      retrieved_at: '2030-11-01T10:14:00Z',
+      as_of: '2030-11-01T10:15:00Z',
+      age_calendar_days: 1,
+      age_timezone: 'Europe/Berlin',
+      max_age_days: 3,
+      source_units_per_eur: '0.83380',
+    },
+    cache: 'cached',
+    settlement_guaranteed: false,
+    revalidation_required: true,
+    message: 'ECB reference estimate; not a supplier EUR price.',
+  };
+  quote.options[0].eur_reference_estimate = {
+    amount: '91.15',
+    currency: 'EUR',
+    kind: 'ecb_reference_estimate',
+    rounding: 'half_even_to_cent',
+  };
+  return quote;
+}
+
 describe('London pickup and explicit query boundaries', () => {
   it('converts summer and winter London time without relying on browser timezone', () => {
     expect(londonPickup('2030-07-02', '14:00')).toBe('2030-07-02T13:00:00.000Z');
@@ -90,7 +127,7 @@ describe('London pickup and explicit query boundaries', () => {
 });
 
 describe('quote presentation', () => {
-  it('preserves exact GBP values without per-passenger multiplication or EUR conversion', () => {
+  it('preserves exact GBP values and does not invent EUR when an older response omits FX', () => {
     expect(transferPrice('76')).toBe('£76.00');
     expect(transferPrice('76.1250')).toBe('£76.1250');
     expect(transferPrice('1234.50')).toBe('£1,234.50');
@@ -99,6 +136,86 @@ describe('quote presentation', () => {
     expect(html).toContain('GBP per vehicle');
     expect(html).not.toContain('£152');
     expect(html).not.toContain('€');
+    expect(html).toContain('EUR estimate unavailable');
+  });
+
+  it('keeps exact GBP prominent and labels the supplied EUR amount with source, rate date and limits', () => {
+    const html = renderToStaticMarkup(<TransferQuoteResults result={fxResult()} />);
+    expect(html).toContain('<strong>£76.00</strong>');
+    expect(html).toContain('Approximately €91.15');
+    expect(html.indexOf('£76.00')).toBeLessThan(html.indexOf('€91.15'));
+    expect(html).toContain('EUR reference estimate per vehicle');
+    expect(html).toContain('European Central Bank');
+    expect(html).toContain('Rate date: 2030-10-31');
+    expect(html).toContain('1 EUR = 0.83380 GBP');
+    expect(html).toContain('at most 3 calendar days');
+    expect(html).toContain('Europe/Berlin');
+    expect(html).toContain('cached reference');
+    expect(html).toContain('not an APL EUR price');
+    expect(html).toContain('Revalidate before booking');
+    expect(html).toContain('EUR settlement is not guaranteed');
+    expect(html).toContain('are not added to an itinerary or the operation’s EUR budget');
+  });
+
+  it('preserves the server Decimal estimate without binary-float conversion or browser recalculation', () => {
+    const quote = fxResult();
+    quote.options[0].eur_reference_estimate!.amount = '12345678901234567890.12';
+    expect(transferEuroEstimate(quote.options[0], quote.fx)).toBe('€12,345,678,901,234,567,890.12');
+    expect(transferPrice('76.1250')).toBe('£76.1250');
+  });
+
+  it('preserves GBP and hides any EUR amount for unavailable, stale, missing or unrequested rates', () => {
+    const states: [TransferFx['state'], string][] = [
+      ['unavailable', 'EUR estimate unavailable'],
+      ['stale_rate', 'ECB rate is stale'],
+      ['missing_rate', 'GBP reference rate unavailable'],
+      ['not_requested', 'EUR estimate not requested'],
+    ];
+    for (const [state, label] of states) {
+      const quote = fxResult();
+      quote.fx!.state = state;
+      quote.fx!.message = 'No usable GBP reference for this response.';
+      if (state === 'unavailable' || state === 'not_requested') quote.fx!.reference = null;
+      if (state === 'missing_rate') quote.fx!.reference!.source_units_per_eur = null;
+      const html = renderToStaticMarkup(<TransferQuoteResults result={quote} />);
+      expect(html).toContain(label);
+      expect(html).toContain('£76.00');
+      expect(html).toContain('GBP source prices remain unchanged');
+      expect(html).not.toContain('€');
+    }
+  });
+
+  it('does not show a conversion from malformed or inconsistent ready-reference metadata', () => {
+    const reference = fxResult().fx!.reference!;
+    for (const invalid of [
+      null,
+      { ...reference, source_units_per_eur: '0' },
+      { ...reference, source_units_per_eur: 'NaN' },
+      { ...reference, rate_date: '2030-02-30' },
+      { ...reference, age_calendar_days: 4 },
+      { ...reference, source_url: 'https://unrelated.example/rate' },
+    ]) {
+      const quote = fxResult();
+      quote.fx!.reference = invalid;
+      const html = renderToStaticMarkup(<TransferQuoteResults result={quote} />);
+      expect(html).toContain('£76.00');
+      expect(html).toContain('reference is incomplete or inconsistent');
+      expect(html).not.toContain('€');
+    }
+  });
+
+  it('leaves a missing or malformed per-option estimate unavailable instead of substituting zero', () => {
+    for (const amount of ['', 'NaN', '-1.00', '91.155', '91']) {
+      const quote = fxResult();
+      quote.options[0].eur_reference_estimate!.amount = amount;
+      const html = renderToStaticMarkup(<TransferQuoteResults result={quote} />);
+      expect(html).toContain('EUR reference estimate unavailable');
+      expect(html).toContain('£76.00');
+      expect(html).not.toContain('€');
+    }
+    const quote = fxResult();
+    quote.options[0].eur_reference_estimate = null;
+    expect(transferEuroEstimate(quote.options[0], quote.fx)).toBeNull();
   });
 
   it('clearly separates capacity from availability and keeps expiry and journey timing unknown', () => {

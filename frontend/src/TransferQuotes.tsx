@@ -3,11 +3,30 @@ import type { FormEvent } from 'react';
 import { CarFront, Loader2, Search } from 'lucide-react';
 import { request, TransportError } from './api';
 import { Tag } from './ui';
-import { londonTimestamp, transferPrice, transferRequest } from './transferQuoteData';
+import {
+  londonTimestamp,
+  transferEuroEstimate,
+  transferFxReady,
+  transferFxReference,
+  transferPrice,
+  transferRequest,
+} from './transferQuoteData';
 import type { TransferQuoteForm, TransferQuoteResult, TransferStatus } from './transferQuoteData';
 import './transferQuotes.css';
 
 export function TransferQuoteResults({ result }: { result: TransferQuoteResult }) {
+  const reference = transferFxReference(result.fx);
+  const fxReady = transferFxReady(result.fx);
+  const fxState = result.fx?.state;
+  const fxLabel = fxReady
+    ? 'ECB reference estimate'
+    : fxState === 'stale_rate'
+      ? 'ECB rate is stale'
+      : fxState === 'missing_rate'
+        ? 'GBP reference rate unavailable'
+        : fxState === 'not_requested'
+          ? 'EUR estimate not requested'
+          : 'EUR estimate unavailable';
   return (
     <div className="transfer-results">
       <div className="transfer-receipt">
@@ -37,35 +56,83 @@ export function TransferQuoteResults({ result }: { result: TransferQuoteResult }
           {result.message}
         </p>
       )}
+      <section
+        className={`transfer-fx ${fxReady ? '' : 'transfer-fx-unavailable'}`}
+        aria-label="Currency reference"
+        role="status"
+      >
+        <strong>{fxLabel}</strong>
+        {reference && (
+          <div className="transfer-fx-reference">
+            <a href={reference.source_url} target="_blank" rel="noreferrer">
+              European Central Bank
+            </a>
+            <span>Rate date: {reference.rate_date}</span>
+            {fxReady && <span>1 EUR = {reference.source_units_per_eur} GBP</span>}
+            <span>
+              App freshness policy: at most {reference.max_age_days} calendar days ·{' '}
+              {reference.age_timezone}
+            </span>
+            <span>
+              Rate assessment: {londonTimestamp(reference.as_of)}
+              {result.fx?.cache === 'cached' ? ' · cached reference' : ''}
+            </span>
+          </div>
+        )}
+        {!fxReady && (
+          <p>
+            {fxState === 'ready'
+              ? 'The returned reference is incomplete or inconsistent.'
+              : result.fx?.message || 'No usable exchange-rate reference was returned.'}{' '}
+            GBP source prices remain unchanged; no EUR estimate is shown.
+          </p>
+        )}
+        <p>
+          Reference estimate only, not an APL EUR price. Revalidate before booking; EUR settlement
+          is not guaranteed.
+        </p>
+      </section>
       {!result.options.length && (
         <p className="transfer-note">The source returned no vehicle quotes for this request.</p>
       )}
       <div className="transfer-vehicle-grid">
-        {result.options.map((option) => (
-          <article className="transfer-vehicle" key={option.id}>
-            <div className="transfer-vehicle-heading">
-              <strong>{option.car_type}</strong>
-              <Tag tone={option.fits_request ? 'cyan' : 'amber'}>
-                {option.fits_request ? 'CAPACITY FITS' : 'DOES NOT FIT'}
-              </Tag>
-            </div>
-            <div className="transfer-price">
-              <strong>{transferPrice(option.price.amount)}</strong>
-              <span>GBP per vehicle</span>
-            </div>
-            <p>
-              Up to {option.max_passengers} passengers · {option.max_suitcases} suitcases
-            </p>
-          </article>
-        ))}
+        {result.options.map((option) => {
+          const euroEstimate = transferEuroEstimate(option, result.fx);
+          return (
+            <article className="transfer-vehicle" key={option.id}>
+              <div className="transfer-vehicle-heading">
+                <strong>{option.car_type}</strong>
+                <Tag tone={option.fits_request ? 'cyan' : 'amber'}>
+                  {option.fits_request ? 'CAPACITY FITS' : 'DOES NOT FIT'}
+                </Tag>
+              </div>
+              <div className="transfer-price">
+                <strong>{transferPrice(option.price.amount)}</strong>
+                <span>GBP per vehicle</span>
+              </div>
+              <div className="transfer-euro-estimate">
+                {euroEstimate ? (
+                  <>
+                    Approximately {euroEstimate} <span>EUR reference estimate per vehicle</span>
+                  </>
+                ) : (
+                  'EUR reference estimate unavailable'
+                )}
+              </div>
+              <p>
+                Up to {option.max_passengers} passengers · {option.max_suitcases} suitcases
+              </p>
+            </article>
+          );
+        })}
       </div>
       <p className="transfer-note">
         Vehicle assignment and accessibility are unconfirmed. No booking, driver dispatch or
         supplier hold was made.
       </p>
       <p className="transfer-note">
-        Journey duration and arrival time are not verified. GBP has not been converted to the
-        operation’s EUR budget.
+        Journey duration and arrival time are not verified. These quotes and reference estimates are
+        not added to an itinerary or the operation’s EUR budget.
       </p>
       {result.provider_duration_text && (
         <p className="transfer-note">

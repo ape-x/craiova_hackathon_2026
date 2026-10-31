@@ -7,12 +7,14 @@ from fastapi import APIRouter, Depends
 
 from .providers.apl import APLProvider, APLQuoteRequest, DOCS_URL, SOURCE
 from .providers.base import ProviderError
+from .providers.ecb_rates import EcbRates
 from .store import DomainError
 
 
 class GroundTransfers:
-    def __init__(self, settings, *, provider=None):
+    def __init__(self, settings, *, provider=None, fx=None):
         self.provider = provider or APLProvider(settings)
+        self.fx = fx or EcbRates()
         self.timeout = min(22, max(1, float(settings.request_timeout_seconds) + 1))
         self._active = asyncio.Lock()
         self._closed = False
@@ -24,7 +26,7 @@ class GroundTransfers:
 
     async def aclose(self):
         self._closed = True
-        await self.provider.aclose()
+        await asyncio.gather(self.provider.aclose(), self.fx.aclose())
 
     async def quote(self, request: APLQuoteRequest):
         if self._closed:
@@ -34,15 +36,29 @@ class GroundTransfers:
         if self._active.locked():
             raise DomainError(409, "An APL quote search is still running. Wait for it to finish before searching again.")
         async with self._active:
+            # The public reference fetch is independent of the supplier quote.
+            # Its optional failure must never hide a successful GBP response.
+            fx_task = asyncio.create_task(self.fx.rates()) if self.provider.configured else None
             try:
                 async with asyncio.timeout(self.timeout):
-                    return await self.provider.quote(request)
+                    result = await self.provider.quote(request)
             except TimeoutError as exc:
                 raise ProviderError("APL did not return a quote before the deadline. No automatic retry was made.", provider=SOURCE, code="timeout") from exc
             except ProviderError as exc:
                 if exc.code == "invalid_request":
                     raise DomainError(422, str(exc)) from exc
                 raise
+            else:
+                try:
+                    rates = await fx_task if fx_task is not None else {"table": None, "cache": None, "code": "fx_unavailable"}
+                except Exception:
+                    rates = {"table": None, "cache": None, "code": "fx_unavailable"}
+                return self.fx.enrich(result, rates)
+            finally:
+                if fx_task is not None:
+                    if not fx_task.done():
+                        fx_task.cancel()
+                    await asyncio.gather(fx_task, return_exceptions=True)
 
 
 def create_transfer_router(service: GroundTransfers, operator_dependency):
