@@ -26,6 +26,14 @@ import { airportWeatherState } from './weather';
 import { passengerSourceLabel } from './liveData';
 import { isAirportNode, locationKindLabel } from './locationNodes';
 import { flightSegments, waitingTime } from './journeyPresentation';
+import {
+  freshnessTime,
+  liveResourceStatus,
+  recordedBooking,
+  resourceFreshness,
+  useFreshnessClock,
+  type ResourceFreshness,
+} from './resourceFreshness';
 
 export function ItineraryView({
   offer,
@@ -310,11 +318,17 @@ function ResourceFacts({
   world,
   resource,
   onScenario,
+  freshness,
+  booked,
 }: {
   world: World;
   resource: Resource;
   onScenario: () => void;
+  freshness: ResourceFreshness | null;
+  booked: boolean;
 }) {
+  const planningCurrent =
+    !freshness || liveResourceStatus(resource, freshness, booked).planningCurrent;
   return (
     <>
       <div className="destination-line">
@@ -330,12 +344,20 @@ function ResourceFacts({
           Arrival <b>{formatWorldTime(world, resource.arrival)}</b>
         </span>
         <span>
-          {resource.capacity_scope === 'quoted_request' ? 'Quote scope' : 'Available / total'}{' '}
+          {resource.capacity_scope === 'quoted_request'
+            ? planningCurrent
+              ? 'Quote scope'
+              : 'Recorded quote scope'
+            : planningCurrent
+              ? 'Available / total'
+              : 'Recorded capacity'}{' '}
           {resource.kind === 'hotel' ? 'rooms' : 'seats'}{' '}
           <b>
             {resource.capacity_scope === 'quoted_request'
               ? `${resource.capacity} · requested group only`
-              : `${availableUnits(world, resource.id)} / ${resource.capacity}`}
+              : planningCurrent
+                ? `${availableUnits(world, resource.id)} / ${resource.capacity}`
+                : resource.capacity}
           </b>
         </span>
         <span>
@@ -363,19 +385,45 @@ function ResourceFacts({
               )}
             </b>
           </span>
-          {resource.valid_until && (
+          {freshness && (
             <span>
-              Valid until{' '}
-              <b>
-                {new Date(resource.valid_until).toLocaleString('en-GB', {
-                  timeZone: 'Europe/Bucharest',
-                })}
+              Quote freshness{' '}
+              <b className={freshness.state === 'current' ? 'text-cyan' : 'text-amber'}>
+                {freshness.label}
               </b>
             </span>
           )}
+          {freshness?.quotedAt != null && (
+            <span>
+              Source quoted at <b>{freshnessTime(freshness.quotedAt)}</b>
+            </span>
+          )}
+          {resource.valid_until ? (
+            <span>
+              Recorded validity until{' '}
+              <b>
+                {freshness?.cutoff != null ? freshnessTime(freshness.cutoff) : 'Unusable timestamp'}
+              </b>
+            </span>
+          ) : freshness?.basis === 'quoted_at' && freshness.cutoff !== null ? (
+            <span>
+              Local freshness through <b>{freshnessTime(freshness.cutoff)}</b>
+            </span>
+          ) : null}
           <span>
-            Supplier booking <b>{resource.booking_status ?? 'Unbooked'}</b>
+            Supplier booking{' '}
+            <b>
+              {booked
+                ? 'Confirmation recorded by operations'
+                : (resource.booking_status ?? 'Unbooked')}
+            </b>
           </span>
+          {freshness && (
+            <p className="field-hint">
+              {freshness.detail}
+              {booked ? ' Quote age does not cancel the recorded booking.' : ''}
+            </p>
+          )}
         </div>
       )}
       <button className="secondary-button full" onClick={onScenario}>
@@ -600,8 +648,12 @@ export default function Inspector({
   config: AppConfig;
   showLog: boolean;
 }) {
+  const now = useFreshnessClock(world.mode === 'live');
   const group = world.groups.find((item) => item.id === selectedId);
   const resource = world.resources.find((item) => item.id === selectedId);
+  const freshness = resource && world.mode === 'live' ? resourceFreshness(resource, now) : null;
+  const booked = Boolean(resource && world.mode === 'live' && recordedBooking(world, resource));
+  const liveStatus = resource && freshness ? liveResourceStatus(resource, freshness, booked) : null;
   const airport = world.airports.find((item) => item.id === selectedId);
   const observation = world.observations.find(
     (item) => String(item.id ?? item.fr24_id) === selectedId,
@@ -737,7 +789,9 @@ export default function Inspector({
         {!showLog && resource ? (
           <>
             <div className="entity-heading">
-              <div className={`entity-icon ${resource.available ? 'mint' : 'red'}`}>
+              <div
+                className={`entity-icon ${liveStatus ? `text-${liveStatus.tone}` : resource.available ? 'mint' : 'red'}`}
+              >
                 {resource.kind === 'bus' ? (
                   <BusFront size={23} />
                 ) : resource.kind === 'flight' ? (
@@ -750,20 +804,26 @@ export default function Inspector({
                 <span className="eyebrow">
                   {world.mode === 'live'
                     ? resource.capacity_scope === 'quoted_request'
-                      ? 'LIVE GROUP QUOTE'
+                      ? 'GROUP QUOTE RECORD'
                       : 'OPERATOR-VERIFIED RESOURCE'
                     : 'SIMULATED RESOURCE'}
                 </span>
                 <h3>
                   {resource.id}{' '}
-                  <span className={resource.available ? 'text-mint' : 'text-red'}>
-                    {resource.available
-                      ? world.mode === 'simulation'
+                  <span
+                    className={
+                      liveStatus
+                        ? `text-${liveStatus.tone}`
+                        : resource.available
+                          ? 'text-mint'
+                          : 'text-red'
+                    }
+                  >
+                    {liveStatus
+                      ? liveStatus.label
+                      : resource.available
                         ? 'Available'
-                        : resource.capacity_scope === 'quoted_request'
-                          ? 'Unbooked quote'
-                          : 'Verified'
-                      : 'Unavailable'}
+                        : 'Unavailable'}
                   </span>
                 </h3>
                 <span>{resource.name}</span>
@@ -778,11 +838,23 @@ export default function Inspector({
                     Resource schedule & conditions
                     <ChevronDown size={14} />
                   </summary>
-                  <ResourceFacts world={world} resource={resource} onScenario={onScenario} />
+                  <ResourceFacts
+                    world={world}
+                    resource={resource}
+                    onScenario={onScenario}
+                    freshness={freshness}
+                    booked={booked}
+                  />
                 </details>
               </>
             ) : (
-              <ResourceFacts world={world} resource={resource} onScenario={onScenario} />
+              <ResourceFacts
+                world={world}
+                resource={resource}
+                onScenario={onScenario}
+                freshness={freshness}
+                booked={booked}
+              />
             )}
             {dependentGroups.length > 0 && (
               <div className="inspector-section">

@@ -18,6 +18,12 @@ import { observationInfo } from './observation';
 import RealDataDialog from './RealDataDialog';
 import RecoveryCases from './RecoveryCases';
 import { isAirportNode, locationKindLabel } from './locationNodes';
+import {
+  liveResourceStatus,
+  recordedBooking,
+  resourceFreshness,
+  useFreshnessClock,
+} from './resourceFreshness';
 
 const tabs = [
   { id: 'flight', name: 'Flights', Icon: Plane },
@@ -45,6 +51,7 @@ export default function ResourceRail({
   const [tab, setTab] = useState<ResourceKind | 'groups'>('flight');
   const [query, setQuery] = useState('');
   const [showRealData, setShowRealData] = useState(false);
+  const now = useFreshnessClock(world.mode === 'live');
   const closeRealData = useCallback(() => setShowRealData(false), []);
   const search = useDeferredValue(query.toLowerCase());
   const resources = world.resources.filter(
@@ -197,13 +204,17 @@ export default function ResourceRail({
                 ? 'Transfer vehicles'
                 : tab === 'flight'
                   ? world.mode === 'live'
-                    ? 'Verified flights'
+                    ? 'Flight records'
                     : 'Scenario flights'
                   : world.mode === 'live'
-                    ? 'Current hotel quotes'
+                    ? 'Hotel quote records'
                     : 'Hotel inventory'}
           </span>
-          <span>{tab === 'groups' ? groups.length : resources.length}</span>
+          <span>
+            {tab === 'groups'
+              ? groups.length
+              : `${resources.length}${world.mode === 'live' ? (resources.length === 1 ? ' record' : ' records') : ''}`}
+          </span>
         </div>
         {tab === 'groups'
           ? groups.map((group) => (
@@ -244,6 +255,10 @@ export default function ResourceRail({
             ))
           : resources.map((resource) => {
               const count = availableUnits(world, resource.id);
+              const freshness = resourceFreshness(resource, now);
+              const booked = world.mode === 'live' && recordedBooking(world, resource);
+              const liveStatus =
+                world.mode === 'live' ? liveResourceStatus(resource, freshness, booked) : null;
               const Icon = tabs.find((t) => t.id === resource.kind)!.Icon;
               return (
                 <button
@@ -253,10 +268,23 @@ export default function ResourceRail({
                     onMode(resource.kind === 'flight' ? 'region' : 'airport');
                   }}
                   className={`resource-row ${selectedId === resource.id ? 'selected' : ''}`}
+                  title={
+                    liveStatus
+                      ? `${liveStatus.label}. ${freshness.detail}${booked ? ' A booking confirmation is recorded separately.' : ''}`
+                      : undefined
+                  }
                 >
                   <Icon
                     size={18}
-                    className={!resource.available ? 'text-red' : count ? 'text-mint' : 'muted'}
+                    className={
+                      liveStatus
+                        ? `text-${liveStatus.tone}`
+                        : !resource.available
+                          ? 'text-red'
+                          : count
+                            ? 'text-mint'
+                            : 'muted'
+                    }
                   />
                   <span className="resource-name">
                     <strong>{resource.id}</strong>
@@ -264,15 +292,26 @@ export default function ResourceRail({
                       {resource.origin} <span aria-hidden="true">→</span> {resource.destination} ·{' '}
                       {formatWorldTime(world, resource.departure)}
                     </small>
+                    {booked && (!liveStatus?.planningCurrent || !resource.available) && (
+                      <small>Booking recorded · {freshness.label}</small>
+                    )}
                   </span>
                   <span
-                    className={!resource.available ? 'resource-value text-red' : 'resource-value'}
+                    className={
+                      liveStatus
+                        ? `resource-value text-${liveStatus.tone}`
+                        : !resource.available
+                          ? 'resource-value text-red'
+                          : 'resource-value'
+                    }
                   >
-                    {!resource.available
-                      ? 'Unavailable'
-                      : resource.capacity_scope === 'quoted_request'
-                        ? 'Group quote'
-                        : `${count} ${resource.kind === 'hotel' ? 'rooms' : 'seats'}`}
+                    {liveStatus && (!liveStatus.planningCurrent || booked)
+                      ? liveStatus.label
+                      : !resource.available
+                        ? 'Unavailable'
+                        : resource.capacity_scope === 'quoted_request'
+                          ? 'Group quote'
+                          : `${count} ${resource.kind === 'hotel' ? 'rooms' : 'seats'}`}
                   </span>
                   <ChevronRight size={12} />
                 </button>
