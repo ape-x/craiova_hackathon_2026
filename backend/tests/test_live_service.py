@@ -13,10 +13,10 @@ from pydantic import ValidationError
 from app.config import Settings
 from app.live_data import MANIFEST_COLUMNS, ManifestImport, ManualResourceInput, PassengerGenerationInput
 from app.live_service import ExternalConfirmation, HotelQuoteImport, LiveOperations
-from app.models import AcceptRequest, Itinerary, Leg, Offer, Reservation
+from app.models import AcceptRequest, Airport, Allocation, Itinerary, Leg, Offer, Reservation, Resource
 from app.providers.base import ProviderError
 from app.service import RecoveryService
-from app.solver import resource_cost
+from app.solver import resource_cost, units, validate_allocations
 from app.store import DomainError, Store
 
 
@@ -332,6 +332,55 @@ def test_external_confirmation_records_all_segments_atomically_without_provider_
     assert result["world"]["reservations"][0]["status"] == "confirmed"
     assert ops.real_data.provider.calls == 0
     assert ops.confirm("PROPOSAL-1", request)["replayed"]
+
+
+@pytest.mark.parametrize("segment_count",[5,6])
+def test_complete_extended_live_journey_requires_every_external_confirmation(ops,segment_count):
+    ops.manifest(manifest_request(ops))
+    def attach(world):
+        group=world.groups[0]
+        for index,(code,kind) in enumerate((("ST-A","station"),("HP-FIXTURE","hotel"),("ST-B","station"),("ST-C","station"))):
+            world.airports.append(Airport(id=code,code=code,name="Fixture sourced location",kind=kind,lat=44.3+index*.01,lon=23.8))
+        routes=[("bus","CRA","ST-A"),("bus","ST-A","HP-FIXTURE"),("hotel","HP-FIXTURE","HP-FIXTURE"),("bus","HP-FIXTURE","ST-B")]
+        routes+= [("bus","ST-B","OTP")] if segment_count==5 else [("bus","ST-B","ST-C"),("bus","ST-C","OTP")]
+        minute=group.ready_at+60
+        expiry=(now()+timedelta(minutes=30)).isoformat()
+        legs=[]
+        for index,(kind,origin,destination) in enumerate(routes):
+            duration=360 if kind=="hotel" else 180 if destination=="OTP" else 20
+            resource=Resource(id=f"QUOTED-SEGMENT-{index+1}",kind=kind,name="Fixture supplier quote",origin=origin,destination=destination,
+                departure=minute,arrival=minute+duration,capacity=1 if kind=="hotel" else group.size,
+                room_capacity=2,cost_per_person=0,quote_total_cost=20,source="fixture_supplier",eligible_group_ids=[group.id],
+                capacity_scope="quoted_request",requires_revalidation=True,valid_until=expiry,external_offer_id=f"fixture-offer-{index+1}")
+            world.resources.append(resource)
+            legs.append(Leg(resource_id=resource.id,kind=kind,origin=origin,destination=destination,
+                departure=resource.departure,arrival=resource.arrival,cost=20))
+            world.reservations.append(Reservation(id=f"SEGMENT-RECORD-{index+1}",offer_id="EXTENDED-PROPOSAL",group_id=group.id,
+                resource_id=resource.id,quantity=units(resource,group),status="proposed",expires_at=expiry))
+            minute=resource.arrival+10
+        world.offers.append(Offer(id="EXTENDED-PROPOSAL",group_id=group.id,status="proposed",created_version=world.version+1,expires_at=expiry,
+            itinerary=Itinerary(legs=legs,arrival=legs[-1].arrival,total_cost=20*segment_count)))
+        group.status="offered"
+    ops.store.mutate("attach-extended-proposal",{},ops.store.read().version,attach)
+    before=ops.store.read()
+    assert validate_allocations(before,[Allocation(group_id=before.groups[0].id,itinerary=before.offers[0].itinerary)])["valid"]
+    bookings=[{"resource_id":leg.resource_id,"confirmation_reference":f"FIXTURE-REFERENCE-{index+1}",
+        "confirmed_by":"Fixture operator","confirmed_at":now()} for index,leg in enumerate(before.offers[0].itinerary.legs)]
+    missing=confirmation(ops,idempotency_key="missing-extended-reference",bookings=bookings[:-1])
+    with pytest.raises(DomainError,match="every itinerary segment") as failure:
+        ops.confirm("EXTENDED-PROPOSAL",missing)
+    assert failure.value.status==422
+    after=ops.store.read()
+    assert after.version==before.version and after.offers==before.offers and after.reservations==before.reservations
+    assert after.groups==before.groups and after.resources==before.resources
+    complete=confirmation(ops,idempotency_key="complete-extended-references",bookings=bookings)
+    result=ops.confirm("EXTENDED-PROPOSAL",complete)
+    assert result["offer"]["status"]=="confirmed" and len(result["offer"]["external_bookings"])==segment_count
+    assert {item["resource_id"] for item in result["offer"]["external_bookings"]}=={resource.id for resource in before.resources}
+    assert all(item["status"]=="confirmed" for item in result["world"]["reservations"])
+    assert all(item["booking_status"]=="confirmed" for item in result["world"]["resources"])
+    assert result["world"]["groups"][0]["status"]=="confirmed" and result["world"]["version"]==before.version+1
+    assert ops.confirm("EXTENDED-PROPOSAL",complete)["replayed"] and ops.real_data.provider.calls==0
 
 
 @pytest.mark.parametrize("accepted", [False, True])

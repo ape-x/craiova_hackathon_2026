@@ -126,7 +126,7 @@ class ExternalBooking(BaseModel):
 
 
 class ExternalConfirmation(Mutation):
-    bookings: list[ExternalBooking] = Field(min_length=1, max_length=4)
+    bookings: list[ExternalBooking] = Field(min_length=1, max_length=6)
 
     @model_validator(mode="after")
     def unique_segments(self):
