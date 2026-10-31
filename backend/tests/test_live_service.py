@@ -145,6 +145,69 @@ async def test_hotel_import_is_bound_to_group_exact_amount_and_actual_expiry_onl
     assert replacement["world"]["resources"][0]["external_offer_id"] == "quoted-offer-2"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("other_status", ["proposed", "accepted", "confirmed"])
+async def test_hotel_refresh_preserves_other_groups_complete_journey(ops, other_status):
+    ops.manifest(manifest_request(ops))
+    ops.resource(resource_request(ops))
+    await ops.hotels(hotel_request(ops))
+
+    def attach_journeys(world):
+        selected = world.groups[0]
+        selected.status = "offered"
+        other = selected.model_copy(deep=True, update={"id": "OTHER-GROUP", "token": selected.token + "-other",
+            "status": "confirmed" if other_status == "confirmed" else "offered"})
+        world.groups.append(other)
+        world.budget += other.budget
+        hotel = next(resource for resource in world.resources if resource.kind == "hotel")
+        flight = next(resource for resource in world.resources if resource.kind == "flight")
+        flight.departure, flight.arrival = hotel.arrival + 90, hotel.arrival + 210
+        expiry = (now() + timedelta(minutes=10)).isoformat()
+        transfers = [Resource(id=identity, name=identity, kind="bus", origin=origin, destination=destination,
+            departure=departure, arrival=arrival, capacity=2, cost_per_person=0, quote_total_cost=20, source="fixture_supplier",
+            valid_until=expiry, eligible_group_ids=[selected.id]) for identity, origin, destination, departure, arrival in (
+                ("HOTEL-OUT", "CRA", hotel.origin, hotel.departure - 60, hotel.departure - 20),
+                ("HOTEL-BACK", hotel.origin, "CRA", hotel.arrival + 10, hotel.arrival + 30))]
+        world.resources.extend(transfers)
+        for passenger, itinerary_resources, status in (
+            (selected, [transfers[0], hotel, transfers[1], flight], "proposed"),
+            (other, [flight], other_status),
+        ):
+            legs = [Leg(resource_id=resource.id, kind=resource.kind, origin=resource.origin, destination=resource.destination,
+                departure=resource.departure, arrival=resource.arrival, cost=resource_cost(resource, passenger)) for resource in itinerary_resources]
+            offer = Offer(id="O-" + passenger.id, group_id=passenger.id, status=status, expires_at=expiry,
+                created_version=world.version + 1, itinerary=Itinerary(legs=legs, arrival=legs[-1].arrival, total_cost=sum(leg.cost for leg in legs)),
+                confirmed_at=now().isoformat() if status == "confirmed" else None,
+                external_bookings=[{"confirmation_reference": "FIXTURE-OTHER-BOOKING"}] if status == "confirmed" else [])
+            world.offers.append(offer)
+            world.reservations.extend(Reservation(id=f"R-{passenger.id}-{resource.id}", offer_id=offer.id,
+                group_id=passenger.id, resource_id=resource.id, quantity=units(resource, passenger), status=status,
+                expires_at=expiry) for resource in itinerary_resources)
+        validation = validate_allocations(world, [Allocation(group_id=offer.group_id, itinerary=offer.itinerary)
+            for offer in world.offers if offer.status != "confirmed"])
+        assert validation["valid"], validation
+
+    ops.store.mutate("attach-two-hotel-journeys", {}, ops.store.read().version, attach_journeys)
+    before = ops.store.read()
+    protected = [item.model_dump_json() for collection in (before.groups, before.offers, before.reservations)
+        for item in collection if getattr(item, "group_id", item.id) == "OTHER-GROUP"]
+    old_hotel = next(resource for resource in before.resources if resource.kind == "hotel")
+    request = hotel_request(ops, idempotency_key="scoped-hotel-refresh")
+    result = await ops.hotels(request)
+    after = ops.store.read()
+    assert protected == [item.model_dump_json() for collection in (after.groups, after.offers, after.reservations)
+        for item in collection if getattr(item, "group_id", item.id) == "OTHER-GROUP"]
+    assert after.version == before.version + 1 and ops.real_data.provider.calls == 2
+    assert next(offer for offer in after.offers if offer.group_id == "REAL-GROUP").status == "invalidated"
+    assert all(item.status == "released" for item in after.reservations if item.group_id == "REAL-GROUP")
+    assert next(group for group in after.groups if group.id == "REAL-GROUP").status == "waiting"
+    assert old_hotel.id not in {resource.id for resource in after.resources}
+    assert {resource.id: resource.model_dump_json() for resource in before.resources if resource.kind != "hotel"} == {
+        resource.id: resource.model_dump_json() for resource in after.resources if resource.kind != "hotel"}
+    assert (await ops.hotels(request))["replayed"] and ops.real_data.provider.calls == 2
+    assert result["applied"] is True
+
+
 def alter_hotel_quotes(ops, change):
     original = ops.real_data.provider.offers
     async def offers(airport, query):

@@ -147,10 +147,14 @@ def _find(items, item_id, label):
     return item
 
 
-def _invalidate_pending(world, description):
+def _invalidate_pending(world, description, *, group_ids=None, resource_ids=None):
     invalidated = set()
     for offer in world.offers:
-        if offer.status in ("proposed", "accepted"):
+        affected = (group_ids is None and resource_ids is None) or (
+            offer.group_id in (group_ids or set())
+            or any(leg.resource_id in (resource_ids or set()) for leg in offer.itinerary.legs)
+        )
+        if offer.status in ("proposed", "accepted") and affected:
             offer.status, offer.reason = "invalidated", description
             invalidated.add(offer.id)
             group = _find(world.groups, offer.group_id, "group")
@@ -251,12 +255,14 @@ class LiveOperations:
 
         def apply(current):
             self._hotel_context(current, request)
-            _invalidate_pending(current, "Hotel offers changed; request a fresh recovery plan.")
             protected = {leg.resource_id for offer in current.offers if offer.status == "confirmed" for leg in offer.itinerary.legs}
-            current.resources = [resource for resource in current.resources if not (
+            replaced = {resource.id for resource in current.resources if (
                 group.id in resource.eligible_group_ids and resource.kind == "hotel" and resource.requires_revalidation
                 and resource.id not in protected and resource.booking_status != "confirmed"
-            )]
+            )}
+            _invalidate_pending(current, "Hotel offers changed; request a fresh recovery plan.",
+                                group_ids={group.id}, resource_ids=replaced)
+            current.resources = [resource for resource in current.resources if resource.id not in replaced]
             if len(current.resources) + len(resources) > MAX_RESOURCES:
                 raise DomainError(422, f"Operation limit is {MAX_RESOURCES} resources")
             current.airports.extend(_new_airports(current, [request.airport_code]))
