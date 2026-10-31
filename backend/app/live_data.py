@@ -399,8 +399,8 @@ def prepare_generated_passengers(world: World, value: PassengerGenerationInput) 
         used.add(group_id)
         size = min(value.group_size, remaining)
         groups.append(PassengerGroup(
-            id=group_id, name=f"Test group {len(groups)+1}", size=size,
-            members=[f"Test passenger {index}" for index in range(passenger_index, passenger_index + size)],
+            id=group_id, name=f"Planning group {len(groups)+1}", size=size,
+            members=[f"Planning passenger {index}" for index in range(passenger_index, passenger_index + size)],
             origin=origin, destination=destination, ready_at=ready, deadline=deadline,
             accessible=value.accessible, budget=float(value.group_budget_eur), original_flight_id=value.original_flight_id,
             priority=value.priority, token=secrets.token_urlsafe(32), status="waiting", source="synthetic",

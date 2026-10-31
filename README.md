@@ -1,117 +1,60 @@
 # Airport Recovery Live
 
-## Live assisted mode
+Centru de operațiuni pentru recuperarea pasagerilor, cu FastAPI, React/TypeScript, Google Maps 3D și OpenAI. Aplicația pornește în modul live, cu inventar gol. Transportul și cazarea folosite în planificare trebuie să provină din cotații reale sau din servicii documentate de operator.
 
-The application now starts with **no generated operational inventory**. Use **Live data inputs** to generate explicitly marked test passengers or import a real manifest, search live flight/coach suppliers, import group-specific Nuitee hotel quotes, and record operator-confirmed services. Passenger acceptance is a preference; external bookings require actual confirmation references.
+Problema inițială și cerințele pasagerilor pot fi ipoteze introduse de echipă. Grupurile generate păstrează această proveniență; nu devin identități verificate și nu pot primi confirmări externe de rezervare. Pentru pasageri reali se importă manifestul.
 
-Duffel and Distribusion adapters require their own activated production accounts; absent access is shown explicitly. Scheduled coach offers preserve actual station endpoints, so any airport–station transfers must be sourced separately. The previous simulation is archived when switching to live mode. [Configuration, workflow and limits](docs/live-mode.md).
+## Fluxul operațional
 
+1. Introdu cerințele pasagerilor sau importă un manifest.
+2. Caută zboruri, autocare și cazare pentru grup, dată și destinație. Fiecare cotație păstrează furnizorul, prețul, condițiile și expirarea.
+3. Importă cotațiile relevante și completează serviciile confirmate de operator, cu sursa lor.
+4. Descrie condițiile prin voce sau text. AI-ul propune strategii; backendul verifică fezabilitatea și alocările.
+5. Pasagerul acceptă sau refuză o propunere. Acceptarea înregistrează preferința. Confirmarea rezervării necesită referințele externe pentru fiecare segment.
 
-## Modul de demonstrație existent
+Căutarea furnizorilor este în prezent explicită. Replanificarea compară inventarul importat; nu creează automat bilete, camere sau transport. Cotațiile pot expira, iar o ofertă de preț nu rezervă locuri.
 
-Centru de operațiuni pentru recuperarea pasagerilor, cu **FastAPI, React/TypeScript, Three.js, Google Maps 3D și OpenAI**. Juriul modifică o situație prin voce sau text, iar agentul construiește strategii, evaluează inventarul comun și selectează un plan valid. Acceptarea pasagerului confirmă atomic întregul itinerar în simulator; refuzul eliberează toate segmentele ținute pentru grup.
+## Rulare locală: o singură aplicație
 
-![Aplicația rulată cu hartă Google și operațiuni simulate](docs/verification/google-models-live.jpg)
-
-Captură din aplicația funcțională: imaginile geografice sunt reale, iar pasagerii, incidentele și rezervările sunt simulate. Validarea anterioară a demonstrației: interpretarea Sol Ultrafast, selecția Decisions și încărcarea Google Maps au fost verificate cu furnizorii reali. [Rezultate și limite](docs/verification/report.md).
-
-Specificația originală și imaginile de referință sunt în [docs/product-spec.md](docs/product-spec.md) și [docs/mockups](docs/mockups).
-
-## Pornire locală
-
-Necesită Python 3.12, Node.js 22.12+ și npm.
+Configurează credențialele în `backend/.env`, fără a le publica în Git sau în chat. Păstrează fișierul existent dacă este deja configurat.
 
 ```bash
-git clone https://github.com/ape-x/craiova_hackathon_2026.git
-cd craiova_hackathon_2026
-python3.12 -m venv backend/.venv
-backend/.venv/bin/python -m pip install -r backend/requirements-test.lock
-backend/.venv/bin/python -m pip install -e 'backend[test]'
 test -f backend/.env || cp backend/.env.example backend/.env
 chmod 600 backend/.env
-cd frontend
-npm ci
-cd ..
-./scripts/dev.sh
+docker compose up -d --build
+curl --fail http://127.0.0.1:8080/api/ready
 ```
 
-Aplicație: **http://127.0.0.1:5173**. API: http://127.0.0.1:8000. Documentația OpenAPI este disponibilă la `/docs` numai în dezvoltare.
+Aplicația este disponibilă la **http://localhost:8080**. Backendul este accesibil prin același proxy, iar SQLite rămâne în volumul Docker. Actualizările folosesc aceeași comandă și aceeași instanță. `docker compose down` oprește serviciile; nu folosi `-v` dacă vrei să păstrezi datele.
 
-Dacă `python3.12` nu este instalat, [instrucțiunile backend](docs/backend.md#run-locally) arată instalarea izolată prin `uv`. Adresele locale și QR-urile către localhost funcționează numai pe calculatorul gazdă. Pentru telefon și microfon de la distanță folosește instanța HTTPS descrisă în [lista de verificare a deployului](docs/deploy-checklist.md).
+Pentru dezvoltare și verificări locale sunt necesare Python 3.12 și Node.js 22.12+. [Instrucțiuni backend](docs/backend.md#run-locally).
 
-Pornirea implicită folosește `OPERATION_MODE=live`, cu inventar gol. Pentru demonstrația sintetică setează explicit `OPERATION_MODE=simulation` în configurația instanței. În acel mod, fără chei API funcționează scena arhitecturală, inventarul demonstrativ, incidentele, solverul, ofertele și pagina mobilă. Comenzile în limbaj natural și vocea cer OpenAI; nu sunt înlocuite cu răspunsuri prestabilite.
+## Integrări
 
-## Scenariul inițial în modul simulation
-
-- 180 de pasageri sintetici, în 72 de grupuri indivizibile.
-- F101 anulat: 120 de persoane trebuie să ajungă din Craiova la Luton.
-- F201: 60 de persoane într-un zbor de sosire, care pot necesita deviere.
-- CRA, OTP și SBZ sunt nodurile regionale; LTN este destinația externă.
-- 11 servicii de autocar, zboruri alternative și inventar hotelier limitat.
-
-Apasă **Replan SOLVER** pentru prima alocare locală. Selectează o familie din `Passengers`, deschide linkul sau scanează QR-ul, apoi acceptă oferta. În `Scenario controls`, retrage B12 sau închide CRA: ofertele afectate se invalidează și inventarul este recalculat. Poți introduce capacități, bugete sau termene arbitrare; rezultatul nu este un scenariu precalculat.
-
-## Scenarii libere, nu doar exemple
-
-Prin voce sau text poți adăuga aeroporturi, curse de avion/autocar, cazare și familii noi, apoi să le schimbi condițiile în aceeași conversație. Agentul păstrează contextul clarificărilor și aplică împreună operațiile validate. Catalogul offline include 4.589 de aeroporturi reale; inventarul creat rămâne simulat. [Exemple, arhitectură și limite](docs/freeform-scenarios.md).
-
-`Geographic 3D` activează separat Google Maps. Modelul propriu al terminalului este ilustrativ și este etichetat astfel. O randare reală a imaginilor și terenului Google la CRA, cu rute și marcaje de simulare, a fost verificată. Suprapunerea modelelor GLB a fost verificată vizual; terminalul propriu este ilustrativ, iar alinierea nu reprezintă o măsurătoare topografică.
-
-## Configurarea integrărilor
-
-Editează **backend/.env** local. Nu introduce chei în chat, în codul frontend sau în Git.
-
-**Real hotels & routes**, în panoul Resources, caută hoteluri reale din
-OpenStreetMap și distanțe/durate rutiere OSRM. Datele au sursă și moment de
-preluare; nu reprezintă camere sau locuri rezervate. Cheia privată
-`GOOGLE_MAPS_SERVER_API_KEY` activează opțional Places și Routes, iar
-`BOOKING_DEMAND_API_TOKEN` împreună cu `BOOKING_AFFILIATE_ID` permit căutarea
-ofertelor hoteliere pentru date și persoane. Accesul Booking trebuie autorizat
-de furnizor. [Configurare și limite](docs/real-data.md).
-
-Pentru compararea externă există **Open Momondo** și **Copy search details**.
-Ca alternativă API, adaptorul Nuitee/LiteAPI folosește `LITEAPI_API_KEY` și
-`LITEAPI_ENVIRONMENT=live` după activarea contului de producție. Cheile sandbox
-sunt marcate ca acces de test și nu afișează oferte reale.
-
-| Variabilă | Funcție |
+| Configurație | Funcție |
 |---|---|
-| `OPENAI_API_KEY` | Responses Sol Ultrafast, Decisions Luna și GPT-Live |
-| `OPENAI_MODEL`, `OPENAI_SERVICE_TIER` | Implicit `gpt-6.1-sol`, `ultrafast`; fără schimbare automată de model/tier |
-| `OPENAI_DECISION_MODEL` | Implicit `gpt-6-luna` |
-| `OPENAI_VOICE_MODEL` | Implicit `gpt-live-1` |
-| `FR24_API_KEY` | Cheie pentru abonamentul API Flightradar24 |
-| `GOOGLE_MAPS_API_KEY` | Cheie publică de browser restricționată la origini și Maps JavaScript API |
-| `PUBLIC_BASE_URL` | Adresa accesibilă de pe telefon, folosită în QR |
-| `OPERATOR_TOKEN` | Autentificarea operatorului; obligatoriu în producție |
+| `OPENAI_API_KEY` | Interpretare Sol Ultrafast, selecție Decisions și voce GPT-Live |
+| `OPENAI_MODEL`, `OPENAI_SERVICE_TIER` | Implicit `gpt-6.1-sol`, `ultrafast`; fără schimbare automată de model sau tier |
+| `OPENAI_DECISION_MODEL`, `OPENAI_VOICE_MODEL` | Implicit `gpt-6-luna`, respectiv `gpt-live-1` |
+| `FR24_API_KEY` | Observații Flightradar24; necesită abonament API |
+| `GOOGLE_MAPS_API_KEY` | Cheie publică de browser, restricționată la origini și Maps JavaScript API |
+| `GOOGLE_MAPS_SERVER_API_KEY` | Google Places și Routes, numai pe server |
+| `LITEAPI_API_KEY`, `LITEAPI_ENVIRONMENT=live` | Cotații Nuitee pentru cazare și zboruri, conform accesului contului |
+| `DUFFEL_ACCESS_TOKEN`, `DUFFEL_ENVIRONMENT=live` | Furnizor alternativ pentru zboruri |
+| `DISTRIBUSION_API_KEY`, `DISTRIBUSION_ENVIRONMENT=live` | Autocare; necesită și activarea fluxului Offers |
+| `PUBLIC_BASE_URL`, `OPERATOR_TOKEN` | URL accesibil pasagerilor și autentificarea operatorilor |
 
-Prezența cheii înseamnă **configurat**, nu acces verificat. [Documentația providerilor](backend/app/providers/README.md) descrie cererile exacte și verificările de cont. [Documentația hărții](docs/maps.md) descrie încărcarea, atribuirea și limitările geografice.
+Prezența unei chei înseamnă configurare, nu acces verificat. Conturile sandbox nu furnizează inventar live. Căutările nu efectuează plăți sau rezervări. [Configurare și limite](docs/live-mode.md), [date geografice și hoteliere](docs/real-data.md), [cereri către furnizori](backend/app/providers/README.md).
 
-Vocea folosește WebRTC, transcriere, delegarea cererii către backend și un watchdog server pentru durata sesiunii. Microfonul necesită HTTPS sau localhost. Răspunsul vocal este trimis după rezultatul validat de server; modelul nu execută cod arbitrar.
+Pozițiile Flightradar24 au timestamp și sursă. Nu indică disponibilitatea biletelor, capacitatea avionului sau anularea unui zbor absent din feed. Colectarea pornește explicit din Connections și folosește un buget persistent de cereri. Google Maps afișează geografia; acoperirea 3D depinde de furnizor. [Documentația hărții](docs/maps.md).
 
-Un test real cu audio sintetic a verificat conexiunea GPT-Live și închiderea confirmată a sesiunii, fără folosirea microfonului. Testarea comenzilor rostite, a delegării și a redării în browser rămâne un pas de validare cu echipa.
+O rută rutieră calculată nu este un vehicul disponibil. Stațiile de autocar păstrează pozițiile reale; transferurile aeroport–stație trebuie obținute separat. Lipsa unui serviciu sau a accesului la furnizor rămâne vizibilă.
 
-Flightradar24 rămâne oprit până la **Connections → Start live feed**. Colectarea este partajată între clienți, cu interval minim, limită de rezultate și buget persistent. Pozițiile observate au timestamp și sursă; nu furnizează capacitatea biletelor sau anulări deduse din absența unui avion. Sandbox, observații vechi și simulare sunt diferențiate.
+## Decizii și voce
 
-Limitele implicite `FR24_BOUNDS=46.0,43.8,23.0,26.5` includ CRA, OTP și SBZ, în ordinea nord,sud,vest,est. Limita de cinci rezultate pe cerere nu garantează o observație la fiecare aeroport. O configurație `.env` existentă păstrează valorile vechi până când sunt editate explicit. Alegerea start/stop a feedului persistă după restart; un restart nu reîncarcă bugetul de cereri.
+GPT-Live transmite cererea către backend. Sol Ultrafast interpretează cerințele; solverul construiește alternative și verifică familiile, timpii, capacitățile, accesibilitatea și bugetele. Decisions alege dintre variantele fezabile. Backendul reverifică versiunea înainte de aplicare și transmite actualizarea către operator și pasageri.
 
-## Fluxul unei decizii
-
-```text
-Microfon / text
-  → GPT-Live (pentru audio)
-  → FastAPI: validarea cererii și versiunea stării
-  → Sol Ultrafast: evenimente structurate și strategii
-  → solver: alocări, timpi, costuri, verificarea constrângerilor
-  → Decisions: alegere dintre variantele fezabile curente
-  → tranzacție: reverificarea versiunii + reținerea tuturor resurselor
-  → SSE către operator / actualizare către pagina pasagerului
-  → acceptare idempotentă: confirmarea tuturor segmentelor
-```
-
-Solverul caută alocări fezabile printr-o euristică limitată. **Validitatea este verificată exact; optimalitatea globală nu este demonstrată.** AI-ul poate decide între alternative fezabile în funcție de cerere. Modul local determinist este disponibil explicit pentru dezvoltare și comparație.
-
-Modelul operațional include capacitate pe segment, continuitate, timp de transfer, indivizibilitatea familiilor, accesibilitate, termene, bugete, ocuparea camerelor și incompatibilitatea curselor aceluiași vehicul. Hotelul este numai o componentă a unei călătorii complete. Confirmările neafectate se păstrează; retragerea unei resurse confirmate impune o ofertă nouă.
+Solverul folosește o căutare limitată: validează constrângerile, fără a demonstra optimalitatea globală. Microfonul necesită HTTPS sau localhost. Vocea relatează rezultatul verificat, inclusiv serviciile lipsă; nu inventează rezervări ori progres. Erorile AI nu sunt înlocuite cu răspunsuri prestabilite.
 
 ## Structura proiectului
 
@@ -154,24 +97,7 @@ La verificarea din 31 octombrie 2026 au reușit apeluri reale pentru interpretar
 backend/.venv/bin/python backend/scripts/benchmark.py --samples 12 --passengers 180 240 300 --output docs/benchmark-results.json
 ```
 
-## Rulare în containere
-
-Pentru verificarea locală a buildului de producție:
-
-```bash
-docker compose up -d --build
-curl --fail http://127.0.0.1:8080/api/ready
-```
-
-Deschide http://localhost:8080. Portul este legat numai de loopback, iar API-ul este accesibil prin proxy. Datele SQLite sunt păstrate într-un volum. Oprire: `docker compose down` — fără `-v`, pentru a păstra starea.
-
-Simulatorul poate rula separat, cu propria bază de date, la **http://localhost:8081**:
-
-```bash
-docker compose -p airport-recovery-simulation -f compose.yaml -f compose.simulation.yaml up -d --build
-```
-
-Numele distinct al proiectului păstrează inventarul live separat de resetările și incidentele demonstrative. [Scenarii și vreme](docs/weather-and-new-scenes.md).
+## Publicare cu HTTPS
 
 Pentru un server cu domeniu și HTTPS:
 
@@ -188,7 +114,7 @@ Caddy gestionează TLS și proxy-ul. Backendul refuză configurația de producț
 
 [Lista de verificare a deployului](docs/deploy-checklist.md) include validarea configurației fără afișarea secretelor, readiness, autentificarea și testul de pe telefon. Nu expune direct portul API: configurația Uvicorn are încredere în headerele proxy deoarece numai rețeaua internă Caddy/API îl poate accesa.
 
-Nu a fost publicată nicio instanță pe internet. Operarea reală cere conturi autorizate, verificarea accesului, cote și configurația organizației. Rezervările externe și controlul aeronavelor nu fac parte din acest simulator.
+Nu a fost publicată nicio instanță pe internet. Operarea reală cere conturi autorizate, verificarea accesului, cote și configurația organizației. Aplicația înregistrează confirmările operatorului; nu execută rezervări externe sau controlul aeronavelor.
 
 ## Persistență și întreținere
 

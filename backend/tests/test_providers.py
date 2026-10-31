@@ -327,6 +327,42 @@ async def test_voice_real_json_webrtc_handshake():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", [None, "live", "simulation"])
+async def test_voice_prompt_matches_server_operation_mode_without_claiming_bookings(mode):
+    socket = FakeVoiceSocket()
+    async def connect(*args, **kwargs):
+        return socket
+    def handler(request):
+        session = json.loads(request.content)["session"]
+        prompt = session["instructions"]
+        assert session["model"] == "gpt-live-1"
+        assert session["delegation"]["type"] == "client"
+        for heading in ("Backchannel policy:", "Interruption policy:", "Delegation policy:",
+                        "Backend tools:", "Generate <|SpawnThinking|> when:",
+                        "Do not generate <|SpawnThinking|> when:"):
+            assert heading in prompt
+        if mode == "simulation":
+            assert "Toate modificările, resursele adăugate, ofertele și transportul sunt simulate." in prompt
+            assert "Poate reseta scenariul" in prompt
+        else:
+            assert "ipoteze de planificare" in prompt
+            assert "înregistrează preferința" in prompt
+            assert "confirmări externe explicite" in prompt
+            assert "momentul verificării" in prompt
+            assert "resursele importate" in prompt
+            assert "Așteaptă rezultatul verificat" in prompt
+            assert "simulate" not in prompt and "demonstrativ" not in prompt
+            assert "reseta scenariul" not in prompt
+        return httpx.Response(201, json={"session": {"id": "live_policy"}, "transport": {"sdp": "v=0\r\no=answer"}})
+    overrides = {} if mode is None else {"operation_mode": mode}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = VoiceProvider(settings(**overrides), client=client, connect=connect)
+        await provider.create("v=0\r\no=offer")
+        await provider.aclose()
+    assert socket.closed
+
+
+@pytest.mark.asyncio
 async def test_voice_server_watchdog_closes_when_browser_never_does():
     socket = FakeVoiceSocket()
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: pytest.fail("HTTP not expected"))) as client:

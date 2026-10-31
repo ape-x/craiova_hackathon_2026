@@ -160,11 +160,12 @@ def test_manual_bus_can_connect_real_station_node_without_creating_airport(world
         prepare_resource(world, resource(origin="ST-MISSING"))
 
 
-def test_explicit_generation_creates_only_labelled_test_passengers(world):
+def test_explicit_generation_creates_planning_passengers_with_assumed_provenance(world):
     result = prepare_generated_passengers(world, generate())
     assert [group.size for group in result["groups"]] == [3, 3, 1]
-    assert all(group.source == "synthetic" and group.name.startswith("Test group") for group in result["groups"])
-    assert all(name.startswith("Test passenger") for group in result["groups"] for name in group.members)
+    assert all(group.source == "synthetic" and group.name.startswith("Planning group") for group in result["groups"])
+    assert all(name.startswith("Planning passenger") for group in result["groups"] for name in group.members)
+    assert all(group.provenance["source"] == "operator_requested_test_passengers" for group in result["groups"])
     assert sum(group.adult_count for group in result["groups"]) == 7
     assert all(group.budget == 300 for group in result["groups"])
     assert len({group.id for group in result["groups"]}) == 3

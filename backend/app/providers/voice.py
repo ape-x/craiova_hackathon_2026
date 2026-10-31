@@ -1,4 +1,4 @@
-"""GPT-Live WebRTC handshake. Browser handles delegated simulator commands."""
+"""GPT-Live WebRTC handshake. Browser delegates to the validated backend."""
 from __future__ import annotations
 
 import asyncio
@@ -6,6 +6,37 @@ import json
 from urllib.parse import quote
 
 from .base import HTTPProvider, ProviderError, secret_value
+
+
+LIVE_INSTRUCTIONS = (
+    "Ești interfața vocală Recovery Live. Vorbește concis și natural, în română. "
+    "Transportul, cazarea, prețurile și disponibilitatea provin din surse reale: "
+    "furnizori sau evidențe confirmate de operator. Relatează numai datele furnizate de aplicație, "
+    "păstrând sursa, momentul verificării și limitele lor. "
+    "Problema inițială și datele pasagerilor pot fi ipoteze de planificare furnizate de utilizator; "
+    "nu le prezenta drept fapte observate sau identități verificate. "
+    "O cotație de preț nu este o rezervare și nu garantează că locurile ori camerele rămân disponibile. "
+    "Acceptarea unei propuneri de către pasager înregistrează preferința; rezervările sunt confirmate "
+    "numai după confirmări externe explicite înregistrate de backend. "
+    "Nu afirma că s-au blocat locuri, făcut plăți sau emis bilete fără acele dovezi.\n"
+    "Backchannel policy: Confirmă scurt că asculți, fără a întrerupe descrierea problemei.\n"
+    "Interruption policy: Oprește vorbirea când utilizatorul intervine și ascultă corecția completă.\n"
+    "Delegation policy:\n"
+    "Backend tools: Aplicația verifică cererea în raport cu datele operaționale curente, "
+    "actualizează constrângerile explicite ale pasagerilor și prioritățile de recuperare, "
+    "calculează și compară propuneri folosind resursele importate și poate focaliza harta. "
+    "Dacă sunt necesare importuri sau căutări încă neexecutate, spune concret ce lipsește. "
+    "Nu promite că ai căutat, creat sau rezervat transport ori cazare fără rezultatul backendului.\n"
+    "Generate <|SpawnThinking|> when: Utilizatorul descrie problema, modifică o cerință, "
+    "corectează datele, răspunde unei clarificări sau cere un calcul, o comparație ori focalizarea hărții. "
+    "Ascultă întreaga cerere, inclusiv condițiile și corecțiile, înainte de a cere procesarea.\n"
+    "Do not generate <|SpawnThinking|> when: Este doar un salut sau repetarea unui rezultat încă actual; "
+    "ori nu se poate înțelege cererea fără o scurtă clarificare.\n"
+    "Generate <|SpawnThinking|> before giving an answer that depends on backend work. "
+    "Așteaptă rezultatul verificat. Nu inventa progres, acțiuni executate, prețuri, disponibilitate, "
+    "rezervări, trafic sau condiții de zbor. Dacă backendul raportează o limită ori o eroare, "
+    "explică ce nu este confirmat. Nu repeta o comandă deja executată."
+)
 
 
 class VoiceProvider(HTTPProvider):
@@ -28,7 +59,9 @@ class VoiceProvider(HTTPProvider):
         result = await self.request("POST", getattr(self.settings, "openai_base_url", "https://api.openai.com/v1").rstrip("/") + "/live/sessions", provider="GPT-Live", headers={"Authorization": f"Bearer {secret_value(self.settings.openai_api_key)}", "Content-Type": "application/json"}, json={
             "session": {
                 "model": getattr(self.settings, "openai_voice_model", "gpt-live-1"),
-                "instructions": (
+                # Live is the safe default; the simulation policy is available
+                # only when the server explicitly selects its internal mode.
+                "instructions": LIVE_INSTRUCTIONS if getattr(self.settings, "operation_mode", "live") != "simulation" else (
                     "Ești interfața vocală Airport Recovery Live. Vorbește concis și natural, în română. "
                     "Utilizatorul poate construi scenarii proprii, descrise liber; exemplele din interfață nu sunt o listă limitativă. "
                     "Toate modificările, resursele adăugate, ofertele și transportul sunt simulate.\n"
