@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from .models import Allocation, Itinerary, Leg, PassengerGroup, Plan, Resource, Strategy, World
 from .airport_catalog import lookup_airport
 from .weather import departure_allowed, landing_allowed, passenger_arrival_pending
+from .initial_position import valid_initial_position
+from .pricing import APL_SOURCE, app_receipt_deadline, aware_timestamp, cost_summary, matching_cost_summary, valid_apl_resource_price
 
 
 def units(resource: Resource, group: PassengerGroup) -> int:
@@ -31,13 +33,18 @@ def live_resource_current(resource: Resource) -> bool:
         return False
     try:
         now=datetime.now(timezone.utc)
+        if resource.source == APL_SOURCE:
+            deadline = app_receipt_deadline(resource)
+            if deadline is None or resource.valid_until is not None or resource.provenance.get("quoted_at") is not None:
+                return False
+            return aware_timestamp(resource.quote_freshness.received_at) <= now <= deadline
         if resource.valid_until:
             until=datetime.fromisoformat(resource.valid_until.replace("Z","+00:00"))
             return until.tzinfo is not None and until>now
         if resource.requires_revalidation:
             at=datetime.fromisoformat(str(resource.provenance.get("quoted_at","")).replace("Z","+00:00"))
             return at.tzinfo is not None and 0 <= (now-at).total_seconds() <= 120
-    except (ValueError,TypeError):
+    except (ValueError,TypeError,AttributeError):
         pass
     return False
 
@@ -118,6 +125,9 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
     if world.mode=="live":
         if r.eligible_group_ids and g.id not in r.eligible_group_ids:
             return False
+        if r.source == APL_SOURCE or r.price_evidence is not None or r.quote_freshness is not None:
+            if world.currency != "EUR" or not valid_apl_resource_price(r, g, require_current=g.status != "confirmed"):
+                return False
         if g.status!="confirmed" and not live_resource_current(r):
             return False
         if g.status=="confirmed" and r.source=="synthetic":
@@ -133,7 +143,10 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
                 return False
         if resource_blocked_by_incident(world,r,g):
             return False
-    if not r.available or r.id in used_ids or r.origin != current or r.departure < minute:
+    declared_start = r.initial_position_assumption is not None
+    if declared_start and (used_ids or current != g.origin or not valid_initial_position(world, r, g)):
+        return False
+    if not r.available or r.id in used_ids or (r.origin != current and not declared_start) or r.departure < minute:
         return False
     if r.arrival <= r.departure or r.arrival > g.deadline or (g.accessible and not r.accessible):
         return False
@@ -160,7 +173,7 @@ def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Iti
             return
         if location==group.destination and legs:
             if any(leg.kind in ("bus","flight") for leg in legs):
-                options.append(Itinerary(legs=legs,arrival=legs[-1].arrival,total_cost=round(cost,2)))
+                options.append(Itinerary(legs=legs,arrival=legs[-1].arrival,total_cost=round(cost,2),cost_evidence=cost_summary(legs)))
             return
         if len(legs)>=max_legs or len(options)>=limit:
             return
@@ -176,7 +189,9 @@ def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Iti
             price = resource_cost(r,group)
             if cost+price > group.budget+1e-6:
                 continue
-            leg = Leg(resource_id=r.id,kind=r.kind,origin=r.origin,destination=r.destination,departure=r.departure,arrival=r.arrival,cost=price)
+            leg = Leg(resource_id=r.id,kind=r.kind,origin=r.origin,destination=r.destination,departure=r.departure,arrival=r.arrival,cost=price,
+                transport_mode=r.transport_mode, price_evidence=r.price_evidence.model_copy(deep=True) if r.price_evidence else None,
+                initial_position_assumption=r.initial_position_assumption.model_copy(deep=True) if r.initial_position_assumption else None)
             visit(r.destination,r.arrival,legs+[leg],seen if r.kind=="hotel" else seen|{r.destination},cost+price)
     visit(group.origin,ready,[],{group.origin},0)
     return options
@@ -227,6 +242,10 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
             expected_price = resource_cost(r,g)
             if (leg.origin,leg.destination,leg.departure,leg.arrival,leg.kind)!=(r.origin,r.destination,r.departure,r.arrival,r.kind) or not math.isfinite(leg.cost) or abs(leg.cost-expected_price)>0.005:
                 errors.append(f"{g.id}: tampered leg {r.id}")
+            if leg.price_evidence != r.price_evidence or leg.transport_mode != r.transport_mode or leg.initial_position_assumption != r.initial_position_assumption:
+                errors.append(f"{g.id}: missing or changed source/price evidence for {r.id}")
+            if r.price_evidence is not None and leg.cost != expected_price:
+                errors.append(f"{g.id}: inconsistent EUR estimate for {r.id}")
             used[r.id] += units(r,g)
             occupied_resources.add(r.id)
             subtotal += expected_price
@@ -240,6 +259,8 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
             errors.append(f"{g.id}: group budget exceeded")
         if not math.isfinite(alloc.itinerary.total_cost) or abs(alloc.itinerary.total_cost-subtotal)>0.005 or alloc.itinerary.arrival != minute:
             errors.append(f"{g.id}: inaccurate itinerary totals")
+        if not matching_cost_summary(alloc.itinerary.legs, alloc.itinerary.cost_evidence, alloc.itinerary.total_cost):
+            errors.append(f"{g.id}: missing or changed itinerary cost evidence")
         total_cost += subtotal
     for rid,count in used.items():
         if count > resources[rid].capacity:
@@ -248,6 +269,19 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
     if total_cost > world.budget+0.005:
         errors.append("Scenario budget exceeded")
     return {"valid":not errors,"errors":errors,"checks":["family_integrity","shared_capacities","temporal_continuity","full_destination","accessibility","deadlines","group_budgets","scenario_budget","hotel_room_occupancy","vehicle_schedule"],"total_committed_cost":round(total_cost,2)}
+
+
+def validate_plan(world: World, plan: Plan, *, scope_group_ids: set[str] | None = None) -> dict:
+    """Recheck allocation facts and the candidate's own monetary summary."""
+    result = validate_allocations(world, plan.allocations, scope_group_ids=scope_group_ids)
+    legs = [leg for allocation in plan.allocations for leg in allocation.itinerary.legs]
+    if not matching_cost_summary(legs, plan.cost_evidence, plan.total_cost):
+        result["errors"].append("Missing or changed plan cost evidence")
+    total = round(sum(item.itinerary.total_cost for item in plan.allocations), 2)
+    if not math.isfinite(plan.total_cost) or abs(plan.total_cost - total) > 0.005:
+        result["errors"].append("Inaccurate plan total")
+    result["valid"] = not result["errors"]
+    return result
 
 
 def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] | None = None) -> Plan:
@@ -323,9 +357,12 @@ def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] 
             exception.append({"group_id":g.id,"passengers":g.size,"reason":reason})
     pax = sum(g.size for g in groups if g.id in recovered)
     arrival = sum(a.itinerary.arrival*next(g.size for g in groups if g.id==a.group_id) for a in best)/pax if pax else 0
-    return Plan(id=f"plan-{strategy.id}",strategy=strategy,allocations=best,exceptions=exception,recovered_passengers=pax,
+    plan = Plan(id=f"plan-{strategy.id}",strategy=strategy,allocations=best,exceptions=exception,recovered_passengers=pax,
         total_cost=round(sum(a.itinerary.total_cost for a in best),2),average_arrival=round(arrival,2),scenario_changes=changes,
-        validation=validate_allocations(projected,best,scope_group_ids=scope_group_ids),latency_ms=round((time.perf_counter()-started)*1000,2))
+        cost_evidence=cost_summary([leg for allocation in best for leg in allocation.itinerary.legs]),
+        validation={},latency_ms=round((time.perf_counter()-started)*1000,2))
+    plan.validation = validate_plan(projected, plan, scope_group_ids=scope_group_ids)
+    return plan
 
 
 def default_strategies(world: World) -> list[Strategy]:

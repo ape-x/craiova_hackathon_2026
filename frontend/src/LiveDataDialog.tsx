@@ -9,9 +9,11 @@ import { MANIFEST_TEMPLATE, inspectManifest, utcInputToIso } from './liveData';
 import { addCalendarDays, bucharestDate } from './realData';
 import './liveData.css';
 import LiveTravelSearch from './LiveTravelSearch';
+import PlanningTransfers from './PlanningTransfers';
 import { isAirportNode, locationKindLabel } from './locationNodes';
 
-type Tab = 'search' | 'generate' | 'passengers' | 'transport' | 'hotels' | 'confirm';
+type Tab =
+  'search' | 'planning_transfer' | 'generate' | 'passengers' | 'transport' | 'hotels' | 'confirm';
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="field">
@@ -308,6 +310,7 @@ export default function LiveDataDialog({
         {(
           [
             ['search', 'Find live travel'],
+            ['planning_transfer', 'Private transfers'],
             ['generate', 'Planning assumptions'],
             ['passengers', 'Passenger manifest'],
             ['transport', 'Transport'],
@@ -333,6 +336,14 @@ export default function LiveDataDialog({
 
       {tab === 'search' && (
         <LiveTravelSearch
+          world={world}
+          onApplied={onApplied}
+          onMutationPending={setTravelPending}
+        />
+      )}
+      {tab === 'planning_transfer' && (
+        <PlanningTransfers
+          key={world.scenario_id}
           world={world}
           onApplied={onApplied}
           onMutationPending={setTravelPending}

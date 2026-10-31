@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from .scenario_schema import STRUCTURED_PAYLOADS, WeatherDefinition
+from .pricing import AplPriceEvidence, AplQuoteFreshness, CostEvidence
+from .initial_position import InitialPositionAssumption
 
 
 def canonical_id(value: str | None) -> str | None:
@@ -30,7 +32,7 @@ class Airport(Model):
     diversion_eligible: bool = True
     weather: WeatherDefinition | None = None
     operational_status: Literal["unknown", "open", "closed"] = "unknown"
-    kind: Literal["airport", "station", "hotel"] = "airport"
+    kind: Literal["airport", "station", "hotel", "meeting_point"] = "airport"
 
 
 class Resource(Model):
@@ -59,6 +61,10 @@ class Resource(Model):
     external_offer_id: str | None = None
     capacity_scope: str = "synthetic"
     booking_status: Literal["unbooked", "confirmed"] = "unbooked"
+    transport_mode: Literal["private_transfer"] | None = None
+    price_evidence: AplPriceEvidence | None = None
+    quote_freshness: AplQuoteFreshness | None = None
+    initial_position_assumption: InitialPositionAssumption | None = None
 
 
 class PassengerGroup(Model):
@@ -90,12 +96,16 @@ class Leg(Model):
     departure: int
     arrival: int
     cost: float
+    transport_mode: Literal["private_transfer"] | None = None
+    price_evidence: AplPriceEvidence | None = None
+    initial_position_assumption: InitialPositionAssumption | None = None
 
 
 class Itinerary(Model):
     legs: list[Leg]
     arrival: int
     total_cost: float
+    cost_evidence: CostEvidence | None = None
 
 
 class Offer(Model):
@@ -155,6 +165,7 @@ class Plan(Model):
     exceptions: list[dict[str, Any]]
     recovered_passengers: int
     total_cost: float
+    cost_evidence: CostEvidence | None = None
     average_arrival: float
     scenario_changes: list[dict[str, Any]] = Field(default_factory=list)
     validation: dict[str, Any]

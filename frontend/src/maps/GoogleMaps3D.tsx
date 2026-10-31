@@ -45,6 +45,7 @@ export default function GoogleMaps3D({
   const [cameraError, setCameraError] = useState('');
   const [modelError, setModelError] = useState('');
   const [overlayError, setOverlayError] = useState('');
+  const [roadGeometry, setRoadGeometry] = useState({ sourced: false, connectionOnly: false });
   const [visibility, setVisibility] = useState<ModelVisibility>(ALL_MODELS);
   const modelLayer = useRef<ModelLayer | null>(null);
 
@@ -128,6 +129,16 @@ export default function GoogleMaps3D({
       let stage: OverlayStage = 'derive overlays';
       try {
         const { markers, routes } = buildOverlays(world, selectedId, tracks.current, clock);
+        const geometry = {
+          sourced: routes.some((route) => route.geometry === 'sourced_road'),
+          connectionOnly: routes.some((route) => route.geometry === 'connection_only'),
+        };
+        setRoadGeometry((previous) =>
+          previous.sourced === geometry.sourced &&
+          previous.connectionOnly === geometry.connectionOnly
+            ? previous
+            : geometry,
+        );
         for (const route of routes) {
           // Google 3D polylines have no documented dash pattern. Separate segments
           // make simulated proposals visibly dashed without undocumented options.
@@ -144,8 +155,12 @@ export default function GoogleMaps3D({
               path,
               strokeColor: route.color,
               strokeWidth: route.selected ? 7 : route.observed ? 4 : 2.5,
-              altitudeMode: route.observed ? 'ABSOLUTE' : 'RELATIVE_TO_GROUND',
-              geodesic: true,
+              altitudeMode: route.geometry
+                ? 'CLAMP_TO_GROUND'
+                : route.observed
+                  ? 'ABSOLUTE'
+                  : 'RELATIVE_TO_GROUND',
+              geodesic: route.geometry !== 'sourced_road',
               drawsOccludedSegments: true,
               zIndex: route.selected ? 20 : route.observed ? 10 : 1,
             });
@@ -296,6 +311,15 @@ export default function GoogleMaps3D({
               <i className="geo-observed" />
               Received observations
             </span>
+            {roadGeometry.sourced && (
+              <span>
+                <i className="geo-road" />
+                Google Routes · predicted road
+              </span>
+            )}
+            {roadGeometry.connectionOnly && (
+              <span>Connection only · road geometry unavailable</span>
+            )}
             {world.mode !== 'live' && (
               <span>
                 <i className="geo-scenario" />

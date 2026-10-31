@@ -30,6 +30,7 @@ from .providers.travel import TravelProvider
 from .recovery_jobs import RecoveryJobs, RecoveryJobRequest, RecoveryCancellation
 from .live_commands import LiveCommands
 from .ground_transfers import GroundTransfers, create_transfer_router
+from .transfer_planning import GroundPlanning, create_planning_transfer_router
 from .incidents import FlightContextSelection, FlightLookupRequest, IncidentCreate, IncidentGroupBinding, IncidentService
 from .service import RecoveryService
 from .store import DomainError, Store, utcnow
@@ -96,6 +97,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     jobs=RecoveryJobs(settings,store,service,travel_provider,ai)
     service.live_commands=LiveCommands(store,jobs)
     ground_transfers=GroundTransfers(settings)
+    ground_planning=GroundPlanning(store,ground_transfers,real_data.provider)
     login_attempts=defaultdict(deque)
     # Reserve worst-case credit cost in the persistent shared request ledger;
     # restarting or adding a worker cannot replenish the paid provider budget.
@@ -105,6 +107,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         while True:
             try:
                 await asyncio.to_thread(store.purge_observations)
+                await asyncio.to_thread(ground_planning.purge)
             except sqlite3.Error:
                 logging.getLogger(__name__).warning("Observation cache cleanup could not access the database")
                 await asyncio.sleep(1)
@@ -146,6 +149,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     app.state.jobs=jobs
     app.state.live_commands=service.live_commands
     app.state.ground_transfers=ground_transfers
+    app.state.ground_planning=ground_planning
     app.add_middleware(CORSMiddleware,allow_origins=settings.origins,allow_credentials=True,allow_methods=["GET","POST","DELETE"],allow_headers=["Content-Type","Authorization","Last-Event-ID"])
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[h.strip() for h in settings.allowed_hosts.split(",")])
     app.add_middleware(BodySizeLimit,max_bytes=settings.max_request_bytes)
@@ -178,6 +182,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
             raise DomainError(401,"Operator authentication required")
 
     app.include_router(create_transfer_router(ground_transfers,operator))
+    app.include_router(create_planning_transfer_router(ground_planning,operator))
 
     @app.middleware("http")
     async def security_headers(request,call_next):

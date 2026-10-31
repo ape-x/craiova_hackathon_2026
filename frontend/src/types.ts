@@ -1,4 +1,43 @@
+import type { TransferFxReference } from './transferQuoteData';
+
 export type ResourceKind = 'bus' | 'flight' | 'hotel';
+export interface PriceEvidence {
+  kind: 'apl_ecb_reference';
+  original: { amount: string; currency: 'GBP' };
+  estimated_eur: { amount: string; currency: 'EUR' };
+  price_scope: 'per_vehicle';
+  fx_reference: TransferFxReference;
+  policy_id: 'ecb_reference_v1';
+  settlement_guaranteed: false;
+  revalidation_required: true;
+}
+export interface QuoteFreshness {
+  basis: 'app_receipt';
+  received_at: string;
+  max_age_seconds: 120;
+}
+export interface InitialPositionAssumption {
+  source: 'operator_declared';
+  confirmed: true;
+  group_id: string;
+  group_fingerprint: string;
+  scenario_id: string;
+  epoch: string;
+  airport_context_id: string;
+  point_id: string;
+  label: string;
+  coordinates: { latitude: number; longitude: number };
+  ready_at: number;
+}
+export interface CostEvidence {
+  kind: 'includes_ecb_reference';
+  total_eur: string;
+  estimated_eur: string;
+  original_gbp: string;
+  policy_id: 'ecb_reference_v1';
+  settlement_guaranteed: false;
+  revalidation_required: true;
+}
 export interface AirportWeather {
   condition: 'clear' | 'fog' | 'storm' | 'snow' | 'wind' | 'rain';
   visibility_m: number | null;
@@ -7,7 +46,7 @@ export interface AirportWeather {
   departure_allowed: boolean;
 }
 export interface Airport {
-  kind?: 'airport' | 'station' | 'hotel';
+  kind?: 'airport' | 'station' | 'hotel' | 'meeting_point';
   id: string;
   code: string;
   name: string;
@@ -38,11 +77,16 @@ export interface Resource {
   valid_until?: string | null;
   eligible_group_ids?: string[];
   quote_total_cost?: number | null;
+  budget_total_cost?: number | null;
+  price_evidence?: PriceEvidence | null;
+  quote_freshness?: QuoteFreshness | null;
+  transport_mode?: 'private_transfer' | null;
+  initial_position_assumption?: InitialPositionAssumption | null;
   quote_rooms?: number | null;
   requires_revalidation?: boolean;
   external_offer_id?: string | null;
   booking_status?: string;
-  capacity_scope?: 'quoted_request' | 'operator_confirmed';
+  capacity_scope?: 'quoted_request' | 'private_vehicle_quote' | 'operator_confirmed';
 }
 export interface PassengerGroup {
   incident_id?: string | null;
@@ -71,11 +115,15 @@ export interface Leg {
   departure: number;
   arrival: number;
   cost: number;
+  price_evidence?: PriceEvidence | null;
+  transport_mode?: 'private_transfer' | null;
+  initial_position_assumption?: InitialPositionAssumption | null;
 }
 export interface Itinerary {
   legs: Leg[];
   arrival: number;
   total_cost: number;
+  cost_evidence?: CostEvidence | null;
 }
 export interface Offer {
   id: string;
@@ -127,6 +175,7 @@ export interface Plan {
   exceptions: { group_id?: string; reason?: string; [key: string]: unknown }[];
   recovered_passengers: number;
   total_cost: number;
+  cost_evidence?: CostEvidence | null;
   average_arrival: number;
   validation: Record<string, unknown>;
   solver: string;
@@ -165,6 +214,12 @@ export interface Observation {
   source?: string;
   [key: string]: unknown;
 }
+export interface WorldStats {
+  [key: string]: number | boolean | CostEvidence | null | undefined;
+  committed_cost_evidence?: CostEvidence | null;
+  confirmed_cost_evidence?: CostEvidence | null;
+  budget_remaining_is_estimate?: boolean;
+}
 export interface World {
   incidents?: RecoveryIncident[];
   scenario_id: string;
@@ -182,7 +237,7 @@ export interface World {
   events: AuditEvent[];
   decisions: Decision[];
   observations: Observation[];
-  stats: Record<string, number>;
+  stats: WorldStats;
   provider_status: Record<string, unknown>;
 }
 export interface FlightAirportReference {

@@ -43,7 +43,7 @@ async def test_exact_future_request_and_unrounded_source_evidence_are_separate_f
         assert body == {"origin": {"location": {"latLng": ORIGIN}},
             "destination": {"location": {"latLng": DESTINATION}},
             "departureTime": "2026-11-01T12:00:00.123456Z", "travelMode": "DRIVE",
-            "routingPreference": "TRAFFIC_AWARE", "computeAlternativeRoutes": False, "units": "METRIC"}
+            "routingPreference": "TRAFFIC_AWARE", "computeAlternativeRoutes": False, "polylineQuality":"OVERVIEW", "units": "METRIC"}
         return httpx.Response(200, json=result())
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         provider = RealDataProvider(settings(), client=client, now=lambda: NOW)
@@ -59,6 +59,7 @@ async def test_exact_future_request_and_unrounded_source_evidence_are_separate_f
     assert quote["fetched_at"] == NOW.isoformat()
     assert quote["warnings"] == result()["routes"][0]["warnings"]
     assert quote["source"] == "Google Routes" and quote["duration_guaranteed"] is False
+    assert quote["encoded_polyline"] is None
     assert not {"duration_minutes", "arrival_at", "capacity", "vehicle_id"}.intersection(quote)
     assert "test-server-key" not in json.dumps(quote)
 
@@ -230,3 +231,20 @@ async def test_pickup_that_elapsed_during_request_is_not_replaced_with_now():
         with pytest.raises(ProviderError) as caught:
             await provider.dated_route(ORIGIN, DESTINATION, PICKUP)
     assert caught.value.code == "pickup_elapsed" and len(calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encoded", [None, "_p~iF~ps|U_ulLnnqC_mqNvxq`@", "x"*100_001, "abc\n", "\u00e9", 12, ""])
+async def test_optional_polyline_is_preserved_or_rejected_without_inventing_geometry(encoded):
+    payload = result()
+    if encoded is not None:
+        payload["routes"][0]["polyline"] = {"encodedPolyline":encoded}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _:httpx.Response(200,json=payload))) as client:
+        provider = RealDataProvider(settings(),client=client,now=lambda:NOW)
+        if encoded is None or encoded == "_p~iF~ps|U_ulLnnqC_mqNvxq`@":
+            route = await provider.dated_route(ORIGIN,DESTINATION,PICKUP)
+            assert route["encoded_polyline"] == encoded
+        else:
+            with pytest.raises(ProviderError) as caught:
+                await provider.dated_route(ORIGIN,DESTINATION,PICKUP)
+            assert caught.value.code == "invalid_response"

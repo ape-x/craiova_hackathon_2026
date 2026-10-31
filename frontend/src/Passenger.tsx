@@ -10,20 +10,13 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react';
-import {
-  ApiError,
-  TransportError,
-  formatCost,
-  formatTime,
-  formatOperationTime,
-  key,
-  request,
-} from './api';
+import { ApiError, TransportError, formatTime, formatOperationTime, key, request } from './api';
 import type { Airport, Offer, PassengerGroup, Resource } from './types';
 import { Brand, Dot, Tag } from './ui';
 import { ItineraryView } from './Inspector';
 import ThemeToggle from './ThemeToggle';
 import { sourcedArrival } from './journeyPresentation';
+import { costPresentation, EstimatedCostNote } from './priceEvidence';
 
 interface PassengerState {
   version: number;
@@ -332,10 +325,17 @@ function PassengerJourney({ token }: { token: string }) {
                         : formatTime(offer.itinerary.arrival)}
                     </span>
                   </div>
-                  <div className="boarding-total">
-                    <span>Complete group itinerary</span>
-                    <strong>{formatCost(offer.itinerary.total_cost)}</strong>
+                  <div
+                    className={`boarding-total${costPresentation(offer.itinerary).estimated ? ' estimated-total' : ''}`}
+                  >
+                    <span>
+                      {costPresentation(offer.itinerary).estimated
+                        ? 'Estimated itinerary total'
+                        : 'Complete group itinerary'}
+                    </span>
+                    <strong>{costPresentation(offer.itinerary).amount}</strong>
                   </div>
+                  <EstimatedCostNote value={offer.itinerary} />
                   {!confirmed && !accepted && (
                     <>
                       <div className="hold-countdown">

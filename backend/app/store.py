@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 from .models import AuditEvent, FlightSelection, World
 from .seed import seed_world, empty_live_world
+from .pricing import cost_summary
 
 
 def utcnow() -> datetime:
@@ -34,6 +35,8 @@ def audit(world: World, kind: str, description: str, target=None, data=None):
 def refresh_stats(world: World):
     groups = {g.id:g for g in world.groups}
     active = [o for o in world.offers if o.status in ("held","proposed","accepted","confirmed")]
+    committed_evidence = cost_summary([leg for offer in active for leg in offer.itinerary.legs])
+    confirmed_evidence = cost_summary([leg for offer in active if offer.status == "confirmed" for leg in offer.itinerary.legs])
     total = sum(g.size for g in world.groups)
     world.stats = {
         "total_passengers":total,"total_groups":len(groups),
@@ -42,7 +45,10 @@ def refresh_stats(world: World):
         "proposed_passengers":sum(groups[o.group_id].size for o in active if o.status in ("proposed","accepted")),
         "committed_cost":round(sum(o.itinerary.total_cost for o in active),2),
         "confirmed_cost":round(sum(o.itinerary.total_cost for o in active if o.status=="confirmed"),2),
+        "committed_cost_evidence":committed_evidence.model_dump(mode="json") if committed_evidence else None,
+        "confirmed_cost_evidence":confirmed_evidence.model_dump(mode="json") if confirmed_evidence else None,
         "budget_remaining":round(world.budget-sum(o.itinerary.total_cost for o in active),2),
+        "budget_remaining_is_estimate":committed_evidence is not None,
         "resource_usage":{r.id:sum(x.quantity for x in world.reservations if x.resource_id==r.id and x.status in ("held","proposed","accepted","confirmed")) for r in world.resources},
         "currency":world.currency,"data_source":"synthetic" if world.mode=="simulation" else "real_resources_test_passengers" if any(g.source=="synthetic" for g in world.groups) else "real", "last_updated":utcnow().isoformat(),
     }

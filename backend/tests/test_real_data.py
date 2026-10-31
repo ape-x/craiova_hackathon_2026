@@ -44,6 +44,22 @@ async def test_supplier_property_location_uses_exact_metadata_identity_and_coord
     assert result["latitude"] == 51.47 and result["longitude"] == -0.45
     assert result["location_source"] == "Nuitee / LiteAPI"
     assert "prod_test" not in json.dumps(result)
+    assert result["postal_address"]["address"] is None
+
+
+@pytest.mark.asyncio
+async def test_exact_property_postal_metadata_is_sourced_and_never_guessed_or_truncated():
+    data={"id":"property-123","name":"Source property","address":"628 Western Avenue, London W3 0TA","country":"GB","city":"London",
+        "location":{"latitude":51.53,"longitude":-.29}}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _:httpx.Response(200,json={"data":data}))) as client:
+        provider=RealDataProvider(settings(liteapi_api_key="prod_test",liteapi_environment="live"),client=client)
+        location=await provider.hotel_location("property-123")
+        postal=location["postal_address"]
+        assert {key:postal[key] for key in ("name","address","city","country")}=={key:data[key] for key in ("name","address","city","country")}
+        assert postal["hotel_id"]=="property-123" and postal["source"]=="Nuitee / LiteAPI"
+        assert postal["retrieved_at"]==location["location_retrieved_at"]
+        data["address"]="x"*2001
+        assert (await provider.hotel_location("property-123"))["postal_address"]["address"] is None
 
 
 @pytest.mark.asyncio

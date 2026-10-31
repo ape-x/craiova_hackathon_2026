@@ -5,6 +5,7 @@ import {
   ArrowRight,
   BedDouble,
   BusFront,
+  CarFront,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -12,6 +13,7 @@ import {
   Clock3,
   Copy,
   ExternalLink,
+  MapPin,
   Plane,
   ShieldCheck,
   Users,
@@ -26,6 +28,12 @@ import { airportWeatherState } from './weather';
 import { passengerSourceLabel } from './liveData';
 import { isAirportNode, locationKindLabel } from './locationNodes';
 import { flightSegments, waitingTime } from './journeyPresentation';
+import {
+  costPresentation,
+  EstimatedCostNote,
+  PriceEvidenceDetails,
+  privateTransfer,
+} from './priceEvidence';
 import {
   freshnessTime,
   liveResourceStatus,
@@ -45,7 +53,14 @@ export function ItineraryView({
   return (
     <div className="itinerary">
       {offer.itinerary.legs.map((leg, index) => {
-        const Icon = leg.kind === 'bus' ? BusFront : leg.kind === 'hotel' ? BedDouble : Plane;
+        const transfer = privateTransfer(leg);
+        const Icon = transfer
+          ? CarFront
+          : leg.kind === 'bus'
+            ? BusFront
+            : leg.kind === 'hotel'
+              ? BedDouble
+              : Plane;
         const segments =
           world?.mode === 'live'
             ? flightSegments(
@@ -106,12 +121,20 @@ export function ItineraryView({
                   ? `Overnight · ${leg.origin}`
                   : `${leg.origin} → ${leg.destination}`}
               </strong>
+              {transfer && <span>Private transfer</span>}
+              {leg.initial_position_assumption?.source === 'operator_declared' && (
+                <span>
+                  Initial meeting point: {leg.initial_position_assumption.label} · reported by
+                  operations; no connection from an arriving flight is verified.
+                </span>
+              )}
               <span>
                 {leg.resource_id} <b>·</b>{' '}
                 {world ? formatWorldTime(world, leg.departure) : formatTime(leg.departure)}–
                 {world ? formatWorldTime(world, leg.arrival) : formatTime(leg.arrival)}
                 {world?.mode === 'live' ? ' · Europe/Bucharest operations time' : ''}
               </span>
+              <PriceEvidenceDetails evidence={leg.price_evidence} />
             </div>
           </div>
         );
@@ -344,32 +367,48 @@ function ResourceFacts({
           Arrival <b>{formatWorldTime(world, resource.arrival)}</b>
         </span>
         <span>
-          {resource.capacity_scope === 'quoted_request'
+          {resource.capacity_scope === 'private_vehicle_quote'
             ? planningCurrent
-              ? 'Quote scope'
-              : 'Recorded quote scope'
-            : planningCurrent
-              ? 'Available / total'
-              : 'Recorded capacity'}{' '}
-          {resource.kind === 'hotel' ? 'rooms' : 'seats'}{' '}
-          <b>
-            {resource.capacity_scope === 'quoted_request'
-              ? `${resource.capacity} · requested group only`
+              ? 'Quoted group'
+              : 'Recorded quoted group'
+            : resource.capacity_scope === 'quoted_request'
+              ? planningCurrent
+                ? 'Quote scope'
+                : 'Recorded quote scope'
               : planningCurrent
-                ? `${availableUnits(world, resource.id)} / ${resource.capacity}`
-                : resource.capacity}
+                ? 'Available / total'
+                : 'Recorded capacity'}{' '}
+          {resource.capacity_scope === 'private_vehicle_quote'
+            ? ''
+            : resource.kind === 'hotel'
+              ? 'rooms'
+              : 'seats'}{' '}
+          <b>
+            {resource.capacity_scope === 'private_vehicle_quote'
+              ? `${resource.capacity} passengers · one vehicle quote`
+              : resource.capacity_scope === 'quoted_request'
+                ? `${resource.capacity} · requested group only`
+                : planningCurrent
+                  ? `${availableUnits(world, resource.id)} / ${resource.capacity}`
+                  : resource.capacity}
           </b>
         </span>
         <span>
           Accessibility <b>{resource.accessible ? 'Supported' : 'Not supported'}</b>
         </span>
-        <span>
-          {resource.quote_total_cost != null
-            ? 'Group quote total'
-            : `Cost per ${resource.kind === 'hotel' ? 'room' : 'person'}`}{' '}
-          <b>{formatCost(resource.quote_total_cost ?? resource.cost_per_person)}</b>
-        </span>
+        {resource.price_evidence == null && !privateTransfer(resource) && (
+          <span>
+            {resource.quote_total_cost != null
+              ? 'Group quote total'
+              : `Cost per ${resource.kind === 'hotel' ? 'room' : 'person'}`}{' '}
+            <b>{formatCost(resource.quote_total_cost ?? resource.cost_per_person)}</b>
+          </span>
+        )}
       </div>
+      <PriceEvidenceDetails evidence={resource.price_evidence} />
+      {privateTransfer(resource) && resource.price_evidence == null && (
+        <p className="field-hint">Price evidence unavailable. Revalidation is required.</p>
+      )}
       {world.mode === 'live' && (
         <div className="fact-list">
           <span>
@@ -398,6 +437,11 @@ function ResourceFacts({
               Source quoted at <b>{freshnessTime(freshness.quotedAt)}</b>
             </span>
           )}
+          {freshness?.receivedAt != null && (
+            <span>
+              Received by app <b>{freshnessTime(freshness.receivedAt)}</b>
+            </span>
+          )}
           {resource.valid_until ? (
             <span>
               Recorded validity until{' '}
@@ -405,7 +449,8 @@ function ResourceFacts({
                 {freshness?.cutoff != null ? freshnessTime(freshness.cutoff) : 'Unusable timestamp'}
               </b>
             </span>
-          ) : freshness?.basis === 'quoted_at' && freshness.cutoff !== null ? (
+          ) : (freshness?.basis === 'quoted_at' || freshness?.basis === 'app_receipt') &&
+            freshness.cutoff !== null ? (
             <span>
               Local freshness through <b>{freshnessTime(freshness.cutoff)}</b>
             </span>
@@ -437,6 +482,7 @@ function ResourceFacts({
 function DecisionDetails({ decision, world }: { decision: Decision; world: World }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const selected = decision.candidates.find((plan) => plan.id === decision.selected_plan_id);
+  const selectedCost = costPresentation(selected);
   const historical = world.decisions.at(-1)?.id !== decision.id;
   const activeCount = world.offers.filter(
     (offer) =>
@@ -482,8 +528,8 @@ function DecisionDetails({ decision, world }: { decision: Decision; world: World
           <span>planned passengers</span>
         </div>
         <div>
-          <strong>{formatCost(selected?.total_cost ?? 0)}</strong>
-          <span>plan cost</span>
+          <strong>{selectedCost.amount}</strong>
+          <span>{selectedCost.estimated ? 'estimated plan cost' : 'plan cost'}</span>
         </div>
         <div>
           <strong>
@@ -495,6 +541,7 @@ function DecisionDetails({ decision, world }: { decision: Decision; world: World
           <span>measured</span>
         </div>
       </div>
+      {selected && <EstimatedCostNote value={selected} />}
       <div className="inspector-section">
         <div className="section-label">
           <span>Alternatives evaluated</span>
@@ -514,7 +561,8 @@ function DecisionDetails({ decision, world }: { decision: Decision; world: World
               <div>
                 <strong>{plan.strategy.label}</strong>
                 <span>
-                  {plan.recovered_passengers} pax <b>·</b> {formatCost(plan.total_cost)}
+                  {plan.recovered_passengers} pax <b>·</b> {costPresentation(plan).amount}
+                  {costPresentation(plan).estimated ? ' estimated' : ''}
                 </span>
                 {expanded === plan.id && (
                   <p>
@@ -764,10 +812,17 @@ export default function Inspector({
                   </strong>
                 </div>
                 <ItineraryView offer={offer} world={world} />
-                <div className="offer-total">
-                  <span>Complete itinerary</span>
-                  <strong>{formatCost(offer.itinerary.total_cost)}</strong>
+                <div
+                  className={`offer-total${costPresentation(offer.itinerary).estimated ? ' estimated-total' : ''}`}
+                >
+                  <span>
+                    {costPresentation(offer.itinerary).estimated
+                      ? 'Estimated itinerary total'
+                      : 'Complete itinerary'}
+                  </span>
+                  <strong>{costPresentation(offer.itinerary).amount}</strong>
                 </div>
+                <EstimatedCostNote value={offer.itinerary} />
               </>
             ) : (
               <div className="empty-detail">
@@ -792,7 +847,9 @@ export default function Inspector({
               <div
                 className={`entity-icon ${liveStatus ? `text-${liveStatus.tone}` : resource.available ? 'mint' : 'red'}`}
               >
-                {resource.kind === 'bus' ? (
+                {privateTransfer(resource) ? (
+                  <CarFront size={23} />
+                ) : resource.kind === 'bus' ? (
                   <BusFront size={23} />
                 ) : resource.kind === 'flight' ? (
                   <Plane size={23} />
@@ -803,9 +860,11 @@ export default function Inspector({
               <div>
                 <span className="eyebrow">
                   {world.mode === 'live'
-                    ? resource.capacity_scope === 'quoted_request'
-                      ? 'GROUP QUOTE RECORD'
-                      : 'OPERATOR-VERIFIED RESOURCE'
+                    ? resource.capacity_scope === 'private_vehicle_quote'
+                      ? 'PRIVATE-TRANSFER QUOTE RECORD'
+                      : resource.capacity_scope === 'quoted_request'
+                        ? 'GROUP QUOTE RECORD'
+                        : 'OPERATOR-VERIFIED RESOURCE'
                     : 'SIMULATED RESOURCE'}
                 </span>
                 <h3>
@@ -826,7 +885,10 @@ export default function Inspector({
                         : 'Unavailable'}
                   </span>
                 </h3>
-                <span>{resource.name}</span>
+                <span>
+                  {privateTransfer(resource) ? 'Private transfer · ' : ''}
+                  {resource.name}
+                </span>
               </div>
             </div>
             {resourceImpact ? (
@@ -883,7 +945,9 @@ export default function Inspector({
               <div
                 className={`entity-icon ${!isAirportNode(airport) || (world.mode === 'live' && airport.operational_status === 'unknown') || airport.available ? 'cyan' : 'red'}`}
               >
-                {airport.kind === 'hotel' ? (
+                {airport.kind === 'meeting_point' ? (
+                  <MapPin size={22} />
+                ) : airport.kind === 'hotel' ? (
                   <BedDouble size={22} />
                 ) : airport.kind === 'station' ? (
                   <BusFront size={22} />
@@ -897,7 +961,9 @@ export default function Inspector({
                   {world.mode === 'live' ? 'REFERENCE LOCATION' : 'SCENARIO STATUS'}
                 </span>
                 <h3>
-                  {airport.kind === 'hotel' ? airport.name : airport.code}{' '}
+                  {airport.kind === 'hotel' || airport.kind === 'meeting_point'
+                    ? airport.name
+                    : airport.code}{' '}
                   <span
                     className={
                       !isAirportNode(airport) ||
@@ -908,20 +974,26 @@ export default function Inspector({
                           : 'text-red'
                     }
                   >
-                    {airport.kind === 'hotel'
-                      ? 'Property location'
-                      : airport.kind === 'station'
-                        ? 'Supplier stop'
-                        : world.mode === 'live' && airport.operational_status === 'unknown'
-                          ? 'Status unknown'
-                          : airport.available
-                            ? airportWeatherState(airport).restricted
-                              ? 'Weather restricted'
-                              : 'Operational'
-                            : 'Unavailable'}
+                    {airport.kind === 'meeting_point'
+                      ? 'Operator-declared initial position'
+                      : airport.kind === 'hotel'
+                        ? 'Property location'
+                        : airport.kind === 'station'
+                          ? 'Supplier stop'
+                          : world.mode === 'live' && airport.operational_status === 'unknown'
+                            ? 'Status unknown'
+                            : airport.available
+                              ? airportWeatherState(airport).restricted
+                                ? 'Weather restricted'
+                                : 'Operational'
+                              : 'Unavailable'}
                   </span>
                 </h3>
-                <span>{airport.kind === 'hotel' ? airport.code : airport.name}</span>
+                <span>
+                  {airport.kind === 'hotel' || airport.kind === 'meeting_point'
+                    ? airport.code
+                    : airport.name}
+                </span>
               </div>
             </div>
             <div className="fact-list">
@@ -943,13 +1015,15 @@ export default function Inspector({
               <AirportWeatherStatus airport={airport} />
             )}
             <p className="muted small">
-              {airport.kind === 'hotel'
-                ? 'This is the accommodation provider’s property location. Room availability comes from a specific quoted offer; transport to the property must be verified separately.'
-                : airport.kind === 'station'
-                  ? 'This is the supplier’s actual coach stop. Transfer to or from an airport must be verified separately.'
-                  : world.mode === 'live'
-                    ? 'Airport geography is reference data. Operational availability requires a verified source.'
-                    : 'Airport conditions belong to this simulation. Observed flight positions remain unchanged.'}
+              {airport.kind === 'meeting_point'
+                ? 'The operator reported this initial meeting point for the selected group. It is not a verified terminal or a connection from an arriving flight.'
+                : airport.kind === 'hotel'
+                  ? 'This is the accommodation provider’s property location. Room availability comes from a specific quoted offer; transport to the property must be verified separately.'
+                  : airport.kind === 'station'
+                    ? 'This is the supplier’s actual coach stop. Transfer to or from an airport must be verified separately.'
+                    : world.mode === 'live'
+                      ? 'Airport geography is reference data. Operational availability requires a verified source.'
+                      : 'Airport conditions belong to this simulation. Observed flight positions remain unchanged.'}
             </p>
             {(world.mode === 'live' || isAirportNode(airport)) && (
               <button className="secondary-button full" onClick={onScenario}>

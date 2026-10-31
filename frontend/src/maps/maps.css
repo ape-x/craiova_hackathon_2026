@@ -124,6 +124,9 @@
   border-top: 2px dashed #f8bb69;
   background: none;
 }
+.geographic-map-legend i.geo-road {
+  background: #88aefa;
+}
 .geographic-map-legend i.geo-confirmed {
   background: #6fe2b6;
 }

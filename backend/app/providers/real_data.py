@@ -430,10 +430,10 @@ class RealDataProvider:
         departure_text = departure.isoformat().replace("+00:00", "Z")
         payload = await self._request("POST", "https://routes.googleapis.com/directions/v2:computeRoutes", source,
             headers={"X-Goog-Api-Key": secret_value(self.settings.google_maps_server_api_key),
-                     "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.legs.startLocation,routes.legs.endLocation,routes.warnings,fallbackInfo"},
+                     "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.legs.startLocation,routes.legs.endLocation,routes.warnings,routes.polyline.encodedPolyline,fallbackInfo"},
             json={"origin": {"location": {"latLng": start}}, "destination": {"location": {"latLng": end}},
                   "departureTime": departure_text, "travelMode": "DRIVE", "routingPreference": "TRAFFIC_AWARE",
-                  "computeAlternativeRoutes": False, "units": "METRIC"})
+                  "computeAlternativeRoutes": False, "polylineQuality": "OVERVIEW", "units": "METRIC"})
         fetched_at = self._now().astimezone(timezone.utc)
         if fetched_at >= departure:
             raise ProviderError("The requested pickup elapsed before Google returned the route; no current-time substitute was requested.", provider=source, code="pickup_elapsed")
@@ -465,12 +465,18 @@ class RealDataProvider:
             warnings = row.get("warnings", [])
             if not isinstance(warnings, list) or len(warnings) > 20 or any(not isinstance(item, str) or not item.strip() or len(item) > 2048 for item in warnings):
                 raise ValueError("Invalid route warnings")
+            polyline = row.get("polyline", {})
+            if not isinstance(polyline, dict):
+                raise ValueError("Invalid polyline object")
+            encoded = polyline.get("encodedPolyline")
+            if encoded is not None and (not isinstance(encoded, str) or not 1 <= len(encoded) <= 100_000 or any(not 63 <= ord(char) <= 126 for char in encoded)):
+                raise ValueError("Invalid encoded polyline")
             return {"source": source, "source_url": "https://developers.google.com/maps/documentation/routes/reference/rest/v2/TopLevel/computeRoutes",
                 "fetched_at": fetched_at.isoformat(),
                 "request": {"origin": start, "destination": end, "departure_time": departure_text,
-                            "travel_mode": "DRIVE", "routing_preference": "TRAFFIC_AWARE"},
+                            "travel_mode": "DRIVE", "routing_preference": "TRAFFIC_AWARE", "polyline_quality":"OVERVIEW"},
                 "duration_seconds": duration[:-1], "distance_meters": meters, "duration_guaranteed": False,
-                "road_endpoints": {"origin": road_start, "destination": road_end}, "warnings": warnings}
+                "road_endpoints": {"origin": road_start, "destination": road_end}, "warnings": warnings, "encoded_polyline":encoded}
         except (ValueError, TypeError, KeyError, InvalidOperation, OverflowError) as exc:
             raise _invalid(source) from exc
 
@@ -497,9 +503,15 @@ class RealDataProvider:
                 raise ValueError("Property identity changed")
             location = data["location"]
             received_at = datetime.now(timezone.utc).isoformat()
+            def postal_text(field, maximum):
+                value = data.get(field)
+                return value.strip() if isinstance(value, str) and value.strip() and len(value) <= maximum and not any(ord(char) < 32 for char in value) else None
             return {"latitude": _number(location["latitude"], -90, 90),
                     "longitude": _number(location["longitude"], -180, 180),
                     "location_source": source, "location_retrieved_at": received_at,
+                    "postal_address": {"hotel_id": hotel_id, "name": postal_text("name", 500),
+                        "address": postal_text("address", 2000), "city": postal_text("city", 200),
+                        "country": postal_text("country", 100), "source": source, "retrieved_at": received_at},
                     "stay_policy": source_stay_policy(hotel_id, data.get("checkinCheckoutTimes"), received_at)}
         except (ValueError, TypeError, KeyError) as exc:
             raise _invalid(source) from exc

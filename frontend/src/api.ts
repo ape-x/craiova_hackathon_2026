@@ -10,6 +10,7 @@ import type {
   ScenarioChange,
   World,
 } from './types';
+import type { PlanningTransferInput, PlanningTransferQuote } from './planningTransferData';
 
 export class ApiError extends Error {
   constructor(
@@ -26,6 +27,12 @@ export class TransportError extends Error {
       'The server did not confirm the outcome. Reconnect before retrying; the same request ID will be reused.',
     );
     this.name = 'TransportError';
+  }
+}
+export class SearchOutcomeUnknownError extends ApiError {
+  constructor(message: string) {
+    super(503, message);
+    this.name = 'SearchOutcomeUnknownError';
   }
 }
 export async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
@@ -64,6 +71,24 @@ export async function request<T>(path: string, body?: unknown, signal?: AbortSig
     );
   }
   if (!response.ok) {
+    const details = data.details;
+    if (
+      path === '/transfers/planning-quotes' &&
+      guardedMutation &&
+      response.status === 503 &&
+      data.applied === null &&
+      details !== null &&
+      typeof details === 'object' &&
+      !Array.isArray(details) &&
+      'unknown_outcome' in details &&
+      details.unknown_outcome === true &&
+      !('in_progress' in details && details.in_progress === true)
+    )
+      throw new SearchOutcomeUnknownError(
+        typeof data.detail === 'string'
+          ? data.detail
+          : 'The previous source search has an unrecoverable unknown outcome.',
+      );
     if (guardedMutation && response.status >= 500 && data.applied !== false)
       throw new TransportError(retry);
     const detail = data.detail ?? data.error ?? response.statusText;
@@ -80,6 +105,19 @@ export const api = {
   world: (signal?: AbortSignal) => request<World>('/world', undefined, signal),
   login: (token: string) => request('/auth/login', { token }),
   logout: () => request('/auth/logout', {}),
+  planningTransferQuote: (world: World, input: PlanningTransferInput) =>
+    request<PlanningTransferQuote>('/transfers/planning-quotes', {
+      ...input,
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
+  importPlanningTransfer: (world: World, quoteId: string, optionId: string) =>
+    request<MutationResult>(`/transfers/planning-quotes/${encodeURIComponent(quoteId)}/import`, {
+      option_id: optionId,
+      policy_id: 'ecb_reference_v1',
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
   lookupFlight: (input: { flight_number: string; date_utc: string }, signal?: AbortSignal) =>
     request<FlightLookup>('/flights/lookup', input, signal),
   recoveryJobs: (incidentId: string, signal?: AbortSignal) =>

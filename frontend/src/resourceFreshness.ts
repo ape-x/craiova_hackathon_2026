@@ -5,12 +5,13 @@ export interface ResourceFreshness {
   state: 'current' | 'stale' | 'unknown';
   label: string;
   detail: string;
-  basis: 'valid_until' | 'quoted_at' | null;
+  basis: 'valid_until' | 'quoted_at' | 'app_receipt' | null;
   quotedAt: number | null;
+  receivedAt: number | null;
   cutoff: number | null;
 }
 
-function sourceInstant(value: unknown): number | null {
+export function sourceInstant(value: unknown): number | null {
   if (typeof value !== 'string') return null;
   const match =
     /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2})(\.\d{1,6})?)?(Z|[+-]\d{2}:?\d{2})$/.exec(
@@ -30,11 +31,15 @@ function sourceInstant(value: unknown): number | null {
 // Presentation mirrors solver.live_resource_current; eligibility remains server-side.
 export function resourceFreshness(resource: Resource, now: number): ResourceFreshness {
   const quotedAt = sourceInstant(resource.provenance?.quoted_at);
+  const apl = resource.source === 'Airport Pickups London';
+  const receipt = apl ? resource.quote_freshness : null;
+  const receivedAt = sourceInstant(receipt?.received_at);
   const unknown: ResourceFreshness = {
     state: 'unknown',
     label: 'Freshness unknown',
     basis: null,
     quotedAt,
+    receivedAt,
     cutoff: null,
     detail: 'No usable validity or quote time. Revalidation is required for a new plan.',
   };
@@ -45,6 +50,12 @@ export function resourceFreshness(resource: Resource, now: number): ResourceFres
       detail: 'Synthetic inventory is not accepted in live plans.',
     };
   if (!Number.isFinite(now)) return unknown;
+  if (apl && (!receipt || resource.valid_until != null || resource.provenance?.quoted_at != null))
+    return {
+      ...unknown,
+      detail:
+        'APL requires an app receipt window without an invented supplier quote time or expiry. Revalidation is required.',
+    };
   if (resource.valid_until) {
     const cutoff = sourceInstant(resource.valid_until);
     if (cutoff === null)
@@ -58,10 +69,35 @@ export function resourceFreshness(resource: Resource, now: number): ResourceFres
       label: current ? 'Within validity' : 'Validity expired',
       basis: 'valid_until',
       quotedAt,
+      receivedAt,
       cutoff,
       detail: current
         ? 'Within the recorded validity window; this does not guarantee supplier stock.'
         : 'Recorded validity has ended. Revalidation is required for a new plan.',
+    };
+  }
+  if (receipt != null) {
+    if (receipt.basis !== 'app_receipt' || receipt.max_age_seconds !== 120 || receivedAt === null)
+      return {
+        ...unknown,
+        detail:
+          'The app receipt time or local freshness policy is unavailable. Revalidation is required.',
+      };
+    if (receivedAt > now)
+      return {
+        ...unknown,
+        detail: 'The app receipt time is in the future. Freshness cannot be established.',
+      };
+    const cutoff = receivedAt + 120_000;
+    return {
+      state: now <= cutoff ? 'current' : 'stale',
+      label: now <= cutoff ? 'Within freshness window' : 'Quote stale',
+      basis: 'app_receipt',
+      quotedAt,
+      receivedAt,
+      cutoff,
+      detail:
+        'The app applies a 120-second planning freshness window from receipt. Supplier quote time and expiry are unknown; this is not a supplier hold.',
     };
   }
   if (!resource.requires_revalidation || quotedAt === null) return unknown;
@@ -77,6 +113,7 @@ export function resourceFreshness(resource: Resource, now: number): ResourceFres
     label: current ? 'Within freshness window' : 'Quote stale',
     basis: 'quoted_at',
     quotedAt,
+    receivedAt,
     cutoff,
     detail:
       'This quote has a 120-second local freshness window from the source quote time. This is not a supplier expiry or a hold.',
@@ -109,7 +146,12 @@ export function liveResourceStatus(
   if (!planningCurrent)
     return { label: freshness.label, tone: 'amber', planningCurrent: false } as const;
   return {
-    label: resource.capacity_scope === 'quoted_request' ? 'Unbooked quote' : 'Documented service',
+    label:
+      resource.capacity_scope === 'private_vehicle_quote'
+        ? 'Unbooked vehicle quote'
+        : resource.capacity_scope === 'quoted_request'
+          ? 'Unbooked quote'
+          : 'Documented service',
     tone: 'cyan',
     planningCurrent,
   } as const;

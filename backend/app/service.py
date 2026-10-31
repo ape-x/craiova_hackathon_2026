@@ -13,7 +13,8 @@ from .scenario_authoring import add_airport, add_passengers, add_resource, airpo
 from .scenario_schema import MAX_COMMAND_EVENTS, WeatherDefinition
 from .weather import apply_weather_to_flight, departure_allowed, landing_allowed
 from .scenario_reset import reset_scenario
-from .solver import active_offers, build_candidate, default_strategies, units, validate_allocations
+from .solver import active_offers, build_candidate, default_strategies, units, validate_allocations, validate_plan
+from .pricing import app_receipt_deadline
 from .store import DomainError, Store, audit, utcnow
 
 
@@ -320,7 +321,7 @@ def validated_candidates(world: World,candidates):
                     apply_change(projected,ScenarioChange.model_validate(change))
             except (DomainError,ValidationError):
                 continue
-            if not validate_allocations(projected,plan.allocations)["valid"]:
+            if not validate_plan(projected,plan)["valid"]:
                 continue
         valid.append(plan)
     return valid
@@ -363,7 +364,7 @@ class RecoveryService:
             raise DomainError(409,"A scoped recovery plan cannot change the scenario or unrelated passenger groups")
         for change in plan.scenario_changes:
             apply_change(world,ScenarioChange.model_validate(change))
-        check=validate_allocations(world,plan.allocations,scope_group_ids=scope_group_ids)
+        check=validate_plan(world,plan,scope_group_ids=scope_group_ids)
         if not check["valid"]:
             raise DomainError(409,"Candidate failed authoritative validation",check)
         for offer in active_offers(world):
@@ -384,7 +385,10 @@ class RecoveryService:
                 limits=[datetime.fromisoformat(expires)]
                 for leg in allocation.itinerary.legs:
                     resource=resources[leg.resource_id]
-                    if resource.valid_until:
+                    receipt_deadline=app_receipt_deadline(resource)
+                    if receipt_deadline is not None:
+                        limits.append(receipt_deadline)
+                    elif resource.valid_until:
                         limits.append(datetime.fromisoformat(resource.valid_until))
                     elif resource.requires_revalidation:
                         limits.append(datetime.fromisoformat(resource.provenance["quoted_at"])+timedelta(seconds=120))
@@ -441,7 +445,8 @@ class RecoveryService:
         else:
             plan=min(candidates,key=lambda p:(-p.recovered_passengers,p.total_cost+p.average_arrival*.1,p.id))
             provider="deterministic bounded allocator"
-            explanation=f"Deterministic mode compared {validated_count} validated allocations. Selected {plan.recovered_passengers} recovered passengers for €{plan.total_cost:.2f}; {sum(e['passengers'] for e in plan.exceptions)} remain exceptions. Full journeys and shared inventory were checked. Global optimality is not proven."
+            cost_label=f"an estimated EUR planning total of {plan.total_cost:.2f}, including ECB references" if plan.cost_evidence else f"€{plan.total_cost:.2f}"
+            explanation=f"Deterministic mode compared {validated_count} validated allocations. Selected {plan.recovered_passengers} recovered passengers for {cost_label}; {sum(e['passengers'] for e in plan.exceptions)} remain exceptions. Full journeys and shared inventory were checked. Global optimality is not proven."
         if validated_count>len(candidates):
             explanation+=f" Evaluated all {validated_count} valid airport/objective candidates; shortlisted {len(candidates)} for selection, retaining global objective winners and diverse airport alternatives."
         latency=round((time.perf_counter()-started)*1000,2)

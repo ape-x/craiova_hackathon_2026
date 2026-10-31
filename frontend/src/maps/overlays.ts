@@ -4,6 +4,7 @@ import { isAirportNode } from '../locationNodes';
 import { parkedPoint, passengerPoint, resourcePoint, sceneHeading, scenePoint } from './placement';
 export { resourcePoint } from './placement';
 import type { Camera, GeoPoint } from './contracts';
+import { groundCamera, groundPath } from './groundPaths';
 
 export const COLORS = {
   observed: '#58ddeb',
@@ -11,6 +12,7 @@ export const COLORS = {
   confirmed: '#6fe2b6',
   unavailable: '#f3717a',
   muted: '#a3b4c4',
+  road: '#88aefa',
 };
 export interface GeoMarker {
   id: string;
@@ -28,6 +30,7 @@ export interface GeoRoute {
   dashed: boolean;
   observed: boolean;
   selected: boolean;
+  geometry?: 'sourced_road' | 'connection_only';
 }
 export interface TrackPoint extends GeoPoint {
   timestamp: string;
@@ -99,26 +102,31 @@ export function buildOverlays(
   tracks: ObservationTracks,
   now = Date.now(),
 ): { markers: GeoMarker[]; routes: GeoRoute[] } {
+  const liveWorld = world.mode === 'live' ? world : null;
   if (world.mode === 'live')
     world = { ...world, resources: [], groups: [], offers: [], reservations: [] };
   const markers: GeoMarker[] = world.airports.map((airport) => ({
     id: airport.id,
     label:
-      airport.kind === 'hotel'
-        ? `${airport.name} · HOTEL`
-        : airport.kind === 'station'
-          ? `${airport.code} · COACH STATION`
-          : world.mode === 'live'
-            ? `${airport.code}${airport.operational_status === 'unknown' ? ' · STATUS UNKNOWN' : airport.operational_status === 'closed' ? ' · CLOSED' : ''}`
-            : `${airport.code}${!airport.available ? ' · CLOSED IN SIM' : airportWeatherState(airport).weatherRestricted ? ' · WEATHER RESTRICTED' : ''}`,
+      airport.kind === 'meeting_point'
+        ? `${airport.name} · REPORTED MEETING POINT`
+        : airport.kind === 'hotel'
+          ? `${airport.name} · HOTEL`
+          : airport.kind === 'station'
+            ? `${airport.code} · COACH STATION`
+            : world.mode === 'live'
+              ? `${airport.code}${airport.operational_status === 'unknown' ? ' · STATUS UNKNOWN' : airport.operational_status === 'closed' ? ' · CLOSED' : ''}`
+              : `${airport.code}${!airport.available ? ' · CLOSED IN SIM' : airportWeatherState(airport).weatherRestricted ? ' · WEATHER RESTRICTED' : ''}`,
     title:
-      airport.kind === 'hotel'
-        ? `${airport.name}. Property coordinates supplied by the accommodation provider; room availability depends on the quoted offer.`
-        : airport.kind === 'station'
-          ? `${airport.name}. Coach station location supplied by the transport provider.`
-          : world.mode === 'live'
-            ? `${airport.name}. Reference airport location. Operational status: ${airport.operational_status ?? 'unknown'}.`
-            : `${airport.name}. Airport availability is simulated.${airport.weather ? ` ${airportWeatherState(airport).condition}. Landings ${airportWeatherState(airport).landingAllowed ? 'allowed' : 'blocked'}; departures ${airportWeatherState(airport).departureAllowed ? 'allowed' : 'blocked'}.` : ''}`,
+      airport.kind === 'meeting_point'
+        ? `${airport.name}. Operator-declared initial meeting point for its passenger group, not a verified terminal or flight connection.`
+        : airport.kind === 'hotel'
+          ? `${airport.name}. Property coordinates supplied by the accommodation provider; room availability depends on the quoted offer.`
+          : airport.kind === 'station'
+            ? `${airport.name}. Coach station location supplied by the transport provider.`
+            : world.mode === 'live'
+              ? `${airport.name}. Reference airport location. Operational status: ${airport.operational_status ?? 'unknown'}.`
+              : `${airport.name}. Airport availability is simulated.${airport.weather ? ` ${airportWeatherState(airport).condition}. Landings ${airportWeatherState(airport).landingAllowed ? 'allowed' : 'blocked'}; departures ${airportWeatherState(airport).departureAllowed ? 'allowed' : 'blocked'}.` : ''}`,
     point: world.mode === 'live' ? pointOf(airport) : scenePoint(airport, 0, 51, 28),
     color: !isAirportNode(airport)
       ? COLORS.muted
@@ -231,6 +239,51 @@ export function buildOverlays(
         selected: true,
       });
   }
+  if (liveWorld) {
+    const allocated = new Set(
+      liveWorld.offers
+        .filter(
+          (offer) =>
+            offer.group_id === selectedId &&
+            ['proposed', 'accepted', 'confirmed'].includes(offer.status),
+        )
+        .flatMap((offer) => offer.itinerary.legs.map((leg) => leg.resource_id)),
+    );
+    const drawnGround = new Set<string>();
+    for (const item of [...liveWorld.resources].sort(
+      (a, b) =>
+        Number(b.id === selectedId || allocated.has(b.id)) -
+        Number(a.id === selectedId || allocated.has(a.id)),
+    )) {
+      const road = groundPath(item, liveWorld);
+      if (!road) continue;
+      const selected = item.id === selectedId || allocated.has(item.id);
+      const identity = `${item.origin}:${item.destination}:${item.departure}:${road.geometry}`;
+      if (drawnGround.has(identity) && !selected) continue;
+      drawnGround.add(identity);
+      routes.push({
+        id: item.id,
+        ...road,
+        color: item.available && road.geometry === 'sourced_road' ? COLORS.road : COLORS.muted,
+        dashed: false,
+        observed: false,
+        selected,
+      });
+      if (selected || road.geometry === 'connection_only')
+        markers.push({
+          id: item.id,
+          label: `${item.id} · ${road.geometry === 'sourced_road' ? 'ROAD PREDICTION' : 'CONNECTION ONLY'}`,
+          title:
+            road.geometry === 'sourced_road'
+              ? 'Google Routes road geometry for the requested pickup time. Driving prediction, not vehicle telemetry or a booking.'
+              : 'Road geometry is missing or invalid. This straight line shows endpoints only, not a driving path.',
+          point: road.path[Math.floor((road.path.length - 1) / 2)],
+          color: COLORS.muted,
+          observed: false,
+          selected,
+        });
+    }
+  }
   for (const observation of world.observations) {
     const point = observedPoint(observation);
     const id = String(observation.id ?? observation.fr24_id ?? '');
@@ -290,7 +343,7 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
       altitudeMode: 'ABSOLUTE',
     };
   const airport = world.airports.find((a) => a.id === selectedId);
-  if (airport && (mode === 'airport' || airport.kind === 'hotel'))
+  if (airport && (mode === 'airport' || !isAirportNode(airport)))
     return {
       center: world.mode === 'live' ? pointOf(airport) : scenePoint(airport, 0, 45),
       range: 650,
@@ -299,6 +352,9 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
       altitudeMode: 'RELATIVE_TO_GROUND',
     };
   const resource = world.resources.find((r) => r.id === selectedId);
+  const road = world.mode === 'live' && resource ? groundPath(resource, world) : null;
+  if (road)
+    return { ...groundCamera(road.path), tilt: 48, heading: 0, altitudeMode: 'RELATIVE_TO_GROUND' };
   if (resource && mode !== 'region')
     return {
       center: resourcePoint(resource, world) ?? fallback,

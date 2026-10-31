@@ -86,6 +86,53 @@ afterEach(() => {
 });
 
 describe('live resource freshness and presentation', () => {
+  it('uses a distinct app-receipt window without inventing a source quote timestamp', () => {
+    const item: Resource = {
+      ...resource,
+      source: 'Airport Pickups London',
+      provenance: { source_quoted_at: null },
+      quote_freshness: {
+        basis: 'app_receipt',
+        received_at: '2026-10-31T20:00:00Z',
+        max_age_seconds: 120,
+      },
+    };
+    expect(resourceFreshness(item, quotedAt + 120_000)).toMatchObject({
+      state: 'current',
+      basis: 'app_receipt',
+      quotedAt: null,
+      receivedAt: quotedAt,
+      cutoff: quotedAt + 120_000,
+    });
+    expect(resourceFreshness(item, quotedAt + 120_001).state).toBe('stale');
+    expect(resourceFreshness(item, quotedAt - 1).state).toBe('unknown');
+    expect(
+      resourceFreshness(
+        {
+          ...item,
+          provenance: resource.provenance,
+          quote_freshness: { ...item.quote_freshness!, received_at: 'not-a-date' },
+        },
+        quotedAt,
+      ).state,
+    ).toBe('unknown');
+    expect(
+      resourceFreshness({ ...item, valid_until: '2026-10-31T20:02:00Z' }, quotedAt).state,
+    ).toBe('unknown');
+    expect(resourceFreshness({ ...item, provenance: resource.provenance }, quotedAt).state).toBe(
+      'unknown',
+    );
+    expect(resourceFreshness({ ...item, quote_freshness: null }, quotedAt).state).toBe('unknown');
+    expect(resourceFreshness({ ...item, source: 'Nuitee' }, quotedAt).state).toBe('unknown');
+    expect(
+      liveResourceStatus(
+        { ...item, capacity_scope: 'private_vehicle_quote' },
+        resourceFreshness(item, quotedAt),
+        false,
+      ).label,
+    ).toBe('Unbooked vehicle quote');
+  });
+
   it('uses the backend inclusive 120-second fallback, without calling it supplier expiry', () => {
     expect(resourceFreshness(resource, quotedAt + 120_000).state).toBe('current');
     const stale = resourceFreshness(resource, quotedAt + 120_001);

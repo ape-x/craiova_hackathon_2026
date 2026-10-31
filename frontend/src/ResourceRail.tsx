@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   BedDouble,
   BusFront,
+  CarFront,
   ChevronRight,
   Plane,
   Search,
@@ -10,6 +11,7 @@ import {
   Users,
   Accessibility,
   Globe2,
+  MapPin,
 } from 'lucide-react';
 import { activeOffer, availableUnits, formatWorldTime } from './api';
 import type { World, ResourceKind, SceneMode } from './types';
@@ -18,6 +20,7 @@ import { observationInfo } from './observation';
 import RealDataDialog from './RealDataDialog';
 import RecoveryCases from './RecoveryCases';
 import { isAirportNode, locationKindLabel } from './locationNodes';
+import { privateTransfer } from './priceEvidence';
 import {
   liveResourceStatus,
   recordedBooking,
@@ -101,10 +104,12 @@ export default function ResourceRail({
               className={`airport-row ${selectedId === airport.id || (!selectedId && airport.code === 'CRA') ? 'selected' : ''}`}
               onClick={() => {
                 onSelect(airport.id);
-                onMode(airport.kind === 'hotel' || airport.code === 'CRA' ? 'airport' : 'region');
+                onMode(!isAirportNode(airport) || airport.code === 'CRA' ? 'airport' : 'region');
               }}
             >
-              {airport.kind === 'hotel' ? (
+              {airport.kind === 'meeting_point' ? (
+                <MapPin size={17} />
+              ) : airport.kind === 'hotel' ? (
                 <BedDouble size={17} />
               ) : airport.kind === 'station' ? (
                 <BusFront size={17} />
@@ -120,10 +125,18 @@ export default function ResourceRail({
                 />
               )}
               <span>
-                <strong>{airport.kind === 'hotel' ? airport.name : airport.code}</strong>
-                {airport.kind !== 'hotel' && <span className="muted"> / {airport.name}</span>}
+                <strong>
+                  {airport.kind === 'hotel' || airport.kind === 'meeting_point'
+                    ? airport.name
+                    : airport.code}
+                </strong>
+                {airport.kind !== 'hotel' && airport.kind !== 'meeting_point' && (
+                  <span className="muted"> / {airport.name}</span>
+                )}
               </span>
-              {airport.kind === 'hotel' ? (
+              {airport.kind === 'meeting_point' ? (
+                <Tag>REPORTED POINT</Tag>
+              ) : airport.kind === 'hotel' ? (
                 <Tag>HOTEL</Tag>
               ) : airport.kind === 'station' ? (
                 <Tag>STATION</Tag>
@@ -259,7 +272,9 @@ export default function ResourceRail({
               const booked = world.mode === 'live' && recordedBooking(world, resource);
               const liveStatus =
                 world.mode === 'live' ? liveResourceStatus(resource, freshness, booked) : null;
-              const Icon = tabs.find((t) => t.id === resource.kind)!.Icon;
+              const Icon = privateTransfer(resource)
+                ? CarFront
+                : tabs.find((t) => t.id === resource.kind)!.Icon;
               return (
                 <button
                   key={resource.id}
@@ -288,6 +303,7 @@ export default function ResourceRail({
                   />
                   <span className="resource-name">
                     <strong>{resource.id}</strong>
+                    {privateTransfer(resource) && <small>Private transfer</small>}
                     <small>
                       {resource.origin} <span aria-hidden="true">→</span> {resource.destination} ·{' '}
                       {formatWorldTime(world, resource.departure)}
@@ -309,9 +325,11 @@ export default function ResourceRail({
                       ? liveStatus.label
                       : !resource.available
                         ? 'Unavailable'
-                        : resource.capacity_scope === 'quoted_request'
-                          ? 'Group quote'
-                          : `${count} ${resource.kind === 'hotel' ? 'rooms' : 'seats'}`}
+                        : resource.capacity_scope === 'private_vehicle_quote'
+                          ? 'Vehicle quote'
+                          : resource.capacity_scope === 'quoted_request'
+                            ? 'Group quote'
+                            : `${count} ${resource.kind === 'hotel' ? 'rooms' : 'seats'}`}
                   </span>
                   <ChevronRight size={12} />
                 </button>

@@ -1,0 +1,73 @@
+.planning-transfers h3 {
+  margin: 10px 0;
+  font-size: 15px;
+}
+.planning-coordinates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.planning-point-confirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 14px 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.planning-point-confirmation input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.planning-transfer-results {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.planning-transfer-results p {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.planning-route-evidence,
+.planning-transfer-option {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  margin: 14px 0;
+  font-size: 12px;
+}
+.planning-transfer-option > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.planning-transfer-option .planning-supplier-price {
+  font-size: 18px;
+}
+.planning-transfer-option button {
+  justify-self: start;
+}
+.planning-blockers {
+  color: var(--amber);
+  font-size: 12px;
+  line-height: 1.6;
+  padding-left: 20px;
+}
+.planning-uncertain {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--amber-line);
+  border-radius: 9px;
+  background: var(--amber-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 480px) {
+  .planning-coordinates {
+    grid-template-columns: 1fr;
+  }
+}
