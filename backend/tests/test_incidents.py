@@ -238,6 +238,42 @@ async def test_append_only_group_binding_and_intermediate_airport_exclusion(setu
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("minutes", [10, 120])
+async def test_binding_saved_flight_number_outlives_lookup_selection_without_new_calls(setup, monkeypatch, minutes):
+    _,store,service,_,calls,client=setup
+    add_groups(store)
+    result=await lookup(setup)
+    created=service.create(create_request(store,result))
+    start=utcnow()
+    monkeypatch.setattr(store_module,"utcnow",lambda:start+timedelta(minutes=minutes))
+    bound=service.bind(created["incident_id"],IncidentGroupBinding(expected_version=store.read().version,
+        idempotency_key="late-case-binding",group_ids=["G1"]))
+    assert bound["world"]["incidents"][0]["group_ids"]==["G1"]
+    assert len(calls)==1
+    if minutes==120:
+        assert bound["world"]["incidents"][0]["flight"] is None
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_expired_source_alias_cannot_be_used_for_group_binding(setup, monkeypatch):
+    _,store,service,_,_,client=setup
+    add_groups(store)
+    result=await lookup(setup)
+    created=service.create(create_request(store,result))
+    store.mutate("use-tracking-alias",{},store.read().version,
+                 lambda world:setattr(world.groups[0],"original_flight_id","ROT321"))
+    start=utcnow()
+    monkeypatch.setattr(store_module,"utcnow",lambda:start+timedelta(hours=2))
+    before=store.read().version
+    with pytest.raises(DomainError,match="different original flight"):
+        service.bind(created["incident_id"],IncidentGroupBinding(expected_version=before,
+            idempotency_key="expired-alias-binding",group_ids=["G1"]))
+    assert store.read().version==before and store.read().incidents[0].group_ids==[]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_expired_cache_replay_and_exact_refresh_preserve_incident(setup,monkeypatch):
     _,store,service,_,_,client=setup
     result=await lookup(setup)

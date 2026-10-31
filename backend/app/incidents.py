@@ -214,7 +214,17 @@ class IncidentService:
         def apply(world):
             self._live(world)
             incident = self._find(world, incident_id)
-            _, match = self.store.selected_flight(incident.flight_ref.lookup_id, incident.flight_ref.selection_id)
+            try:
+                # Binding an existing case does not select a new flight or
+                # assert fresh tracking state. Retained source aliases remain
+                # useful after the initial five-minute selection window.
+                _, match = self.store.selected_flight(incident.flight_ref.lookup_id, incident.flight_ref.selection_id, fresh=False)
+            except DomainError as exc:
+                if exc.status != 409:
+                    raise
+                # The operator's saved flight number is durable case input.
+                # Expired source aliases are never reconstructed or retained.
+                match = {}
             self._bind(world, incident, request.group_ids, match)
             audit(world, "incident_groups_bound", "Explicit passenger groups attached to this recovery incident; no locations or supplier bookings changed.", incident.id, {"group_ids": request.group_ids})
             return {"incident_id": incident.id}
