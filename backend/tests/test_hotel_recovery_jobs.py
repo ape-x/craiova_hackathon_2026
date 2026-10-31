@@ -133,13 +133,20 @@ def package_request(store,inputs,**changes):
         "modes":["flight","hotel","bus"],"max_provider_calls":10,"hotel_recovery":inputs}|changes))
 
 
+def world_snapshot(store):
+    # Live Store.read derives sim_time from wall-clock minutes without a commit.
+    # Keep every other field, including version, requirements and reservations,
+    # so crossing a minute cannot masquerade as an operational mutation.
+    return store.read().model_dump(mode="json",exclude={"sim_time"})
+
+
 @pytest.mark.asyncio
 async def test_full_package_counts_each_source_and_atomically_commits_only_chosen_chain(package):
     store,jobs,ai,travel,sources,fx,inputs=package
-    before=store.read().model_dump(mode="json")
+    before=world_snapshot(store)
     request=package_request(store,inputs)
     jobs.start("CASE",request)
-    assert store.read().model_dump(mode="json")==before
+    assert world_snapshot(store)==before
     result=await run_next(jobs)
     assert result["status"]=="completed",result
     assert result["calls_dispatched"]==10 and len(result["steps"])==10
@@ -209,11 +216,11 @@ async def test_failed_package_preserves_previous_profile_and_foreign_state(packa
     else:
         def reject(*args): raise DomainError(409,"Fixture atomic receipt rollback")
         monkeypatch.setattr(jobs.ledger,"complete_in_transaction",reject)
-    before=store.read().model_dump(mode="json")
+    before=world_snapshot(store)
     jobs.start("CASE",package_request(store,inputs))
     result=await run_next(jobs)
     assert result["status"] in ("blocked","unknown_outcome","needs_review"),result
-    assert store.read().model_dump(mode="json")==before
+    assert world_snapshot(store)==before
     assert read_hotel_recovery_profile(store.read(),store.read().groups[0])["minimum_rest_minutes"]==240
 
 
@@ -235,12 +242,12 @@ async def test_missing_room_policy_physical_link_or_budget_stops_dependent_calls
     if failure=="outbound_late": sources.duration="7200"
     if failure=="budget":
         store.mutate("lower-package-budget",{},store.read().version,lambda world:setattr(world.groups[0],"budget",300))
-    before=store.read().model_dump(mode="json")
+    before=world_snapshot(store)
     jobs.start("CASE",package_request(store,inputs))
     result=await run_next(jobs)
     assert result["status"] in ("blocked","needs_review"),result
     assert result["calls_dispatched"]==expected_calls
-    assert store.read().model_dump(mode="json")==before and not ai.decisions
+    assert world_snapshot(store)==before and not ai.decisions
     assert not any(item[0]=="apl" and item[1].expected_direction=="to_hub" for item in sources.calls)
 
 
@@ -267,7 +274,7 @@ async def test_early_package_budget_uses_exact_money_and_validator_half_cent_tol
     monkeypatch.setattr(sources,"quote",quote)
     monkeypatch.setattr(travel,"search",flights)
     store.mutate("boundary-package-budget",{},store.read().version,lambda world:setattr(world.groups[0],"budget",budget))
-    before=store.read().model_dump(mode="json")
+    before=world_snapshot(store)
     jobs.start("CASE",package_request(store,inputs))
     result=await run_next(jobs)
     # The known minimum is exactly EUR0.60; a floating sum is 0.6000000000000001.
@@ -275,7 +282,7 @@ async def test_early_package_budget_uses_exact_money_and_validator_half_cent_tol
     assert result["status"]=="blocked",result
     assert result["calls_dispatched"]==expected_calls
     assert (any(item["code"]=="hotel_package_budget" for item in result["gaps"]))==(expected_calls==7)
-    assert store.read().model_dump(mode="json")==before and not ai.decisions
+    assert world_snapshot(store)==before and not ai.decisions
 
 
 @pytest.mark.asyncio
@@ -283,13 +290,13 @@ async def test_unknown_return_outcome_is_durable_and_never_retried_or_applied(pa
     store,jobs,ai,travel,sources,fx,inputs=package
     sources.return_error=True
     body=package_request(store,inputs)
-    before=store.read().model_dump(mode="json")
+    before=world_snapshot(store)
     jobs.start("CASE",body)
     result=await run_next(jobs)
     assert result["status"]=="unknown_outcome",result
     assert result["calls_dispatched"]==9 and any(item["status"]=="unknown" for item in result["steps"])
     assert all(item["status"]!="dispatched" for item in result["steps"])
-    assert store.read().model_dump(mode="json")==before and not ai.decisions
+    assert world_snapshot(store)==before and not ai.decisions
     count=len(sources.calls)
     assert jobs.start("CASE",body)["replayed"] is True and len(sources.calls)==count
 
@@ -300,7 +307,7 @@ async def test_package_cancellation_drains_dispatched_sources_and_never_changes_
     sources.outbound_gate=asyncio.Event()
     started=jobs.start("CASE",package_request(store,inputs))
     claimed=jobs.ledger.claim_next()
-    before=store.read().model_dump(mode="json")
+    before=world_snapshot(store)
     task=asyncio.create_task(jobs.run(*claimed))
     while not (any(item[0]=="route" for item in sources.calls) and sources.active and fx.calls==1):
         if task.done():
@@ -313,26 +320,26 @@ async def test_package_cancellation_drains_dispatched_sources_and_never_changes_
     result=jobs.get(started["job"]["id"])["job"]
     assert result["status"]=="cancelled" and result["calls_dispatched"]==7
     assert all(item["status"]!="dispatched" for item in result["steps"])
-    assert store.read().model_dump(mode="json")==before and not ai.decisions
+    assert world_snapshot(store)==before and not ai.decisions
 
 
 @pytest.mark.asyncio
 async def test_failure_of_atomic_job_receipt_rolls_back_requirement_nodes_resources_and_offers(package,monkeypatch):
     store,jobs,ai,travel,sources,fx,inputs=package
-    before=store.read().model_dump(mode="json")
+    before=world_snapshot(store)
     def reject(*args): raise DomainError(409,"Fixture atomic completion rejected")
     monkeypatch.setattr(jobs.ledger,"complete_in_transaction",reject)
     jobs.start("CASE",package_request(store,inputs))
     result=await run_next(jobs)
     assert result["status"]=="needs_review" and result["calls_dispatched"]==10
-    assert store.read().model_dump(mode="json")==before
+    assert world_snapshot(store)==before
 
 
 @pytest.mark.asyncio
 async def test_quote_expiry_during_decisions_rolls_back_the_whole_selected_package(package,monkeypatch):
     import app.hotel_recovery as module
     store,jobs,ai,travel,sources,fx,inputs=package
-    before=store.read().model_dump(mode="json")
+    before=world_snapshot(store)
     async def aged_sources():
         monkeypatch.setattr(module,"utcnow",lambda:utcnow()+timedelta(seconds=121))
     ai.before_choose=aged_sources
@@ -340,7 +347,7 @@ async def test_quote_expiry_during_decisions_rolls_back_the_whole_selected_packa
     result=await run_next(jobs)
     assert result["status"]=="needs_review" and result["calls_dispatched"]==10
     assert "expired" in result["message"].lower()
-    assert store.read().model_dump(mode="json")==before
+    assert world_snapshot(store)==before
 
 
 @pytest.mark.asyncio
@@ -422,11 +429,11 @@ async def test_unrelated_confirmed_booking_and_reservation_remain_exact(package)
             external_bookings=[{"confirmation_reference":"fixture-existing-booking"}]))
         world.reservations.append(Reservation(id="FOREIGN-RESERVATION",offer_id="FOREIGN-OFFER",group_id=group.id,resource_id=resource.id,quantity=1,status="confirmed",expires_at="2090-01-01T00:00:00Z"))
     store.mutate("foreign-booking",{},store.read().version,foreign)
-    before=store.read().model_dump(mode="json")
+    before=world_snapshot(store)
     jobs.start("CASE",package_request(store,inputs))
     result=await run_next(jobs)
     assert result["status"]=="completed",result
-    after=store.read().model_dump(mode="json")
+    after=world_snapshot(store)
     for field,identity in (("resources","FOREIGN"),("offers","FOREIGN-OFFER"),("reservations","FOREIGN-RESERVATION")):
         assert next(item for item in after[field] if item["id"]==identity)==next(item for item in before[field] if item["id"]==identity)
     assert after["groups"][1]==before["groups"][1]
