@@ -29,6 +29,8 @@ class Airport(Model):
     available: bool = True
     diversion_eligible: bool = True
     weather: WeatherDefinition | None = None
+    operational_status: Literal["unknown", "open", "closed"] = "unknown"
+    kind: Literal["airport", "station"] = "airport"
 
 
 class Resource(Model):
@@ -47,6 +49,15 @@ class Resource(Model):
     vehicle_id: str | None = None
     status: str = "scheduled"
     source: str = "synthetic"
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    valid_until: str | None = None
+    eligible_group_ids: list[str] = Field(default_factory=list)
+    quote_total_cost: float | None = Field(default=None, ge=0, le=1000000)
+    quote_rooms: int | None = Field(default=None, ge=1, le=30)
+    requires_revalidation: bool = False
+    external_offer_id: str | None = None
+    capacity_scope: str = "synthetic"
+    booking_status: Literal["unbooked", "confirmed"] = "unbooked"
 
 
 class PassengerGroup(Model):
@@ -64,6 +75,9 @@ class PassengerGroup(Model):
     status: Literal["scheduled", "waiting", "offered", "confirmed", "affected", "exception"] = "waiting"
     token: str
     priority: int = Field(default=1, ge=1, le=10)
+    source: str = "synthetic"
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    adult_count: int | None = Field(default=None, ge=0, le=12)
 
 
 class Leg(Model):
@@ -86,11 +100,12 @@ class Offer(Model):
     id: str
     group_id: str
     itinerary: Itinerary
-    status: Literal["held", "confirmed", "expired", "invalidated", "superseded"]
+    status: Literal["held", "proposed", "accepted", "confirmed", "declined", "expired", "invalidated", "superseded"]
     expires_at: str
     created_version: int
     confirmed_at: str | None = None
     reason: str | None = None
+    external_bookings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class Reservation(Model):
@@ -99,7 +114,7 @@ class Reservation(Model):
     group_id: str
     resource_id: str
     quantity: int
-    status: Literal["held", "confirmed", "released"]
+    status: Literal["held", "proposed", "accepted", "confirmed", "released"]
     expires_at: str
 
 
@@ -168,7 +183,7 @@ class World(Model):
     version: int = 1
     epoch: str
     sim_time: int = 600
-    mode: Literal["simulation"] = "simulation"
+    mode: Literal["simulation", "live"] = "simulation"
     currency: str = "EUR"
     budget: float = 45000
     airports: list[Airport]

@@ -24,7 +24,9 @@ def pytest_configure(config):
     _temporary = tempfile.TemporaryDirectory(prefix="airport-recovery-tests-")
     isolated = {
         "OPENAI_API_KEY": "", "FR24_API_KEY": "", "GOOGLE_MAPS_API_KEY": "",
-        "OPERATOR_TOKEN": "", "ENVIRONMENT": "test",
+        "GOOGLE_MAPS_SERVER_API_KEY": "", "BOOKING_DEMAND_API_TOKEN": "", "BOOKING_AFFILIATE_ID": "",
+        "LITEAPI_API_KEY": "", "LITEAPI_ENVIRONMENT": "sandbox", "HOTEL_OFFERS_PROVIDER": "auto",
+        "OPERATOR_TOKEN": "", "ENVIRONMENT": "test", "OPERATION_MODE": "simulation",
         "DATABASE_PATH": str(Path(_temporary.name) / "import-only.sqlite3"),
         "PUBLIC_BASE_URL": "http://localhost:5173",
         "CORS_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000",

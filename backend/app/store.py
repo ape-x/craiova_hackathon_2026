@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 from .models import AuditEvent, World
-from .seed import seed_world
+from .seed import seed_world, empty_live_world
 
 
 def utcnow() -> datetime:
@@ -33,33 +33,34 @@ def audit(world: World, kind: str, description: str, target=None, data=None):
 
 def refresh_stats(world: World):
     groups = {g.id:g for g in world.groups}
-    active = [o for o in world.offers if o.status in ("held","confirmed")]
+    active = [o for o in world.offers if o.status in ("held","proposed","accepted","confirmed")]
     total = sum(g.size for g in world.groups)
     world.stats = {
         "total_passengers":total,"total_groups":len(groups),
         **{f"{status}_passengers":sum(g.size for g in world.groups if g.status==status) for status in ("waiting","offered","confirmed","affected","exception","scheduled")},
-        "recovered_passengers":sum(groups[o.group_id].size for o in active),
+        "recovered_passengers":sum(groups[o.group_id].size for o in active if world.mode=="simulation" or o.status=="confirmed"),
+        "proposed_passengers":sum(groups[o.group_id].size for o in active if o.status in ("proposed","accepted")),
         "committed_cost":round(sum(o.itinerary.total_cost for o in active),2),
         "confirmed_cost":round(sum(o.itinerary.total_cost for o in active if o.status=="confirmed"),2),
         "budget_remaining":round(world.budget-sum(o.itinerary.total_cost for o in active),2),
-        "resource_usage":{r.id:sum(x.quantity for x in world.reservations if x.resource_id==r.id and x.status in ("held","confirmed")) for r in world.resources},
-        "currency":world.currency,"data_source":"synthetic","last_updated":utcnow().isoformat(),
+        "resource_usage":{r.id:sum(x.quantity for x in world.reservations if x.resource_id==r.id and x.status in ("held","proposed","accepted","confirmed")) for r in world.resources},
+        "currency":world.currency,"data_source":"synthetic" if world.mode=="simulation" else "real_resources_test_passengers" if any(g.source=="synthetic" for g in world.groups) else "real", "last_updated":utcnow().isoformat(),
     }
 
 
 def expire_holds(world: World) -> bool:
     changed = False
     for offer in world.offers:
-        if offer.status=="held" and datetime.fromisoformat(offer.expires_at)<=utcnow():
+        if offer.status in ("held","proposed","accepted") and datetime.fromisoformat(offer.expires_at)<=utcnow():
             offer.status="expired"
-            offer.reason="Temporary all-resource hold expired. Request a new offer."
+            offer.reason="Temporary all-resource hold expired. Request a new offer." if world.mode=="simulation" else "Proposal freshness window expired. Request current supplier quotes."
             for reservation in world.reservations:
                 if reservation.offer_id==offer.id:
                     reservation.status="released"
             group = next(g for g in world.groups if g.id==offer.group_id)
             if group.status=="offered":
                 group.status="waiting"
-            audit(world,"hold_expired",f"All resources for {group.name} released after offer expiry.",offer.id)
+            audit(world,"hold_expired",f"All resources for {group.name} released after offer expiry." if world.mode=="simulation" else f"Proposal for {group.name} expired; no supplier cancellation was issued.",offer.id)
             changed=True
     return changed
 
@@ -70,7 +71,7 @@ class Store:
     Every itinerary's resource holds and idempotency result commit in one transaction.
     No model/network call is ever performed under this lock.
     """
-    def __init__(self, path: str, observation_retention_seconds: int=3600):
+    def __init__(self, path: str, observation_retention_seconds: int=3600, operation_mode: str="simulation"):
         self.path = path
         self.observation_retention_seconds=observation_retention_seconds
         Path(path).parent.mkdir(parents=True,exist_ok=True)
@@ -83,12 +84,24 @@ class Store:
             CREATE TABLE IF NOT EXISTS leases (name TEXT PRIMARY KEY, expires REAL NOT NULL, count INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS controls (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS request_claims (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, owner TEXT NOT NULL, expires REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS world_archives (id TEXT PRIMARY KEY, archived_at TEXT NOT NULL, mode TEXT NOT NULL, data TEXT NOT NULL);
             """)
             conn.execute("BEGIN IMMEDIATE")
-            if not conn.execute("SELECT 1 FROM world WHERE id=1").fetchone():
-                world=seed_world()
+            existing=conn.execute("SELECT data FROM world WHERE id=1").fetchone()
+            if not existing:
+                world=empty_live_world() if operation_mode=="live" else seed_world()
                 refresh_stats(world)
                 conn.execute("INSERT INTO world VALUES(1,?)",(world.model_dump_json(),))
+                self._save_audit(conn,world)
+            elif json.loads(existing[0]).get("mode","simulation") != operation_mode:
+                previous=World.model_validate_json(existing[0])
+                conn.execute("INSERT INTO world_archives VALUES(?,?,?,?)",(secrets.token_hex(16),utcnow().isoformat(),previous.mode,existing[0]))
+                world=empty_live_world() if operation_mode=="live" else seed_world()
+                world.version=previous.version+1
+                refresh_stats(world)
+                conn.execute("UPDATE world SET data=? WHERE id=1",(world.model_dump_json(),))
+                conn.execute("DELETE FROM idempotency")
+                conn.execute("DELETE FROM request_claims")
                 self._save_audit(conn,world)
             # One-time cleanup of development snapshots created before the
             # separate observation-cache retention policy was introduced.
@@ -119,6 +132,8 @@ class Store:
 
     def _load(self,conn):
         world=World.model_validate_json(conn.execute("SELECT data FROM world WHERE id=1").fetchone()[0])
+        if world.mode=="live":
+            world.sim_time=max(0,int((utcnow()-datetime.fromisoformat(world.epoch)).total_seconds()//60))
         return world
 
     def _save_audit(self,conn,world):
@@ -365,4 +380,5 @@ class Store:
 
     def audit_history(self,limit=200):
         with self.connect() as conn:
-            return [json.loads(row[0]) for row in conn.execute("SELECT data FROM audit ORDER BY rowid DESC LIMIT ?",(limit,))]
+            scenario=self._load(conn).scenario_id
+            return [json.loads(row[0]) for row in conn.execute("SELECT data FROM audit WHERE scenario_id=? ORDER BY rowid DESC LIMIT ?",(scenario,limit))]

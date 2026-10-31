@@ -186,6 +186,28 @@ const world = {
 } as unknown as World;
 
 describe('geographic source separation', () => {
+  it('uses exact live airport coordinates and never draws planned resources as GPS positions', () => {
+    const live = {
+      ...world,
+      mode: 'live' as const,
+      airports: world.airports.map((airport) => ({
+        ...airport,
+        available: false,
+        operational_status: 'unknown' as const,
+      })),
+    };
+    const result = buildOverlays(live, 'B12', new Map());
+    const airport = result.markers.find((marker) => marker.id === live.airports[0].id)!;
+    expect(airport.label).toContain('STATUS UNKNOWN');
+    expect(airport.color).toBe(COLORS.muted);
+    expect(airport.point).toEqual({
+      lat: live.airports[0].lat,
+      lng: live.airports[0].lon,
+      altitude: 0,
+    });
+    expect(result.markers.some((marker) => marker.id === 'B12')).toBe(false);
+    expect(result.routes.some((route) => route.id === 'B12')).toBe(false);
+  });
   it('converts provider feet and never invents missing coordinates or altitude', () => {
     expect(observedPoint(world.observations[0])).toEqual({ lat: 44.4, lng: 24, altitude: 3048 });
     expect(observedPoint({ lat: 44, lon: 24 })).toEqual({ lat: 44, lng: 24 });

@@ -18,14 +18,20 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { activeOffer, availableUnits, formatCost, formatTime } from './api';
+import { activeOffer, availableUnits, formatCost, formatTime, formatWorldTime } from './api';
 import type { AppConfig, Decision, Offer, PassengerGroup, Resource, World } from './types';
 import { Dot, Tag } from './ui';
 import { observationInfo } from './observation';
 import { AirportWeatherStatus } from './WeatherStatus';
 import { airportWeatherState } from './weather';
 
-export function ItineraryView({ offer }: { offer: Offer }) {
+export function ItineraryView({
+  offer,
+  world,
+}: {
+  offer: Offer;
+  world?: Pick<World, 'mode' | 'epoch'>;
+}) {
   return (
     <div className="itinerary">
       {offer.itinerary.legs.map((leg, index) => {
@@ -42,7 +48,9 @@ export function ItineraryView({ offer }: { offer: Offer }) {
                   : `${leg.origin} → ${leg.destination}`}
               </strong>
               <span>
-                {leg.resource_id} <b>·</b> {formatTime(leg.departure)}–{formatTime(leg.arrival)}
+                {leg.resource_id} <b>·</b>{' '}
+                {world ? formatWorldTime(world, leg.departure) : formatTime(leg.departure)}–
+                {world ? formatWorldTime(world, leg.arrival) : formatTime(leg.arrival)}
               </span>
             </div>
           </div>
@@ -129,12 +137,7 @@ export function deriveResourceImpact(world: World, resource: Resource) {
   if (!affectedGroups.length) return null;
   const routes = new Map<
     string,
-    {
-      ids: string[];
-      kind: Resource['kind'];
-      passengers: number;
-      confirmed: number;
-    }
+    { ids: string[]; kind: Resource['kind']; passengers: number; confirmed: number }
   >();
   let offered = 0,
     confirmed = 0;
@@ -264,27 +267,63 @@ function ResourceFacts({
       </div>
       <div className="fact-list">
         <span>
-          Departure <b>{formatTime(resource.departure)}</b>
+          Departure <b>{formatWorldTime(world, resource.departure)}</b>
         </span>
         <span>
-          Arrival <b>{formatTime(resource.arrival)}</b>
+          Arrival <b>{formatWorldTime(world, resource.arrival)}</b>
         </span>
         <span>
-          Available / total {resource.kind === 'hotel' ? 'rooms' : 'seats'}{' '}
+          {resource.capacity_scope === 'quoted_request' ? 'Quote scope' : 'Available / total'}{' '}
+          {resource.kind === 'hotel' ? 'rooms' : 'seats'}{' '}
           <b>
-            {availableUnits(world, resource.id)} / {resource.capacity}
+            {resource.capacity_scope === 'quoted_request'
+              ? `${resource.capacity} · requested group only`
+              : `${availableUnits(world, resource.id)} / ${resource.capacity}`}
           </b>
         </span>
         <span>
           Accessibility <b>{resource.accessible ? 'Supported' : 'Not supported'}</b>
         </span>
         <span>
-          Cost per {resource.kind === 'hotel' ? 'room' : 'person'}{' '}
-          <b>{formatCost(resource.cost_per_person)}</b>
+          {resource.quote_total_cost != null
+            ? 'Group quote total'
+            : `Cost per ${resource.kind === 'hotel' ? 'room' : 'person'}`}{' '}
+          <b>{formatCost(resource.quote_total_cost ?? resource.cost_per_person)}</b>
         </span>
       </div>
+      {world.mode === 'live' && (
+        <div className="fact-list">
+          <span>
+            Source <b>{String(resource.provenance?.source_name ?? resource.source)}</b>
+          </span>
+          <span>
+            Reference{' '}
+            <b>
+              {String(
+                resource.provenance?.source_reference ??
+                  resource.external_offer_id ??
+                  'Recorded by operations',
+              )}
+            </b>
+          </span>
+          {resource.valid_until && (
+            <span>
+              Valid until{' '}
+              <b>
+                {new Date(resource.valid_until).toLocaleString('en-GB', {
+                  timeZone: 'Europe/Bucharest',
+                })}
+              </b>
+            </span>
+          )}
+          <span>
+            Supplier booking <b>{resource.booking_status ?? 'Unbooked'}</b>
+          </span>
+        </div>
+      )}
       <button className="secondary-button full" onClick={onScenario}>
-        Change resource conditions <ArrowRight size={14} />
+        {world.mode === 'live' ? 'Manage verified data' : 'Change resource conditions'}{' '}
+        <ArrowRight size={14} />
       </button>
     </>
   );
@@ -297,7 +336,7 @@ function DecisionDetails({ decision, world }: { decision: Decision; world: World
   const activeCount = world.offers.filter(
     (offer) =>
       offer.created_version === decision.applied_version &&
-      ['held', 'confirmed'].includes(offer.status),
+      ['held', 'proposed', 'accepted', 'confirmed'].includes(offer.status),
   ).length;
   const needsRefresh = !historical && (selected?.allocations.length ?? 0) > activeCount;
   return (
@@ -319,7 +358,9 @@ function DecisionDetails({ decision, world }: { decision: Decision; world: World
       {needsRefresh && (
         <div className="plan-expired-note">
           <Clock3 size={15} />
-          <span>Some offers have expired or changed. Replan to renew resource holds.</span>
+          <span>
+            Some offers have expired or changed. Replan to refresh the proposed resources.
+          </span>
         </div>
       )}
       <p className="decision-explanation">
@@ -392,7 +433,10 @@ function DecisionDetails({ decision, world }: { decision: Decision; world: World
           <CheckCircle2 size={15} /> Complete, connected itineraries
         </span>
         <span>
-          <CheckCircle2 size={15} /> Resources held atomically
+          <CheckCircle2 size={15} />{' '}
+          {world.mode === 'live'
+            ? 'Proposal allocations checked together'
+            : 'Resources held atomically'}
         </span>
       </div>
       {(selected?.exceptions.length ?? 0) > 0 && (
@@ -528,7 +572,11 @@ export default function Inspector({
     .reduce((sum, item) => sum + item.size, 0);
   const unavailable =
     world.resources.filter((item) => !item.available).length +
-    world.airports.filter((item) => !item.available).length;
+    world.airports.filter((item) =>
+      world.mode === 'live'
+        ? item.kind !== 'station' && item.operational_status === 'closed'
+        : !item.available,
+    ).length;
   const title = showLog
     ? 'Decision log'
     : observation
@@ -564,7 +612,12 @@ export default function Inspector({
                 <Users size={23} />
               </div>
               <div>
-                <span className="eyebrow">{group.id} · synthetic passengers</span>
+                <span className="eyebrow">
+                  {group.id} ·{' '}
+                  {group.source === 'manifest_import'
+                    ? 'imported passengers'
+                    : 'synthetic test passengers'}
+                </span>
                 <h3>{group.name}</h3>
                 <span>{group.size} people travelling together</span>
               </div>
@@ -576,7 +629,7 @@ export default function Inspector({
             </div>
             <div className="fact-list">
               <span>
-                <Clock3 size={14} /> Arrive by <b>{formatTime(group.deadline)}</b>
+                <Clock3 size={14} /> Arrive by <b>{formatWorldTime(world, group.deadline)}</b>
               </span>
               <span>
                 <Users size={14} /> Keep group together <b>Required</b>
@@ -596,11 +649,13 @@ export default function Inspector({
                   <Dot tone={offer.status === 'confirmed' ? 'mint' : 'cyan'} />
                   <strong>
                     {offer.status === 'confirmed'
-                      ? 'Itinerary confirmed'
-                      : 'Your recovery offer is ready'}
+                      ? 'Supplier bookings confirmed'
+                      : offer.status === 'accepted'
+                        ? 'Passenger accepted · bookings pending'
+                        : 'Your recovery proposal is ready'}
                   </strong>
                 </div>
-                <ItineraryView offer={offer} />
+                <ItineraryView offer={offer} world={world} />
                 <div className="offer-total">
                   <span>Complete itinerary</span>
                   <strong>{formatCost(offer.itinerary.total_cost)}</strong>
@@ -612,7 +667,7 @@ export default function Inspector({
                 <h3>Finding a way forward</h3>
                 <p>
                   {group.status === 'exception'
-                    ? 'No complete itinerary was allocated. Add capacity or adjust the scenario.'
+                    ? 'No complete itinerary was allocated. Add verified inventory or review the constraints.'
                     : 'Run the recovery planner to create a complete itinerary.'}
                 </p>
                 <button className="primary-button" disabled={busy} onClick={onReplan}>
@@ -636,11 +691,21 @@ export default function Inspector({
                 )}
               </div>
               <div>
-                <span className="eyebrow">SIMULATED RESOURCE</span>
+                <span className="eyebrow">
+                  {world.mode === 'live'
+                    ? resource.capacity_scope === 'quoted_request'
+                      ? 'LIVE GROUP QUOTE'
+                      : 'OPERATOR-VERIFIED RESOURCE'
+                    : 'SIMULATED RESOURCE'}
+                </span>
                 <h3>
                   {resource.id}{' '}
                   <span className={resource.available ? 'text-mint' : 'text-red'}>
-                    {resource.available ? 'Available' : 'Unavailable'}
+                    {resource.available
+                      ? resource.capacity_scope === 'quoted_request'
+                        ? 'Unbooked quote'
+                        : 'Verified'
+                      : 'Unavailable'}
                   </span>
                 </h3>
                 <span>{resource.name}</span>
@@ -685,25 +750,37 @@ export default function Inspector({
         {!showLog && airport ? (
           <>
             <div className="entity-heading">
-              <div className={`entity-icon ${airport.available ? 'cyan' : 'red'}`}>
-                <Plane size={22} />
+              <div
+                className={`entity-icon ${airport.kind === 'station' || airport.operational_status === 'unknown' || airport.available ? 'cyan' : 'red'}`}
+              >
+                {airport.kind === 'station' ? <BusFront size={22} /> : <Plane size={22} />}
               </div>
               <div>
-                <span className="eyebrow">AIRPORT · SCENARIO STATUS</span>
+                <span className="eyebrow">
+                  {airport.kind === 'station' ? 'COACH STATION' : 'AIRPORT'} ·{' '}
+                  {world.mode === 'live' ? 'REFERENCE LOCATION' : 'SCENARIO STATUS'}
+                </span>
                 <h3>
                   {airport.code}{' '}
                   <span
                     className={
-                      airport.available && !airportWeatherState(airport).restricted
-                        ? 'text-mint'
-                        : 'text-red'
+                      airport.kind === 'station' ||
+                      (world.mode === 'live' && airport.operational_status === 'unknown')
+                        ? 'muted'
+                        : airport.available && !airportWeatherState(airport).restricted
+                          ? 'text-mint'
+                          : 'text-red'
                     }
                   >
-                    {airport.available
-                      ? airportWeatherState(airport).restricted
-                        ? 'Weather restricted'
-                        : 'Operational'
-                      : 'Unavailable'}
+                    {airport.kind === 'station'
+                      ? 'Supplier stop'
+                      : world.mode === 'live' && airport.operational_status === 'unknown'
+                        ? 'Status unknown'
+                        : airport.available
+                          ? airportWeatherState(airport).restricted
+                            ? 'Weather restricted'
+                            : 'Operational'
+                          : 'Unavailable'}
                   </span>
                 </h3>
                 <span>{airport.name}</span>
@@ -713,21 +790,28 @@ export default function Inspector({
               <span>
                 Coordinates{' '}
                 <b>
-                  {airport.lat.toFixed(3)}° N / {airport.lon.toFixed(3)}° E
+                  {Math.abs(airport.lat).toFixed(3)}° {airport.lat >= 0 ? 'N' : 'S'} /{' '}
+                  {Math.abs(airport.lon).toFixed(3)}° {airport.lon >= 0 ? 'E' : 'W'}
                 </b>
               </span>
-              <span>
-                Diversion eligibility{' '}
-                <b>{airport.diversion_eligible ? 'Eligible in scenario' : 'Not eligible'}</b>
-              </span>
+              {world.mode === 'simulation' && airport.kind !== 'station' && (
+                <span>
+                  Diversion eligibility{' '}
+                  <b>{airport.diversion_eligible ? 'Eligible in scenario' : 'Not eligible'}</b>
+                </span>
+              )}
             </div>
             {world.mode === 'simulation' && <AirportWeatherStatus airport={airport} />}
             <p className="muted small">
-              Airport conditions belong to this simulation. Observed flight positions remain
-              unchanged.
+              {airport.kind === 'station'
+                ? 'This is the supplier’s actual coach stop. Transfer to or from an airport must be verified separately.'
+                : world.mode === 'live'
+                  ? 'Airport geography is reference data. Operational availability requires a verified source.'
+                  : 'Airport conditions belong to this simulation. Observed flight positions remain unchanged.'}
             </p>
             <button className="secondary-button full" onClick={onScenario}>
-              Change airport availability <ArrowRight size={14} />
+              {world.mode === 'live' ? 'Manage verified node data' : 'Change airport availability'}{' '}
+              <ArrowRight size={14} />
             </button>
           </>
         ) : null}
@@ -788,8 +872,9 @@ export default function Inspector({
             </p>
             <div className="inspector-section">
               <p className="muted small">
-                Passenger capacity and recovery conditions belong to the simulator. Aircraft
-                observations do not change that inventory.
+                {world.mode === 'live'
+                  ? 'Aircraft observations do not provide bookable seats. Recovery uses supplier quotes and operator-verified inventory.'
+                  : 'Passenger capacity and recovery conditions belong to the simulator. Aircraft observations do not change that inventory.'}
               </p>
             </div>
           </>
@@ -814,7 +899,9 @@ export default function Inspector({
               </div>
               <div>
                 <Users size={19} />
-                <span>Passengers in scenario</span>
+                <span>
+                  {world.mode === 'live' ? 'Passengers in operation' : 'Passengers in scenario'}
+                </span>
                 <strong>{total}</strong>
               </div>
               <div>
@@ -873,7 +960,8 @@ export default function Inspector({
               Calculate recovery <ArrowRight size={14} />
             </button>
             <button className="secondary-button" onClick={onScenario}>
-              Introduce an incident <ArrowRight size={14} />
+              {world.mode === 'live' ? 'Manage operation data' : 'Introduce an incident'}{' '}
+              <ArrowRight size={14} />
             </button>
           </div>
         )}
@@ -883,8 +971,8 @@ export default function Inspector({
             <div className="audit-intro">
               <ShieldCheck size={18} />
               <p>
-                Every change, evaluated alternative and applied result — from the authoritative
-                simulation.
+                Every change, evaluated alternative and applied result — from the authoritative{' '}
+                {world.mode === 'live' ? 'operation record' : 'simulation'}.
               </p>
             </div>
             {world.decisions.length === 0 && (

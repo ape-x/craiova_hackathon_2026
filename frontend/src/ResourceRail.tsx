@@ -1,4 +1,4 @@
-import { useDeferredValue, useState } from 'react';
+import { useCallback, useDeferredValue, useState } from 'react';
 import {
   ArrowUpRight,
   BedDouble,
@@ -9,11 +9,13 @@ import {
   SlidersHorizontal,
   Users,
   Accessibility,
+  Globe2,
 } from 'lucide-react';
-import { activeOffer, availableUnits, formatTime } from './api';
+import { activeOffer, availableUnits, formatWorldTime } from './api';
 import type { World, ResourceKind, SceneMode } from './types';
 import { Dot, Tag } from './ui';
 import { observationInfo } from './observation';
+import RealDataDialog from './RealDataDialog';
 
 const tabs = [
   { id: 'flight', name: 'Flights', Icon: Plane },
@@ -27,15 +29,19 @@ export default function ResourceRail({
   onSelect,
   onMode,
   onScenario,
+  onLiveData,
 }: {
   world: World;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onMode: (mode: SceneMode) => void;
   onScenario: () => void;
+  onLiveData: () => void;
 }) {
   const [tab, setTab] = useState<ResourceKind | 'groups'>('bus');
   const [query, setQuery] = useState('');
+  const [showRealData, setShowRealData] = useState(false);
+  const closeRealData = useCallback(() => setShowRealData(false), []);
   const search = useDeferredValue(query.toLowerCase());
   const resources = world.resources.filter(
     (item) =>
@@ -55,42 +61,71 @@ export default function ResourceRail({
         <h2>Resources</h2>
         <button
           className="icon-button"
-          title="Change scenario conditions"
-          aria-label="Change scenario conditions"
-          onClick={onScenario}
+          title={world.mode === 'live' ? 'Manage operation data' : 'Change scenario conditions'}
+          aria-label={
+            world.mode === 'live' ? 'Manage operation data' : 'Change scenario conditions'
+          }
+          onClick={world.mode === 'live' ? onLiveData : onScenario}
         >
           <SlidersHorizontal size={16} />
         </button>
       </div>
       <div className="airports-list">
-        {world.airports
-          .filter((airport) => ['CRA', 'OTP', 'SBZ'].includes(airport.code))
-          .map((airport) => (
-            <button
-              key={airport.id}
-              className={`airport-row ${selectedId === airport.id || (!selectedId && airport.code === 'CRA') ? 'selected' : ''}`}
-              onClick={() => {
-                onSelect(airport.id);
-                onMode(airport.code === 'CRA' ? 'airport' : 'region');
-              }}
-            >
-              <Plane size={17} className={!airport.available ? 'text-red' : ''} />
-              <span>
-                <strong>{airport.code}</strong>
-                <span className="muted">
-                  {' '}
-                  /{' '}
-                  {airport.code === 'CRA'
-                    ? 'Craiova'
-                    : airport.code === 'OTP'
-                      ? 'Bucharest'
-                      : 'Sibiu'}
-                </span>
-              </span>
-              {airport.available ? <ChevronRight size={14} /> : <Dot tone="red" />}
-            </button>
-          ))}
+        {world.airports.map((airport) => (
+          <button
+            key={airport.id}
+            title={`${airport.kind === 'station' ? 'Coach station' : 'Airport'} · ${airport.code} · ${airport.name}`}
+            className={`airport-row ${selectedId === airport.id || (!selectedId && airport.code === 'CRA') ? 'selected' : ''}`}
+            onClick={() => {
+              onSelect(airport.id);
+              onMode(airport.code === 'CRA' ? 'airport' : 'region');
+            }}
+          >
+            {airport.kind === 'station' ? (
+              <BusFront size={17} />
+            ) : (
+              <Plane
+                size={17}
+                className={
+                  airport.operational_status !== 'unknown' && !airport.available ? 'text-red' : ''
+                }
+              />
+            )}
+            <span>
+              <strong>{airport.code}</strong>
+              <span className="muted"> / {airport.name}</span>
+            </span>
+            {airport.kind === 'station' ? (
+              <Tag>STATION</Tag>
+            ) : airport.operational_status === 'unknown' ? (
+              <Tag>UNKNOWN</Tag>
+            ) : airport.available ? (
+              <ChevronRight size={14} />
+            ) : (
+              <Dot tone="red" />
+            )}
+          </button>
+        ))}
       </div>
+      {world.mode === 'live' && (
+        <button className="real-data-launch" onClick={onLiveData}>
+          <Users size={16} aria-hidden="true" />
+          <span>Operation data &amp; test passengers</span>
+          <ArrowUpRight size={13} aria-hidden="true" />
+        </button>
+      )}
+      <button className="real-data-launch" onClick={() => setShowRealData(true)}>
+        <Globe2 size={16} aria-hidden="true" />
+        <span>Real hotels &amp; routes</span>
+        <ArrowUpRight size={13} aria-hidden="true" />
+      </button>
+      {showRealData && (
+        <RealDataDialog
+          airports={world.airports.filter((node) => node.kind !== 'station')}
+          selectedId={selectedId}
+          onClose={closeRealData}
+        />
+      )}
       <div className="resource-tabs" role="tablist" aria-label="Resource type">
         {tabs.map(({ id, name, Icon }) => (
           <button
@@ -120,6 +155,18 @@ export default function ResourceRail({
         <kbd>/</kbd>
       </div>
       <div className="rail-scroll">
+        {world.mode === 'live' && (!world.groups.length || !world.resources.length) && (
+          <div className="rail-secondary">
+            <p className="field-hint">
+              {!world.groups.length
+                ? 'Generate test passengers or import your manifest.'
+                : 'Add real supplier quotes or verified transport to plan recovery.'}
+            </p>
+            <button className="secondary-button" onClick={onLiveData}>
+              Set up operation
+            </button>
+          </div>
+        )}
         <div className="section-label">
           <span>
             {tab === 'groups'
@@ -127,8 +174,12 @@ export default function ResourceRail({
               : tab === 'bus'
                 ? 'Transfer vehicles'
                 : tab === 'flight'
-                  ? 'Scenario flights'
-                  : 'Hotel inventory'}
+                  ? world.mode === 'live'
+                    ? 'Verified flights'
+                    : 'Scenario flights'
+                  : world.mode === 'live'
+                    ? 'Current hotel quotes'
+                    : 'Hotel inventory'}
           </span>
           <span>{tab === 'groups' ? groups.length : resources.length}</span>
         </div>
@@ -150,6 +201,7 @@ export default function ResourceRail({
                   <strong>{group.name}</strong>
                   <small>
                     {group.id} · {group.size} passengers · {group.destination}
+                    {group.source === 'synthetic' ? ' · TEST' : ''}
                   </small>
                 </span>
                 {group.accessible ? (
@@ -187,7 +239,7 @@ export default function ResourceRail({
                     <strong>{resource.id}</strong>
                     <small>
                       {resource.origin} <span aria-hidden="true">→</span> {resource.destination} ·{' '}
-                      {formatTime(resource.departure)}
+                      {formatWorldTime(world, resource.departure)}
                     </small>
                   </span>
                   <span
@@ -195,7 +247,9 @@ export default function ResourceRail({
                   >
                     {!resource.available
                       ? 'Unavailable'
-                      : `${count} ${resource.kind === 'hotel' ? 'rooms' : 'seats'}`}
+                      : resource.capacity_scope === 'quoted_request'
+                        ? 'Group quote'
+                        : `${count} ${resource.kind === 'hotel' ? 'rooms' : 'seats'}`}
                   </span>
                   <ChevronRight size={12} />
                 </button>
@@ -254,17 +308,21 @@ export default function ResourceRail({
               <p>
                 No live feed connected.
                 <br />
-                Scenario traffic is synthetic.
+                {world.mode === 'live'
+                  ? 'Start the flight feed in Connections.'
+                  : 'Scenario traffic is synthetic.'}
               </p>
             </div>
           )}
         </div>
       </div>
-      <button className="rail-footer" onClick={onScenario}>
-        <SlidersHorizontal size={15} />
-        <span>Scenario controls</span>
-        <ArrowUpRight size={14} />
-      </button>
+      {world.mode !== 'live' && (
+        <button className="rail-footer" onClick={onScenario}>
+          <SlidersHorizontal size={15} />
+          <span>Scenario controls</span>
+          <ArrowUpRight size={14} />
+        </button>
+      )}
     </aside>
   );
 }

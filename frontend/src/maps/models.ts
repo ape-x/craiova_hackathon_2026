@@ -53,6 +53,8 @@ export function buildModelDescriptors(
   selectedId: string | null,
   visibility = ALL_MODELS,
 ): GeoModel[] {
+  if (world.mode === 'live')
+    world = { ...world, resources: [], groups: [], offers: [], reservations: [] };
   const models: GeoModel[] = [];
   const used = new Set<string>();
   const observations = [...world.observations].sort(

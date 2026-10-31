@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     # Explicit environment variables and Settings(_env_file=...) still override.
     model_config = SettingsConfigDict(env_file=Path(__file__).resolve().parents[1] / ".env", extra="ignore", case_sensitive=False, hide_input_in_errors=True)
     environment: Literal["development","test","production"] = "development"
+    operation_mode: Literal["live", "simulation"] = "live"
     database_path: str = "data/recovery.sqlite3"
     operator_token: str = ""
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000"
@@ -33,9 +34,25 @@ class Settings(BaseSettings):
     observation_retention_seconds: int = Field(default=3600,ge=60,le=86400)
     voice_max_seconds: int = Field(default=180,ge=30,le=600)
     google_maps_api_key: str = ""
+    google_maps_server_api_key: str = Field(default="", repr=False)
+    booking_demand_api_token: str = Field(default="", repr=False)
+    booking_affiliate_id: str = ""
+    booking_booker_country: str = Field(default="ro", pattern=r"^[a-z]{2}$")
+    liteapi_api_key: str = Field(default="", repr=False)
+    liteapi_environment: Literal["sandbox", "live"] = "sandbox"
+    liteapi_guest_nationality: str = Field(default="RO", pattern=r"^[A-Z]{2}$")
+    hotel_offers_provider: Literal["auto", "booking", "liteapi"] = "auto"
+    real_data_overpass_url: str = "https://overpass-api.de/api/interpreter"
+    real_data_osrm_url: str = "https://router.project-osrm.org"
     flight_poll_seconds: int = Field(default=30, ge=15)
     request_timeout_seconds: int = Field(default=45, ge=1, le=180)
     max_request_bytes: int = 1_000_000
+    duffel_access_token: str = Field(default="", repr=False)
+    duffel_environment: Literal["sandbox", "live"] = "sandbox"
+    flight_offers_provider: Literal["auto", "nuitee", "duffel"] = "auto"
+    distribusion_api_key: str = Field(default="", repr=False)
+    distribusion_environment: Literal["sandbox", "live"] = "sandbox"
+    distribusion_offers_enabled: bool = False
 
     @property
     def production(self):

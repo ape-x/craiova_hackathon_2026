@@ -1,0 +1,37 @@
+{
+  "checked_at": "2026-10-31T15:38:44.427262+00:00",
+  "application": "http://localhost:8080",
+  "mode": "live",
+  "passenger_count": 2,
+  "passenger_sources": {
+    "synthetic": 1
+  },
+  "resource_count": 1,
+  "resource_sources": {
+    "nuitee": 1
+  },
+  "offer_statuses": {
+    "proposed": 1
+  },
+  "external_booking_count": 0,
+  "provider_states": {
+    "hotel": "live",
+    "flight": {
+      "source": "Nuitee",
+      "configured": true,
+      "environment": "live"
+    },
+    "coach": {
+      "state": "not_configured",
+      "source": "Distribusion",
+      "result_count": 0
+    }
+  },
+  "validation": {
+    "backend_tests_passed": 433,
+    "frontend_tests_passed": 115,
+    "browser_quote_import": true,
+    "ai_replan_with_real_quote": true,
+    "dummy_transport_count": 0
+  }
+}

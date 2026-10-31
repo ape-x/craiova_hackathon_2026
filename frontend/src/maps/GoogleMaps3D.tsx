@@ -90,7 +90,7 @@ export default function GoogleMaps3D({
         map.style.height = '100%';
         map.setAttribute(
           'aria-label',
-          'Google geographic 3D map with observed traffic and separate simulated recovery routes',
+          'Google geographic 3D map with source-labelled aircraft observations',
         );
         initialization.watch(map);
         host.current.append(map);
@@ -296,17 +296,22 @@ export default function GoogleMaps3D({
               <i className="geo-observed" />
               Received observations
             </span>
-            <span>
-              <i className="geo-scenario" />
-              Simulated network
-            </span>
-            <span>
-              <i className="geo-confirmed" />
-              Confirmed in simulator
-            </span>
+            {world.mode !== 'live' && (
+              <span>
+                <i className="geo-scenario" />
+                Simulated network
+              </span>
+            )}
+            {world.mode !== 'live' && (
+              <span>
+                <i className="geo-confirmed" />
+                Confirmed in simulator
+              </span>
+            )}
             <small>
-              Authored terminal, fleet and families · simulated layout and positions. Links are
-              schematic. Observed aircraft enlarged 2.5×; Google terrain is real.
+              {world.mode === 'live'
+                ? 'Observed aircraft at provider positions, enlarged 2.5×. Google terrain is real; airport status requires verification.'
+                : 'Authored terminal, fleet and families · simulated layout and positions. Links are schematic. Observed aircraft enlarged 2.5×; Google terrain is real.'}
             </small>
           </div>
           <div className="geographic-model-controls" role="group" aria-label="3D object layers">
@@ -317,19 +322,21 @@ export default function GoogleMaps3D({
                 ['passengers', 'Passengers', Users],
                 ['terminal', 'Terminal', Building2],
               ] as const
-            ).map(([key, label, Icon]) => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={visibility[key]}
-                onClick={() =>
-                  setVisibility((previous) => ({ ...previous, [key]: !previous[key] }))
-                }
-              >
-                <Icon size={13} />
-                {label}
-              </button>
-            ))}
+            )
+              .filter(([key]) => world.mode !== 'live' || key === 'vehicles')
+              .map(([key, label, Icon]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={visibility[key]}
+                  onClick={() =>
+                    setVisibility((previous) => ({ ...previous, [key]: !previous[key] }))
+                  }
+                >
+                  <Icon size={13} />
+                  {world.mode === 'live' ? 'Observed aircraft' : label}
+                </button>
+              ))}
           </div>
           <button
             type="button"

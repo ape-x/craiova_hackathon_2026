@@ -7,6 +7,7 @@ export interface AirportWeather {
   departure_allowed: boolean;
 }
 export interface Airport {
+  kind?: 'airport' | 'station';
   id: string;
   code: string;
   name: string;
@@ -14,6 +15,7 @@ export interface Airport {
   lon: number;
   available: boolean;
   diversion_eligible: boolean;
+  operational_status?: 'unknown' | 'open' | 'closed';
   weather?: AirportWeather | null;
 }
 export interface Resource {
@@ -32,6 +34,15 @@ export interface Resource {
   vehicle_id: string | null;
   status: string;
   source: string;
+  provenance?: Record<string, unknown>;
+  valid_until?: string | null;
+  eligible_group_ids?: string[];
+  quote_total_cost?: number | null;
+  quote_rooms?: number | null;
+  requires_revalidation?: boolean;
+  external_offer_id?: string | null;
+  booking_status?: string;
+  capacity_scope?: 'quoted_request' | 'operator_confirmed';
 }
 export interface PassengerGroup {
   id: string;
@@ -48,6 +59,8 @@ export interface PassengerGroup {
   status: 'scheduled' | 'waiting' | 'offered' | 'confirmed' | 'affected' | 'exception';
   token: string;
   priority: number;
+  source?: string;
+  adult_count?: number | null;
 }
 export interface Leg {
   resource_id: string;
@@ -67,7 +80,15 @@ export interface Offer {
   id: string;
   group_id: string;
   itinerary: Itinerary;
-  status: 'held' | 'confirmed' | 'expired' | 'invalidated' | 'superseded';
+  status:
+    | 'held'
+    | 'proposed'
+    | 'accepted'
+    | 'confirmed'
+    | 'expired'
+    | 'invalidated'
+    | 'superseded'
+    | 'declined';
   expires_at: string;
   created_version: number;
   confirmed_at: string | null;
@@ -79,7 +100,7 @@ export interface Reservation {
   group_id: string;
   resource_id: string;
   quantity: number;
-  status: 'held' | 'confirmed' | 'released';
+  status: 'held' | 'proposed' | 'accepted' | 'confirmed' | 'released';
   expires_at: string;
 }
 export interface AuditEvent {
@@ -148,7 +169,7 @@ export interface World {
   version: number;
   epoch: string;
   sim_time: number;
-  mode: 'simulation';
+  mode: 'simulation' | 'live';
   currency: string;
   budget: number;
   airports: Airport[];

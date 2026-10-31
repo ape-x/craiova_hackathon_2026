@@ -98,12 +98,33 @@ export function buildOverlays(
   tracks: ObservationTracks,
   now = Date.now(),
 ): { markers: GeoMarker[]; routes: GeoRoute[] } {
+  if (world.mode === 'live')
+    world = { ...world, resources: [], groups: [], offers: [], reservations: [] };
   const markers: GeoMarker[] = world.airports.map((airport) => ({
     id: airport.id,
-    label: `${airport.code}${!airport.available ? ' · CLOSED IN SIM' : airportWeatherState(airport).weatherRestricted ? ' · WEATHER RESTRICTED' : ''}`,
-    title: `${airport.name}. Airport availability is simulated.${airport.weather ? ` ${airportWeatherState(airport).condition}. Landings ${airportWeatherState(airport).landingAllowed ? 'allowed' : 'blocked'}; departures ${airportWeatherState(airport).departureAllowed ? 'allowed' : 'blocked'}.` : ''}`,
-    point: scenePoint(airport, 0, 51, 28),
-    color: airportWeatherState(airport).restricted ? COLORS.unavailable : COLORS.scenario,
+    label:
+      airport.kind === 'station'
+        ? `${airport.code} · COACH STATION`
+        : world.mode === 'live'
+          ? `${airport.code}${airport.operational_status === 'unknown' ? ' · STATUS UNKNOWN' : airport.operational_status === 'closed' ? ' · CLOSED' : ''}`
+          : `${airport.code}${!airport.available ? ' · CLOSED IN SIM' : airportWeatherState(airport).weatherRestricted ? ' · WEATHER RESTRICTED' : ''}`,
+    title:
+      airport.kind === 'station'
+        ? `${airport.name}. Coach station location supplied by the transport provider.`
+        : world.mode === 'live'
+          ? `${airport.name}. Reference airport location. Operational status: ${airport.operational_status ?? 'unknown'}.`
+          : `${airport.name}. Airport availability is simulated.${airport.weather ? ` ${airportWeatherState(airport).condition}. Landings ${airportWeatherState(airport).landingAllowed ? 'allowed' : 'blocked'}; departures ${airportWeatherState(airport).departureAllowed ? 'allowed' : 'blocked'}.` : ''}`,
+    point: world.mode === 'live' ? pointOf(airport) : scenePoint(airport, 0, 51, 28),
+    color:
+      airport.kind === 'station'
+        ? COLORS.muted
+        : world.mode === 'live'
+          ? airport.operational_status === 'closed'
+            ? COLORS.unavailable
+            : COLORS.muted
+          : airportWeatherState(airport).restricted
+            ? COLORS.unavailable
+            : COLORS.scenario,
     observed: false,
     selected: selectedId === airport.id,
   }));
@@ -257,13 +278,7 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
   );
   const observed = observation && observedPoint(observation);
   if (observed)
-    return {
-      center: observed,
-      range: 4000,
-      tilt: 60,
-      heading: 20,
-      altitudeMode: 'ABSOLUTE',
-    };
+    return { center: observed, range: 4000, tilt: 60, heading: 20, altitudeMode: 'ABSOLUTE' };
   const airport = world.airports.find((a) => a.id === selectedId);
   if (airport && mode === 'airport')
     return {

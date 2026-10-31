@@ -32,6 +32,7 @@ import ResourceRail from './ResourceRail';
 import Inspector from './Inspector';
 import Timeline from './Timeline';
 import ScenarioDialog from './ScenarioDialog';
+import LiveDataDialog from './LiveDataDialog';
 import { WeatherNetworkOverlay } from './WeatherStatus';
 import { Brand, Dot, Modal, Tag } from './ui';
 import { LiveVoiceClient } from './liveVoice';
@@ -131,9 +132,9 @@ function Operations() {
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
   const [showLog, setShowLog] = useState(false);
-  const [modal, setModal] = useState<'scenario' | 'settings' | 'search' | 'help' | 'reset' | null>(
-    null,
-  );
+  const [modal, setModal] = useState<
+    'scenario' | 'settings' | 'search' | 'help' | 'reset' | 'live-data' | null
+  >(null);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const [operation, setOperation] = useState('');
@@ -145,10 +146,9 @@ function Operations() {
   } | null>(null);
   const [command, setCommand] = useState('');
   const [lastCommand, setLastCommand] = useState('');
-  const [commandReply, setCommandReply] = useState<{
-    scenarioId: string;
-    text: string;
-  } | null>(null);
+  const [commandReply, setCommandReply] = useState<{ scenarioId: string; text: string } | null>(
+    null,
+  );
   const lastReply =
     commandReply?.scenarioId === world?.scenario_id ? (commandReply?.text ?? '') : '';
   const [voiceState, setVoiceState] = useState<string>('idle');
@@ -157,10 +157,7 @@ function Operations() {
   const [voiceMuted, setVoiceMuted] = useState(false);
   const waveform = useRef<HTMLDivElement>(null);
   const voice = useRef<LiveVoiceClient | null>(null);
-  const commandHistory = useRef<{
-    scenarioId: string;
-    exchanges: CommandExchange[];
-  }>({
+  const commandHistory = useRef<{ scenarioId: string; exchanges: CommandExchange[] }>({
     scenarioId: '',
     exchanges: [],
   });
@@ -173,7 +170,10 @@ function Operations() {
     setSelectedId(id);
     setShowLog(false);
   }, []);
-  const showScenario = useCallback(() => setModal('scenario'), []);
+  const showScenario = useCallback(
+    () => setModal(worldRef.current?.mode === 'live' ? 'live-data' : 'scenario'),
+    [worldRef],
+  );
   const applyResult = useCallback(
     (result: MutationResult) => {
       const replaced = worldRef.current?.scenario_id !== result.world.scenario_id;
@@ -280,10 +280,7 @@ function Operations() {
         const reply = verifiedCommandResult(result);
         setCommandReply({ scenarioId: result.world.scenario_id, text: reply });
         if (commandHistory.current.scenarioId !== result.world.scenario_id)
-          commandHistory.current = {
-            scenarioId: result.world.scenario_id,
-            exchanges: [],
-          };
+          commandHistory.current = { scenarioId: result.world.scenario_id, exchanges: [] };
         commandHistory.current.exchanges = rememberCommand(
           commandHistory.current.exchanges,
           text,
@@ -400,8 +397,13 @@ function Operations() {
     ) : (
       <LoadingPage />
     );
+  const live = world.mode === 'live';
   const homeAirport =
     world.airports.find((airport) => airport.id === selectedId) ?? world.airports[0];
+  const geographic = live || mapStyle === 'geographic';
+  const mapWorld = live
+    ? { ...world, resources: [], groups: [], offers: [], reservations: [] }
+    : world;
   const lastDecision = world.decisions.at(-1);
   const isVoiceActive = !['idle', 'closed', 'error', 'disconnected'].includes(voiceState);
   return (
@@ -410,9 +412,13 @@ function Operations() {
         <Brand />
         <div className="operation-location">
           <span>
-            {homeAirport ? `${homeAirport.code} recovery operations` : 'Simulation workspace'}
+            {live
+              ? 'Live recovery operations'
+              : homeAirport
+                ? `${homeAirport.code} recovery operations`
+                : 'Simulation workspace'}
           </span>
-          <Tag>{homeAirport?.code ?? 'NETWORK'}</Tag>
+          <Tag>{homeAirport?.code ?? (live ? 'LIVE' : 'NETWORK')}</Tag>
         </div>
         <div className="header-center">
           <Dot tone={connection === 'connected' ? 'mint' : 'amber'} />
@@ -421,7 +427,7 @@ function Operations() {
         <div className="header-actions">
           <button className="mode-selector" onClick={() => setModal('settings')}>
             <span className="simulation-mark" />
-            SIMULATION
+            {live ? 'LIVE · ASSISTED' : 'SIMULATION'}
             <ChevronDown size={13} />
           </button>
           <button
@@ -492,9 +498,10 @@ function Operations() {
           onSelect={select}
           onMode={setMode}
           onScenario={showScenario}
+          onLiveData={() => setModal('live-data')}
         />
         <main className="map-workspace" aria-label="Operational 3D view">
-          <div className={`scene-wrap ${mapStyle === 'geographic' ? 'geographic-view' : ''}`}>
+          <div className={`scene-wrap ${geographic ? 'geographic-view' : ''}`}>
             <Suspense
               fallback={
                 <div className="scene-loading">
@@ -503,7 +510,7 @@ function Operations() {
                 </div>
               }
             >
-              {world.airports.length === 0 ? (
+              {!live && world.airports.length === 0 ? (
                 <div className="scenario-empty-map">
                   <div>
                     <Tag tone="cyan">NEW SIMULATION</Tag>
@@ -520,15 +527,29 @@ function Operations() {
                     </button>
                   </div>
                 </div>
-              ) : mapStyle === 'geographic' ? (
+              ) : geographic && config.google_maps_api_key ? (
                 <GoogleMaps3D
-                  world={world}
+                  world={mapWorld}
                   mode={mode}
                   selectedId={selectedId}
                   onSelect={select}
                   apiKey={config.google_maps_api_key ?? ''}
                   onClose={() => setMapStyle('architectural')}
                 />
+              ) : live ? (
+                <div className="live-empty-map">
+                  <div>
+                    <Tag tone="cyan">LIVE OPERATION</Tag>
+                    <h2>Connect real geography and supplier data</h2>
+                    <p>
+                      The geographic map needs a configured browser Maps key. Your verified
+                      inventory and passengers remain available in the side panels.
+                    </p>
+                    <button className="primary-button" onClick={() => setModal('live-data')}>
+                      Manage operation data
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <Scene world={world} mode={mode} selectedId={selectedId} onSelect={select} />
               )}
@@ -557,19 +578,21 @@ function Operations() {
                   </button>
                 ))}
               </div>
-              <button
-                className="geographic-toggle"
-                aria-pressed={mapStyle === 'geographic'}
-                onClick={() =>
-                  setMapStyle((value) =>
-                    value === 'architectural' ? 'geographic' : 'architectural',
-                  )
-                }
-                title="Switch between the architectural model and Google geographic 3D"
-              >
-                <Globe2 size={13} />
-                {mapStyle === 'geographic' ? 'Airport model' : 'Geographic 3D'}
-              </button>
+              {!live && (
+                <button
+                  className="geographic-toggle"
+                  aria-pressed={mapStyle === 'geographic'}
+                  onClick={() =>
+                    setMapStyle((value) =>
+                      value === 'architectural' ? 'geographic' : 'architectural',
+                    )
+                  }
+                  title="Switch between the architectural model and Google geographic 3D"
+                >
+                  <Globe2 size={13} />
+                  {mapStyle === 'geographic' ? 'Airport model' : 'Geographic 3D'}
+                </button>
+              )}
               <div className={`planner-badge ${chosenMode === 'ai' ? 'cyan' : 'slate'}`}>
                 <Zap size={12} />
                 <span>
@@ -592,7 +615,8 @@ function Operations() {
                 </div>
               </div>
             )}
-            {!busy &&
+            {!live &&
+              !busy &&
               world.airports.some((airport) => airport.id === 'CRA' && !airport.available) && (
                 <div className="incident-overlay">
                   <TriangleAlert size={17} />
@@ -604,7 +628,7 @@ function Operations() {
               <div className="map-coordinate">
                 <span className="crosshair-mark">+</span>
                 <span>
-                  {mapStyle !== 'geographic' && mode === 'region'
+                  {!geographic && mode === 'region'
                     ? 'SCHEMATIC NETWORK'
                     : homeAirport
                       ? `${Math.abs(homeAirport.lat).toFixed(3)}° ${homeAirport.lat >= 0 ? 'N' : 'S'} · ${Math.abs(homeAirport.lon).toFixed(3)}° ${homeAirport.lon >= 0 ? 'E' : 'W'}`
@@ -621,7 +645,7 @@ function Operations() {
                 </span>
                 <span>
                   <i className="legend-line amber dashed" />
-                  Scenario change
+                  {live ? 'Operational data' : 'Scenario change'}
                 </span>
                 <span>
                   <i className="legend-line mint" />
@@ -630,28 +654,34 @@ function Operations() {
               </div>
             </div>
             <div className="map-disclaimer">
-              {mapStyle === 'geographic'
-                ? 'GEOGRAPHIC TERRAIN · SIMULATED OPERATIONS'
-                : 'CUSTOM 3D MODEL · SYNTHETIC OPERATIONS'}
+              {live
+                ? 'REAL GEOGRAPHY · OBSERVED AIRCRAFT · NO SIMULATED VEHICLE POSITIONS'
+                : mapStyle === 'geographic'
+                  ? 'GEOGRAPHIC TERRAIN · SIMULATED OPERATIONS'
+                  : 'CUSTOM 3D MODEL · SYNTHETIC OPERATIONS'}
             </div>
             <div className="map-action">
               <button
                 className="secondary-button"
                 onClick={showScenario}
-                title="Exemple de condiții. Descrie un scenariu propriu prin voce sau text."
+                title={
+                  live
+                    ? 'Manage live operation data and test passengers'
+                    : 'Exemple de condiții. Descrie un scenariu propriu prin voce sau text.'
+                }
               >
                 <SlidersHorizontal size={14} />
-                Exemple rapide
+                {live ? 'Operation data' : 'Exemple rapide'}
               </button>
               <button
                 className="primary-button"
-                disabled={busy}
+                disabled={busy || (live && (!world.groups.length || !world.resources.length))}
                 onClick={() => {
                   void replan();
                 }}
               >
-                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
-                Replan <span>{chosenMode === 'ai' ? 'AI' : 'SOLVER'}</span>
+                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}Replan{' '}
+                <span>{chosenMode === 'ai' ? 'AI' : 'SOLVER'}</span>
               </button>
             </div>
           </div>
@@ -709,7 +739,9 @@ function Operations() {
           }}
         >
           <label className="sr-only" htmlFor="scenario-command">
-            Describe a scenario in Romanian or English
+            {live
+              ? 'Describe a recovery planning request in Romanian or English'
+              : 'Describe a scenario in Romanian or English'}
           </label>
           <input
             id="scenario-command"
@@ -717,8 +749,12 @@ function Operations() {
             ref={commandInput}
             placeholder={
               isVoiceActive
-                ? 'Ascult. Descrie scenariul prin voce…'
-                : 'Descrie un scenariu, resursele și condițiile…'
+                ? live
+                  ? 'Ascult. Descrie cererea de recuperare…'
+                  : 'Ascult. Descrie scenariul prin voce…'
+                : live
+                  ? 'Analizează pasagerii și ofertele verificate…'
+                  : 'Descrie un scenariu, resursele și condițiile…'
             }
             value={command}
             onChange={(event) => setCommand(event.target.value)}
@@ -741,13 +777,15 @@ function Operations() {
                   : lastCommand ||
                     (config.ai_configured
                       ? 'Voice + Decisions + Ultrafast · live reasoning, validated actions'
-                      : 'Text & voice need OpenAI access. Scenario controls and solver are available.')}
+                      : live
+                        ? 'Text & voice need OpenAI access. Operation data and solver are available.'
+                        : 'Text & voice need OpenAI access. Scenario controls and solver are available.')}
           </output>
           <button
             className="send-command"
             type="submit"
             disabled={busy || !command.trim()}
-            aria-label="Send scenario command"
+            aria-label={live ? 'Send planning request' : 'Send scenario command'}
           >
             <Send size={21} />
           </button>
@@ -822,7 +860,10 @@ function Operations() {
           </button>
         </div>
       )}
-      {modal === 'scenario' && (
+      {modal === 'live-data' && (
+        <LiveDataDialog world={world} onClose={closeModal} onApplied={applyResult} />
+      )}
+      {modal === 'scenario' && !live && (
         <ScenarioDialog
           world={world}
           selectedId={selectedId}
@@ -844,11 +885,7 @@ function Operations() {
                 );
               } catch (cause) {
                 const message = `Condition saved at v${result.world.version}. Replanning was not confirmed: ${cause instanceof Error ? cause.message : 'Check the current state.'}`;
-                setNotice((previous) => ({
-                  text: message,
-                  error: true,
-                  retry: previous?.retry,
-                }));
+                setNotice((previous) => ({ text: message, error: true, retry: previous?.retry }));
                 throw new Error(message);
               }
             }
@@ -883,7 +920,7 @@ function Operations() {
           }}
         />
       )}
-      {modal === 'reset' && (
+      {modal === 'reset' && !live && (
         <Modal title="Start a new simulation" onClose={closeModal}>
           <p className="modal-copy">
             This replaces the current scenario, offers and reservations with a fresh synthetic
@@ -914,7 +951,20 @@ function Operations() {
           </div>
         </Modal>
       )}
-      {modal === 'help' && (
+      {modal === 'help' && live && (
+        <Modal title="Live assisted recovery" onClose={closeModal}>
+          <p className="modal-copy">
+            Generate clearly marked test passengers or import a real manifest. Add live provider
+            quotes or inventory confirmed by an operator. Replan proposes complete journeys;
+            passenger acceptance saves a preference. Record supplier confirmations only after each
+            service has actually been booked.
+          </p>
+          <button className="primary-button" onClick={() => setModal('live-data')}>
+            Manage operation data
+          </button>
+        </Modal>
+      )}
+      {modal === 'help' && !live && (
         <Modal title="Put the network to the test" onClose={closeModal}>
           <div className="demo-steps">
             <div>
@@ -976,16 +1026,8 @@ function SearchDialog({
 }) {
   const [query, setQuery] = useState('');
   const entities = [
-    ...world.airports.map((item) => ({
-      id: item.id,
-      name: item.name,
-      type: 'Airport',
-    })),
-    ...world.resources.map((item) => ({
-      id: item.id,
-      name: item.name,
-      type: item.kind,
-    })),
+    ...world.airports.map((item) => ({ id: item.id, name: item.name, type: 'Airport' })),
+    ...world.resources.map((item) => ({ id: item.id, name: item.name, type: item.kind })),
     ...world.groups.map((item) => ({
       id: item.id,
       name: item.name,
@@ -1064,7 +1106,7 @@ function SettingsDialog({
           },
           {
             name: 'Flightradar24',
-            caption: 'Observed traffic · separate from simulation',
+            caption: 'Observed aircraft positions · no bookable seat inventory',
             ready: config.fr24_configured,
           },
           {
@@ -1139,7 +1181,7 @@ function SettingsDialog({
       )}
       <div className="settings-section">
         <div className="section-label">
-          <span>Current simulation</span>
+          <span>{world.mode === 'live' ? 'Current live operation' : 'Current simulation'}</span>
           <code>v{world.version}</code>
         </div>
         <div className="session-actions">
@@ -1147,10 +1189,12 @@ function SettingsDialog({
             <ArrowDownToLine size={15} />
             Export audit
           </button>
-          <button className="secondary-button" onClick={onReset}>
-            <RefreshCw size={15} />
-            New simulation
-          </button>
+          {world.mode === 'simulation' && (
+            <button className="secondary-button" onClick={onReset}>
+              <RefreshCw size={15} />
+              New simulation
+            </button>
+          )}
           {config.auth_required && (
             <button
               className="secondary-button"

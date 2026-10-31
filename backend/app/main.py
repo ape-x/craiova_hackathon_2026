@@ -22,6 +22,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .config import Settings
 from .models import AcceptRequest, CommandRequest, ConstraintRequest, EventRequest, LoginRequest, Model, Mutation, ReplanRequest, World
 from .providers import AIProvider, FlightProvider, ProviderError, VoiceProvider
+from .real_data import RealDataRequest, RealDataService
+from .live_data import ManifestImport, ManualResourceInput, PassengerGenerationInput
+from .live_service import LiveOperations, HotelQuoteImport, ExternalConfirmation
+from .live_travel import LiveTravel, LiveTravelSearch, TravelQuoteImport
+from .providers.travel import TravelProvider
 from .service import RecoveryService
 from .store import DomainError, Store, utcnow
 
@@ -76,9 +81,13 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     access_logger=logging.getLogger("uvicorn.access")
     if not any(isinstance(item,RedactAccessPaths) for item in access_logger.filters):
         access_logger.addFilter(RedactAccessPaths())
-    store=Store(settings.database_path,settings.observation_retention_seconds)
+    store=Store(settings.database_path,settings.observation_retention_seconds,settings.operation_mode)
     ai,flights,voice=AIProvider(settings),FlightProvider(settings),VoiceProvider(settings)
+    real_data=RealDataService(settings)
     service=RecoveryService(settings,store,ai if ai.configured else None)
+    live=LiveOperations(store,service,real_data)
+    travel_provider=TravelProvider(settings)
+    travel=LiveTravel(store,travel_provider)
     login_attempts=defaultdict(deque)
     # Reserve worst-case credit cost in the persistent shared request ledger;
     # restarting or adding a worker cannot replenish the paid provider budget.
@@ -120,10 +129,13 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
-        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose())
+        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose())
 
     app=FastAPI(title="Airport Recovery Live",version="0.1.0",lifespan=lifespan,docs_url=None if settings.production else "/docs",redoc_url=None,openapi_url=None if settings.production else "/openapi.json")
     app.state.store,app.state.service,app.state.settings=store,service,settings
+    app.state.real_data=real_data
+    app.state.live=live
+    app.state.travel=travel
     app.add_middleware(CORSMiddleware,allow_origins=settings.origins,allow_credentials=True,allow_methods=["GET","POST","DELETE"],allow_headers=["Content-Type","Authorization","Last-Event-ID"])
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[h.strip() for h in settings.allowed_hosts.split(",")])
     app.add_middleware(BodySizeLimit,max_bytes=settings.max_request_bytes)
@@ -203,7 +215,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
 
     @app.get("/api/health")
     def health():
-        return {"status":"ok","service":"airport-recovery-live","simulation":True}
+        return {"status":"ok","service":"airport-recovery-live","simulation":settings.operation_mode=="simulation"}
 
     @app.get("/api/ready")
     def ready():
@@ -215,7 +227,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
             World.model_validate_json(row[0])
         except (sqlite3.Error,ValidationError):
             return JSONResponse({"status":"unavailable","database":"unavailable"},status_code=503)
-        return {"status":"ready","database":"connected","simulation":True}
+        return {"status":"ready","database":"connected","simulation":settings.operation_mode=="simulation"}
 
     @app.get("/api/config")
     def config(request: Request):
@@ -226,7 +238,14 @@ def create_app(settings: Settings | None=None) -> FastAPI:
             "traffic_running":store.control("traffic_running",False),"traffic_requests_used":store.poll_usage(),"traffic_request_budget":poll_request_limit,
             "traffic_credit_budget":settings.fr24_max_credits,"traffic_credits_reserved":store.poll_usage()*settings.fr24_result_limit*8,
             "observation_retention_seconds":settings.observation_retention_seconds,
-            "simulation_only":True,"solver_optimality":"bounded heuristic; global optimality not proven"}
+            "real_data":{"hotels":"Google Places" if real_data.provider.google_configured else "OpenStreetMap",
+                         "transport":"Google Routes" if real_data.provider.google_configured else "OSRM / OpenStreetMap",
+                         "hotel_offers_configured":real_data.provider.hotel_offers_configured,
+                         "hotel_offers_source":real_data.provider.hotel_offer_source,
+                         "hotel_offers_environment":None if real_data.provider.hotel_offer_provider is None else "sandbox" if real_data.provider.hotel_offer_provider == "liteapi" and real_data.provider.liteapi_sandbox else "live"},
+            "travel_sources":{"flights":{"source":travel_provider.flight_source,"configured":travel_provider.flight_configured,"environment":travel_provider.flight_environment},
+                              "coaches":{"source":"Distribusion","configured":travel_provider.ground_configured,"environment":settings.distribusion_environment}},
+            "simulation_only":settings.operation_mode=="simulation","operation_mode":settings.operation_mode,"solver_optimality":"bounded heuristic; global optimality not proven"}
 
     @app.post("/api/auth/login")
     def login(body: LoginRequest,request: Request,response: Response):
@@ -263,6 +282,38 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     @app.get("/api/audit",dependencies=[Depends(operator)])
     def audit_history():
         return {"events":store.audit_history()}
+
+    @app.post("/api/real-data/search",dependencies=[Depends(operator)])
+    async def search_real_data(body: RealDataRequest):
+        return await real_data.search(body)
+
+    @app.post("/api/live/import-passengers",dependencies=[Depends(operator)])
+    def import_passengers(body: ManifestImport):
+        return live.manifest(body)
+
+    @app.post("/api/live/generate-passengers",dependencies=[Depends(operator)])
+    def generate_test_passengers(body: PassengerGenerationInput):
+        return live.generate(body)
+
+    @app.post("/api/live/resources",dependencies=[Depends(operator)])
+    def add_verified_resource(body: ManualResourceInput):
+        return live.resource(body)
+
+    @app.post("/api/live/hotel-quotes",dependencies=[Depends(operator)])
+    async def add_hotel_quotes(body: HotelQuoteImport):
+        return await live.hotels(body)
+
+    @app.post("/api/live/offers/{offer_id}/confirm",dependencies=[Depends(operator)])
+    def confirm_external_bookings(offer_id: str, body: ExternalConfirmation):
+        return live.confirm(offer_id,body)
+
+    @app.post("/api/live/travel/search",dependencies=[Depends(operator)])
+    async def search_travel(body: LiveTravelSearch):
+        return await travel.search(body)
+
+    @app.post("/api/live/travel/import",dependencies=[Depends(operator)])
+    def import_travel_quote(body: TravelQuoteImport):
+        return travel.import_quote(body)
 
     @app.get("/api/stream",dependencies=[Depends(operator)])
     async def stream(request: Request):
@@ -313,6 +364,10 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     def accept(offer_id: str,body: AcceptRequest):
         return service.accept(offer_id,body)
 
+    @app.post("/api/offers/{offer_id}/decline")
+    def decline(offer_id: str,body: AcceptRequest):
+        return service.decline(offer_id,body.token,body.idempotency_key)
+
     @app.post("/api/voice/session",dependencies=[Depends(operator)])
     async def voice_session(body: VoiceRequest):
         return await voice.create(body.sdp)
@@ -320,7 +375,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     @app.post("/api/traffic/start",dependencies=[Depends(operator)])
     def traffic_start():
         if not flights.configured:
-            raise DomainError(503,"Flightradar24 API key is not configured. Synthetic scenario remains available.")
+            raise DomainError(503,"Flightradar24 API key is not configured. No observed traffic is available.")
         if store.poll_usage()>=poll_request_limit:
             raise DomainError(409,"Shared Flightradar24 request budget exhausted")
         store.set_control("traffic_running",True)

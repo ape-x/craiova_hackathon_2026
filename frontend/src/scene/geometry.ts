@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  apronWearTexture,
   surfaceMaterial,
   surfaceMeters,
   surfaceTexture as texture,
@@ -102,11 +103,14 @@ class Builder {
           emissive === 'glass'
             ? new THREE.MeshPhysicalMaterial({
                 color: 'white',
-                roughness: 0.19,
-                metalness: 0.48,
-                clearcoat: 0.65,
-                clearcoatRoughness: 0.14,
-                envMapIntensity: 1.35,
+                roughness: 0.23,
+                metalness: 0.22,
+                clearcoat: 0.5,
+                clearcoatRoughness: 0.18,
+                envMapIntensity: 1.2,
+                transparent: true,
+                opacity: 0.58,
+                depthWrite: false,
               })
             : new THREE.MeshStandardMaterial({
                 color: 'white',
@@ -134,7 +138,7 @@ class Builder {
         mesh.setMatrixAt(i, m);
         mesh.setColorAt(i, batch.colors[i]);
       });
-      mesh.castShadow = true;
+      mesh.castShadow = !batch.material.transparent;
       mesh.receiveShadow = true;
       mesh.computeBoundingSphere();
       this.group.add(mesh);
@@ -276,6 +280,19 @@ export function makeAirport(onLoad?: () => void, sources?: THREE.Texture[]) {
   slab(g, 755, 73, 5, -245, '#737c77', asphalt);
   slab(g, 690, 40, 0, -245, '#707a7c', asphalt, 0.13);
   slab(g, 400, 180, 0, -49, '#c5cbc9', concrete, 0.1);
+  const apronWear = new THREE.Mesh(
+    new THREE.PlaneGeometry(400, 180),
+    new THREE.MeshBasicMaterial({
+      map: apronWearTexture(gates.map(([x]) => x)),
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  );
+  // Canvas top maps to north (negative Z) on the horizontal plane.
+  apronWear.rotation.x = -Math.PI / 2;
+  apronWear.position.set(0, 0.185, -49);
+  g.add(apronWear);
   for (let x = -200; x <= 200; x += 12) b.box(x, 0.16, -49, 0.045, 0.025, 180, '#707a79');
   for (let z = -139; z <= 41; z += 12) b.box(0, 0.17, z, 400, 0.025, 0.045, '#707a79');
   slab(g, 690, 17, 0, -172, '#969c98', asphalt, 0.14);
@@ -323,8 +340,15 @@ export function makeAirport(onLoad?: () => void, sources?: THREE.Texture[]) {
   for (let x = -190; x < 195; x += 11) b.box(x, 0.27, -127, 5, 0.035, 0.24, '#d0d1bf');
   // Terminal: structural frame, glazing, floor slabs, fins, parapet and roof services.
   // Recess the opaque core behind the curtain wall, including the short end façades.
-  b.box(0, 7.7, 51, 196, 15.4, 47, '#48575c');
-  b.box(0, 6.8, 76, 196, 12.8, 0.35, '#172e35');
+  b.box(0, 7.7, 51, 196, 15.4, 47, '#35474e');
+  b.box(0, 6.8, 75, 196, 12.8, 0.35, '#172e35');
+  // Lighted interior sits behind the glazing and mullions instead of tinting opaque panes yellow.
+  b.box(0, 2.6, 75.4, 194, 4.1, 0.12, '#9c8358', 0, true);
+  for (let x = -92; x < 98; x += 18) {
+    b.box(x, 2.4, 75.7, 0.24, 4.2, 1, '#34464a');
+    b.box(x + 4, 1.2, 75.85, 7.5, 1.1, 0.32, '#394c50');
+    for (const y of [7.9, 12.1]) b.box(x + 3, y, 75.45, 10.5, 0.13, 0.25, '#b9a57e', 0, true);
+  }
   b.box(-99, 7.2, 51, 0.45, 13.6, 49, '#253c43');
   b.box(99, 7.2, 51, 0.45, 13.6, 49, '#253c43');
   for (let x = -97; x < 99; x += 4.5) {
@@ -336,9 +360,9 @@ export function makeAirport(onLoad?: () => void, sources?: THREE.Texture[]) {
         3.7,
         3.5,
         0.12,
-        floor === 0 ? ['#a18e68', '#8f8269', '#b39b72'][Math.abs(Math.round(x)) % 3] : '#385561',
+        floor === 0 ? '#719097' : '#496775',
         0,
-        floor === 0 ? true : 'glass',
+        'glass',
       );
       b.box(x, 2.4 + floor * 4.25, 25.65, 3.7, 3.4, 0.12, '#45616a', 0, 'glass');
     }
@@ -358,9 +382,9 @@ export function makeAirport(onLoad?: () => void, sources?: THREE.Texture[]) {
           0.1,
           3.6,
           3.9,
-          f === 0 ? '#a08e6c' : '#385561',
+          f === 0 ? '#607e84' : '#496775',
           0,
-          f === 0 ? true : 'glass',
+          'glass',
         );
     }
   }
@@ -370,7 +394,7 @@ export function makeAirport(onLoad?: () => void, sources?: THREE.Texture[]) {
   b.box(0, 15.9, 24.3, 204, 0.7, 0.55, '#a1abb0');
   b.box(0, 15.9, 77.7, 204, 0.7, 0.55, '#a1abb0');
   for (let x = -91; x < 99; x += 10) {
-    b.box(x, 16, 51, 0.2, 0.35, 52, '#b2bdc0');
+    b.box(x, 16, 51, 0.2, 0.35, 52, '#7d9198');
   }
   for (let x = -68; x < 90; x += 34) {
     b.box(x, 16.2, 44, 17, 0.6, 7, '#293b43');
@@ -397,9 +421,13 @@ export function makeAirport(onLoad?: () => void, sources?: THREE.Texture[]) {
   b.box(-4, 15.8, 83, 44, 0.6, 14, '#bbc4bf');
   b.box(-4, 1, 88, 42, 0.3, 3, '#a6b1a8');
   b.box(-4, 0.55, 90, 45, 0.3, 3, '#a6b1a8');
-  // Front canopy, slim columns and generous pedestrian forecourt.
-  b.box(0, 4.2, 92, 219, 0.6, 14, '#70838b');
-  b.box(0, 4.55, 92, 220, 0.12, 14, '#c3c7c2');
+  // Ribbed glazed canopy: its thin frame lets the façade read through the foreground roof.
+  for (const z of [85.1, 98.9]) b.box(0, 4.3, z, 220, 0.48, 0.35, '#647b85');
+  for (const z of [88.4, 92, 95.6]) b.box(0, 4.21, z, 219, 0.16, 0.16, '#647b85');
+  for (let x = -105.3; x < 110; x += 9) {
+    b.box(x, 4.42, 92, 8.65, 0.14, 13.4, '#7b969e', 0, 'glass');
+    b.box(x - 4.45, 4.27, 92, 0.16, 0.35, 14, '#a2b0b0');
+  }
   for (let x = -105; x < 110; x += 15) b.add('pole', x, 2, 96, 0.45, 4, 0.45, '#b8bfc0');
   for (let x = -99; x < 110; x += 11) b.box(x, 3.88, 92, 2.2, 0.1, 0.35, '#efd49d', 0, true);
   slab(g, 230, 31, 0, 93, '#b4b9af', concrete, 0.17);

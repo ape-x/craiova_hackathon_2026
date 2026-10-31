@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { BedDouble, BusFront, ChevronLeft, ChevronRight, Plane, Minus, Plus } from 'lucide-react';
 import type { World } from './types';
-import { formatTime } from './api';
+import { formatWorldTime } from './api';
 export default function Timeline({
   world,
   onSelect,
@@ -35,7 +35,8 @@ export default function Timeline({
     <section className="timeline" aria-label="Resource schedule">
       <div className="timeline-top">
         <span className="section-label">
-          Resource schedule <b>·</b> <span className="muted">SIMULATION</span>
+          Resource schedule <b>·</b>{' '}
+          <span className="muted">{world.mode === 'live' ? 'LIVE PROPOSALS' : 'SIMULATION'}</span>
         </span>
         <div>
           <button
@@ -46,7 +47,7 @@ export default function Timeline({
             <ChevronLeft size={13} />
           </button>
           <button className="timeline-now" onClick={() => setOffset(0)}>
-            NOW {formatTime(world.sim_time)}
+            NOW {formatWorldTime(world, world.sim_time)}
           </button>
           <button
             className="icon-button"
@@ -94,7 +95,7 @@ export default function Timeline({
           <div className="timeline-ticks">
             {Array.from({ length: 9 }, (_, index) => (
               <span key={index} style={{ left: `${index * 12.5}%` }}>
-                {formatTime(start + (span * index) / 8)}
+                {formatWorldTime(world, start + (span * index) / 8)}
               </span>
             ))}
           </div>
@@ -107,7 +108,7 @@ export default function Timeline({
                 return (
                   <button
                     key={resource.id}
-                    title={`${resource.id}: ${resource.origin} → ${resource.destination}, ${formatTime(resource.departure)}–${formatTime(resource.arrival)}`}
+                    title={`${resource.id}: ${resource.origin} → ${resource.destination}, ${formatWorldTime(world, resource.departure)}–${formatWorldTime(world, resource.arrival)}`}
                     aria-label={`Select ${resource.id}`}
                     className="schedule-bar"
                     style={{

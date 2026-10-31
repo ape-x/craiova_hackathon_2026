@@ -25,7 +25,7 @@ def lookup(items,target,label):
 
 
 def invalidate(world: World,offer: Offer,reason: str):
-    if offer.status not in ("held","confirmed"):
+    if offer.status not in ("held","proposed","accepted","confirmed"):
         return
     was_confirmed=offer.status=="confirmed"
     offer.status="invalidated"
@@ -81,8 +81,8 @@ def shortlist_candidates(candidates,limit=8):
 
 def apply_change(world: World,event: ScenarioChange):
     kind,target,value=event.type,event.target_id,event.value
-    if kind=="airport_weather" and world.mode!="simulation":
-        raise DomainError(409,"Simulation edits are disabled outside simulation mode.")
+    if world.mode=="live" and kind not in ("group_deadline","group_accessibility","group_budget","group_destination","group_priority"):
+        raise DomainError(409,"Live inventory requires a provider quote or an operator-confirmed source. Simulation edits are disabled.")
     if kind=="scenario_reset":
         reset_scenario(world,value)
         return
@@ -305,7 +305,7 @@ def apply_change(world: World,event: ScenarioChange):
         for group in world.groups:
             if group.id in impacted_groups and group.origin==group.destination:
                 group.status="scheduled"
-    audit(world,kind,f"Scenario event: {kind} · {target or 'global'}"+(f" → {value}" if value is not None else ""),target,{"value":value,"source":"simulation"})
+    audit(world,kind,f"{'Scenario' if world.mode=='simulation' else 'Passenger constraint'} event: {kind} · {target or 'global'}"+(f" → {value}" if value is not None else ""),target,{"value":value,"source":"simulation" if world.mode=='simulation' else "operator"})
 
 
 def validated_candidates(world: World,candidates):
@@ -364,7 +364,7 @@ class RecoveryService:
         if not check["valid"]:
             raise DomainError(409,"Candidate failed authoritative validation",check)
         for offer in active_offers(world):
-            if offer.status=="held":
+            if offer.status in ("held","proposed","accepted"):
                 offer.status="superseded"
                 offer.reason="Replaced by a newer validated recovery plan."
                 for r in world.reservations:
@@ -375,18 +375,31 @@ class RecoveryService:
         groups={g.id:g for g in world.groups}
         for allocation in plan.allocations:
             group=groups[allocation.group_id]
-            offer=Offer(id="of_"+secrets.token_hex(10),group_id=group.id,itinerary=allocation.itinerary,status="held",expires_at=expires,created_version=world.version+1)
+            deadline=expires
+            if world.mode=="live":
+                from datetime import datetime
+                limits=[datetime.fromisoformat(expires)]
+                for leg in allocation.itinerary.legs:
+                    resource=resources[leg.resource_id]
+                    if resource.valid_until:
+                        limits.append(datetime.fromisoformat(resource.valid_until))
+                    elif resource.requires_revalidation:
+                        limits.append(datetime.fromisoformat(resource.provenance["quoted_at"])+timedelta(seconds=120))
+                deadline=min(limits).isoformat()
+            status="proposed" if world.mode=="live" else "held"
+            offer=Offer(id="of_"+secrets.token_hex(10),group_id=group.id,itinerary=allocation.itinerary,status=status,expires_at=deadline,created_version=world.version+1)
             world.offers.append(offer)
             group.status="offered"
             for leg in allocation.itinerary.legs:
-                world.reservations.append(Reservation(id="rs_"+secrets.token_hex(10),offer_id=offer.id,group_id=group.id,resource_id=leg.resource_id,quantity=units(resources[leg.resource_id],group),status="held",expires_at=expires))
+                world.reservations.append(Reservation(id="rs_"+secrets.token_hex(10),offer_id=offer.id,group_id=group.id,resource_id=leg.resource_id,quantity=units(resources[leg.resource_id],group),status=status,expires_at=deadline))
         for exception in plan.exceptions:
             groups[exception["group_id"]].status="exception"
         record=Decision(id="dec_"+secrets.token_hex(10),timestamp=utcnow().isoformat(),source_version=world.version,applied_version=world.version+1,
             mode=mode,provider=provider,request=request,explanation=explanation,selected_plan_id=plan.id,candidates=candidates,latency_ms=latency,focus_id=focus_id,
             timings_ms={**(timings or {}),"apply_ms":round((time.perf_counter()-apply_started)*1000,2)},candidate_counts=candidate_counts or {"computed":len(candidates),"validated":len(candidates),"shortlisted":len(candidates),"submitted":len(candidates) if mode=="ai" else 0})
         world.decisions.append(record)
-        audit(world,"plan_applied",f"{mode.upper()}: {plan.recovered_passengers} passengers offered full journeys; €{plan.total_cost:.2f} held atomically.",plan.id,{"decision_id":record.id,"validation":check,"optimality":plan.optimality,"candidate_counts":record.candidate_counts})
+        description=f"{mode.upper()}: {plan.recovered_passengers} passengers offered full journeys; €{plan.total_cost:.2f} held atomically." if world.mode=="simulation" else f"{mode.upper()}: proposed journeys for {plan.recovered_passengers} passengers using sourced inventory. No supplier booking or hold was made."
+        audit(world,"plan_applied",description,plan.id,{"decision_id":record.id,"validation":check,"optimality":plan.optimality,"candidate_counts":record.candidate_counts})
         return {"decision":record.model_dump(mode="json")}
 
     async def replan(self,request):
@@ -523,18 +536,25 @@ class RecoveryService:
             group=lookup(world.groups,offer.group_id,"group")
             if offer.status=="confirmed":
                 return {"offer":offer.model_dump(mode="json"),"already_confirmed":True}
-            if offer.status!="held":
+            if offer.status not in ("held","proposed","accepted"):
                 raise DomainError(409,"Offer is no longer available",{"status":offer.status})
-            held=[Allocation(group_id=o.group_id,itinerary=o.itinerary) for o in active_offers(world) if o.status=="held"]
+            held=[Allocation(group_id=o.group_id,itinerary=o.itinerary) for o in active_offers(world) if o.status in ("held","proposed","accepted")]
             check=validate_allocations(world,held)
             if not check["valid"]:
                 raise DomainError(409,"Inventory changed; offer must be replanned",check)
-            reservations=[r for r in world.reservations if r.offer_id==offer.id and r.status=="held"]
+            reservations=[r for r in world.reservations if r.offer_id==offer.id and r.status in ("held","proposed","accepted")]
             resources={r.id:r for r in world.resources}
             expected={(leg.resource_id,units(resources[leg.resource_id],group)) for leg in offer.itinerary.legs}
             actual={(r.resource_id,r.quantity) for r in reservations}
             if len(reservations)!=len(offer.itinerary.legs) or actual!=expected:
                 raise DomainError(409,"Incomplete reservation; no segments were confirmed")
+            if world.mode=="live":
+                for r in reservations:
+                    r.status="accepted"
+                offer.status="accepted"
+                offer.reason="Passenger preference received. Supplier booking is still pending."
+                audit(world,"proposal_accepted",f"{group.name}: preference saved; external booking pending.",offer.id,{"group_id":group.id})
+                return {"offer":offer.model_dump(mode="json")}
             for r in reservations:
                 r.status="confirmed"
             offer.status="confirmed"
@@ -544,7 +564,31 @@ class RecoveryService:
             return {"offer":offer.model_dump(mode="json")}
         result=self.store.mutate(key,payload,None,confirm,authorize=authorize)
         # Never expose operator world or other passenger records in this response.
-        return {"offer":result["offer"],"version":result["world"]["version"],"replayed":result["replayed"],"simulated":True}
+        return {"offer":result["offer"],"version":result["world"]["version"],"replayed":result["replayed"],"simulated":result["world"]["mode"]=="simulation"}
+
+    def decline(self,offer_id: str,token: str,idempotency_key: str):
+        payload={"offer_id":offer_id,"token":token,"idempotency_key":idempotency_key}
+        key="decline:"+Store.fingerprint(token)+":"+idempotency_key
+        def authorize(world):
+            offer=lookup(world.offers,offer_id,"offer")
+            group=lookup(world.groups,offer.group_id,"group")
+            if not secrets.compare_digest(group.token.encode(),token.encode()):
+                raise DomainError(403,"This passenger token cannot decline that offer")
+        def release(world):
+            offer=lookup(world.offers,offer_id,"offer")
+            if offer.status not in ("held","proposed","accepted"):
+                raise DomainError(409,"Only a held offer can be declined",{"status":offer.status})
+            group=lookup(world.groups,offer.group_id,"group")
+            for reservation in world.reservations:
+                if reservation.offer_id==offer.id:
+                    reservation.status="released"
+            offer.status="declined"
+            offer.reason="Passenger declined this offer; every held segment was released."
+            group.status="waiting"
+            audit(world,"offer_declined",f"{group.name}: offer declined; every held segment released atomically.",offer.id,{"group_id":group.id})
+            return {"offer":offer.model_dump(mode="json")}
+        result=self.store.mutate(key,payload,None,release,authorize=authorize)
+        return {"offer":result["offer"],"version":result["world"]["version"],"replayed":result["replayed"],"simulated":result["world"]["mode"]=="simulation"}
 
     def passenger(self,token):
         world=self.store.read()
@@ -552,10 +596,10 @@ class RecoveryService:
         if not group:
             raise DomainError(404,"Passenger link not found")
         offers=[o for o in world.offers if o.group_id==group.id]
-        active=next((o for o in reversed(offers) if o.status in ("held","confirmed")),None)
+        active=next((o for o in reversed(offers) if o.status in ("held","proposed","accepted","confirmed")),None)
         return {"version":world.version,"epoch":world.epoch,"sim_time":world.sim_time,"group":group.model_dump(exclude={"token"}),
             "offer":active.model_dump(mode="json") if active else None,"last_offer":offers[-1].model_dump(mode="json") if offers else None,
-            "airports":[a.model_dump() for a in world.airports],"resources":[r.model_dump() for r in world.resources if active and r.id in {l.resource_id for l in active.itinerary.legs}],"simulated":True,"currency":world.currency}
+            "airports":[a.model_dump() for a in world.airports],"resources":[r.model_dump() for r in world.resources if active and r.id in {l.resource_id for l in active.itinerary.legs}],"simulated":world.mode=="simulation","mode":world.mode,"currency":world.currency}
 
     def constraints(self,token,request):
         payload={**request.model_dump(),"token":token}

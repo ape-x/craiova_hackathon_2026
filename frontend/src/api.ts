@@ -90,6 +90,12 @@ export const api = {
     }),
   reset: (world: World) =>
     request<MutationResult>('/reset', { expected_version: world.version, idempotency_key: key() }),
+  liveInput: (world: World, action: string, input: Record<string, unknown>) =>
+    request<MutationResult>(`/live/${action}`, {
+      ...input,
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
 };
 
 export function availableUnits(world: World, resourceId: string): number {
@@ -108,11 +114,29 @@ export function availableUnits(world: World, resourceId: string): number {
 export function activeOffer(world: World, groupId: string) {
   return [...world.offers]
     .reverse()
-    .find((offer) => offer.group_id === groupId && ['held', 'confirmed'].includes(offer.status));
+    .find(
+      (offer) =>
+        offer.group_id === groupId &&
+        ['held', 'proposed', 'accepted', 'confirmed'].includes(offer.status),
+    );
 }
 export function formatTime(minutes: number) {
   const day = Math.floor(minutes / 1440);
   return `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(Math.floor(minutes % 60)).padStart(2, '0')}${day ? ` +${day}d` : ''}`;
+}
+export function formatOperationTime(epoch: string, minutes: number): string {
+  const date = new Date(Date.parse(epoch) + minutes * 60_000);
+  if (!Number.isFinite(date.getTime())) return 'Time unavailable';
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Bucharest',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+export function formatWorldTime(world: Pick<World, 'mode' | 'epoch'>, minutes: number): string {
+  return world.mode === 'live' ? formatOperationTime(world.epoch, minutes) : formatTime(minutes);
 }
 export function formatCost(value: number) {
   return new Intl.NumberFormat('en-GB', {

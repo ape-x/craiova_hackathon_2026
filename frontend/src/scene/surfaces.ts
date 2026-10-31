@@ -20,7 +20,7 @@ export function surfaceTexture(kind: SurfaceKind, onLoad?: () => void, source?: 
   const ctx = canvas.getContext('2d')!;
   const base = {
     grass: [64, 80, 62],
-    concrete: [175, 178, 174],
+    concrete: [149, 155, 153],
     asphalt: [62, 68, 70],
     roof: [103, 116, 123],
   }[kind];
@@ -113,6 +113,58 @@ export function surfaceTexture(kind: SurfaceKind, onLoad?: () => void, source?: 
     };
     image.src = `/scene/${{ grass: 'aerial_grass_rock', concrete: 'concrete_floor_02', asphalt: 'asphalt_01' }[kind]}.jpg`;
   }
+  return map;
+}
+
+/** Restrained, authored stand wear at meter scale; no imagery or operational routes. */
+export function apronWearTexture(standXs: number[]) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1600;
+  canvas.height = 720;
+  const ctx = canvas.getContext('2d')!;
+  const px = (x: number) => (x + 200) * 4;
+  const py = (z: number) => (z + 139) * 4;
+
+  // Different pours weather independently. Keep the physical twelve-meter joints readable.
+  for (let x = -200; x < 200; x += 12) {
+    for (let z = -139; z < 41; z += 12) {
+      const variation = noise(x + 300, z + 200);
+      ctx.fillStyle = variation > 0.5 ? '#f6eee5' : '#24353c';
+      ctx.globalAlpha = Math.abs(variation - 0.5) * 0.075;
+      ctx.fillRect(px(x) + 1, py(z) + 1, 46, 46);
+    }
+  }
+
+  // Repeated pushback paths and parking positions, not freshly painted giant tire stripes.
+  for (const x of standXs) {
+    for (const offset of [-1.25, 1.25]) {
+      ctx.beginPath();
+      ctx.moveTo(px(x - 35 + offset), py(-136));
+      ctx.bezierCurveTo(
+        px(x - 4 + offset),
+        py(-132),
+        px(x + offset),
+        py(-108),
+        px(x + offset),
+        py(-76),
+      );
+      ctx.lineTo(px(x + offset), py(-38));
+      ctx.strokeStyle = '#253237';
+      ctx.globalAlpha = 0.085;
+      ctx.lineWidth = 2.8;
+      ctx.stroke();
+    }
+    const stain = ctx.createRadialGradient(px(x), py(-48), 1, px(x), py(-48), 45);
+    stain.addColorStop(0, '#26343d24');
+    stain.addColorStop(0.45, '#26343d0f');
+    stain.addColorStop(1, '#26343d00');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = stain;
+    ctx.fillRect(px(x) - 45, py(-48) - 45, 90, 90);
+  }
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 8;
   return map;
 }
 

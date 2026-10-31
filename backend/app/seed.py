@@ -2,7 +2,17 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from .models import Airport, AuditEvent, PassengerGroup, Resource, World
+
+
+def empty_live_world() -> World:
+    """A real geographic starting point, with no invented operational inventory."""
+    from .airport_catalog import lookup_airport
+    item = lookup_airport("CRA")
+    epoch = datetime.now(ZoneInfo("Europe/Bucharest")).replace(hour=0, minute=0, second=0, microsecond=0)
+    airport = Airport(id=item["code"], code=item["code"], name=item["name"], lat=item["lat"], lon=item["lon"], available=False, operational_status="unknown")
+    return World(scenario_id=secrets.token_hex(8), epoch=epoch.isoformat(), mode="live", sim_time=0, budget=0, airports=[airport], resources=[], groups=[])
 
 
 def seed_world() -> World:

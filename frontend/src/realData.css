@@ -1,0 +1,338 @@
+.real-data-launch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 10px 12px;
+  padding: 11px 10px;
+  border: 1px solid #497b90;
+  border-radius: 5px;
+  background: linear-gradient(115deg, #204458, #163040);
+  color: #c6f1ff;
+  text-align: left;
+  font-size: 10px;
+}
+.real-data-launch:hover {
+  background: #28536a;
+}
+.real-data-launch span {
+  flex: 1;
+}
+.real-data-intro {
+  margin: 0 0 20px;
+}
+.real-data-intro p {
+  color: #acc5d3;
+  line-height: 1.7;
+  font-size: 12px;
+  margin-top: 12px;
+}
+.real-data-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 18px;
+}
+.real-data-form .field {
+  min-width: 0;
+  margin: 8px 0;
+}
+.real-data-form .field select {
+  text-overflow: ellipsis;
+}
+.real-data-form fieldset:disabled {
+  opacity: 0.65;
+}
+.real-data-submit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  margin-top: 15px;
+}
+.real-data-submit .field-hint {
+  max-width: 330px;
+  margin: 0;
+}
+.real-data-submit button {
+  white-space: nowrap;
+}
+.real-data-progress {
+  color: #a1d9eb;
+  font-size: 12px;
+  margin: 20px 0 0;
+}
+.real-data-results {
+  margin-top: 26px;
+}
+.real-data-result-heading {
+  padding-bottom: 5px;
+}
+.real-data-result-heading h3 {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+.real-data-result-heading p {
+  color: #abc5d5;
+  font-size: 11px;
+}
+.real-data-section {
+  border-top: 1px solid #355263;
+  margin-top: 20px;
+  padding-top: 19px;
+}
+.real-data-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.real-data-section h3 svg {
+  color: #74d3ec;
+}
+.real-source-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  color: #8daab9;
+  font-size: 10px;
+  margin-bottom: 15px;
+}
+.real-source-status .tag {
+  font-size: 8px;
+  margin-left: auto;
+}
+.real-data-section a {
+  color: #96e4ff;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  text-decoration: none;
+}
+.real-data-section a:hover {
+  text-decoration: underline;
+}
+.real-hotel-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.real-hotel-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 7px;
+  padding: 15px;
+  border: 1px solid #365161;
+  border-radius: 6px;
+  background: #11212c;
+}
+.real-hotel-card > strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.real-hotel-card p {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #acc2cf;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.real-hotel-distance,
+.real-hotel-access {
+  font-size: 10px;
+  line-height: 1.6;
+  color: #8faebb;
+}
+.real-hotel-card .real-hotel-phone {
+  color: #c3dce8;
+}
+.real-hotel-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-top: auto;
+  padding-top: 7px;
+}
+.real-route-card,
+.real-offer-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 20px;
+  border: 1px solid #36596a;
+  background: #142b39;
+  border-radius: 6px;
+  padding: 15px;
+  margin-bottom: 9px;
+}
+.real-route-card > div,
+.real-offer-card > div {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 130px;
+}
+.real-route-card strong,
+.real-offer-card strong {
+  font-size: 13px;
+}
+.real-route-card span,
+.real-offer-card span {
+  display: block;
+  flex-basis: 100%;
+  color: #98b5c6;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.real-route-card svg {
+  color: #8ad8e9;
+}
+.real-offer-price {
+  color: #a4efd0;
+}
+.real-data-boundary,
+.real-data-footnote {
+  color: #98adba;
+  font-size: 10px;
+  line-height: 1.7;
+  margin: 13px 0 0;
+}
+.real-data-footnote {
+  border-top: 1px solid #355263;
+  margin-top: 21px;
+  padding-top: 15px;
+}
+.real-data-spinner {
+  animation: real-data-spin 1s linear infinite;
+}
+.real-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@keyframes real-data-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 600px) {
+  .real-data-form fieldset,
+  .real-hotel-grid {
+    grid-template-columns: 1fr;
+  }
+  .real-data-submit {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .real-data-submit .field-hint {
+    max-width: none;
+  }
+  .real-source-status .tag {
+    margin-left: 0;
+  }
+  .real-route-card,
+  .real-offer-card {
+    align-items: flex-start;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .real-data-spinner {
+    animation: none;
+  }
+}
+.real-data-attribution {
+  color: #9cb3c1;
+  font-size: 10px;
+  line-height: 1.6;
+  margin: 10px 0 0;
+}
+.real-data-attribution a {
+  color: #96e4ff;
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+.real-hotel-credits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  color: #92abb9;
+  font-size: 9px;
+  line-height: 1.6;
+}
+.real-hotel-credits a {
+  font-size: inherit;
+}
+.real-google-credit {
+  color: #d4e3ec;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+}
+.real-comparison {
+  border: 1px solid #4b677b;
+  border-radius: 6px;
+  background: linear-gradient(120deg, #213442, #152731);
+  padding: 18px;
+  margin-top: 24px;
+}
+.real-comparison h3 {
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+.real-comparison p {
+  color: #b0c6d2;
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0;
+}
+.real-comparison-details {
+  color: #bfd2dd;
+  font: 10px/1.8 var(--font-mono, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 13px 0;
+  user-select: text;
+}
+.real-comparison-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.real-comparison-actions > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 9px 12px;
+  color: #daf6ff;
+  font-size: 11px;
+  background: #22556a;
+  border: 1px solid #58899d;
+  border-radius: 4px;
+  text-decoration: none;
+}
+.real-comparison-actions > a:hover {
+  background: #2e6b82;
+}
+.real-comparison .real-copy-status {
+  min-height: 18px;
+  margin-top: 9px;
+  font-size: 10px;
+}

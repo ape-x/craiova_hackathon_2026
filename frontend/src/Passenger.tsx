@@ -10,7 +10,15 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react';
-import { ApiError, formatCost, formatTime, key, request } from './api';
+import {
+  ApiError,
+  TransportError,
+  formatCost,
+  formatTime,
+  formatOperationTime,
+  key,
+  request,
+} from './api';
 import type { Airport, Offer, PassengerGroup, Resource } from './types';
 import { Brand, Dot, Tag } from './ui';
 import { ItineraryView } from './Inspector';
@@ -27,6 +35,16 @@ interface PassengerState {
   simulated: boolean;
   currency: string;
 }
+type OfferAction = 'accept' | 'decline';
+interface OfferResult {
+  offer: Offer;
+  version: number;
+}
+interface UncertainOfferAction {
+  offerId: string;
+  action: OfferAction;
+  error: TransportError;
+}
 export default function Passenger() {
   const token = (() => {
     try {
@@ -39,15 +57,14 @@ export default function Passenger() {
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<OfferAction | null>(null);
+  const [uncertain, setUncertain] = useState<UncertainOfferAction | null>(null);
   const [editing, setEditing] = useState(false);
   const [deadline, setDeadline] = useState('22:00');
   const [accessible, setAccessible] = useState(false);
   const [deadlineDay, setDeadlineDay] = useState(0);
   const [now, setNow] = useState(Date.now());
-  const acceptKey = useRef(key());
-  useEffect(() => {
-    acceptKey.current = key();
-  }, [state?.offer?.id]);
+  const offerKeys = useRef(new Map<string, string>());
   const refresh = useCallback(async () => {
     if (!token)
       throw new Error(
@@ -96,11 +113,79 @@ export default function Passenger() {
   const offer = state?.offer;
   const seconds = offer ? Math.max(0, Math.ceil((Date.parse(offer.expires_at) - now) / 1000)) : 0;
   const confirmed = offer?.status === 'confirmed';
+  const accepted = offer?.status === 'accepted';
+  const live = state?.simulated === false;
+  const declined = !offer && state?.last_offer?.status === 'declined';
+  useEffect(() => {
+    if (
+      uncertain &&
+      state &&
+      (state.offer?.id !== uncertain.offerId || !['held', 'proposed'].includes(state.offer.status))
+    ) {
+      setUncertain(null);
+      setError('');
+    }
+  }, [state, uncertain]);
+  async function answerOffer(action: OfferAction, retry?: UncertainOfferAction) {
+    const offerId = retry?.offerId ?? offer?.id;
+    if (!offerId || busy) return;
+    const identity = `${action}:${offerId}`;
+    let idempotencyKey = offerKeys.current.get(identity);
+    if (!idempotencyKey) {
+      idempotencyKey = key();
+      offerKeys.current.set(identity, idempotencyKey);
+    }
+    setBusy(true);
+    setBusyAction(action);
+    setError('');
+    try {
+      const result = retry
+        ? await retry.error.retry<OfferResult>()
+        : await request<OfferResult>(`/offers/${encodeURIComponent(offerId)}/${action}`, {
+            token,
+            idempotency_key: idempotencyKey,
+          });
+      setUncertain(null);
+      // Reflect the acknowledged transaction immediately even if the following
+      // refresh loses its connection. A newer polled version always wins.
+      setState((previous) =>
+        previous && previous.version <= result.version
+          ? {
+              ...previous,
+              version: result.version,
+              offer: ['confirmed', 'accepted'].includes(result.offer.status) ? result.offer : null,
+              last_offer: result.offer,
+              group: {
+                ...previous.group,
+                status:
+                  result.offer.status === 'confirmed'
+                    ? 'confirmed'
+                    : result.offer.status === 'accepted'
+                      ? 'offered'
+                      : 'waiting',
+              },
+            }
+          : previous,
+      );
+      await refresh().catch(() =>
+        setLoadError('Your answer was saved. Reconnecting to refresh your journey.'),
+      );
+    } catch (cause) {
+      if (cause instanceof TransportError) setUncertain({ offerId, action, error: cause });
+      setError(cause instanceof Error ? cause.message : 'Could not save your answer');
+      await refresh().catch(() => {});
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }
   return (
     <main className="passenger-page">
       <header>
         <Brand compact />
-        <Tag tone="amber">SIMULATION</Tag>
+        <Tag tone={live ? 'cyan' : 'amber'}>
+          {state ? (live ? 'LIVE · ASSISTED' : 'SIMULATION') : 'YOUR JOURNEY'}
+        </Tag>
       </header>
       <div className="passenger-content">
         {!state ? (
@@ -123,10 +208,12 @@ export default function Passenger() {
               <span className="eyebrow">YOUR JOURNEY, RECONNECTED</span>
               <h1>
                 {confirmed
-                  ? 'You’re all set.'
-                  : offer
-                    ? 'A new way forward.'
-                    : 'We’re finding your way.'}
+                  ? 'Your bookings are confirmed.'
+                  : accepted
+                    ? 'Your choice is saved.'
+                    : offer
+                      ? 'A new way forward.'
+                      : 'We’re finding your way.'}
               </h1>
               <p>
                 {state.group.name} <span>·</span> {state.group.size} passengers
@@ -168,78 +255,98 @@ export default function Passenger() {
                   <h2>
                     {confirmed
                       ? 'Your itinerary is confirmed'
-                      : offer
-                        ? 'Your recovery offer'
-                        : state.last_offer?.status === 'invalidated'
-                          ? 'Your previous journey was affected'
-                          : 'Recovery in progress'}
+                      : accepted
+                        ? 'Awaiting supplier bookings'
+                        : offer
+                          ? 'Your recovery offer'
+                          : declined
+                            ? 'Offer declined'
+                            : state.last_offer?.status === 'invalidated'
+                              ? 'Your previous journey was affected'
+                              : 'Recovery in progress'}
                   </h2>
                   <span>
                     {confirmed
-                      ? 'All segments secured together in the simulation'
-                      : offer
-                        ? 'All resources held while you decide'
-                        : 'The operations team is recalculating your options'}
+                      ? live
+                        ? 'Supplier confirmations recorded by operations'
+                        : 'All segments secured together in the simulation'
+                      : accepted
+                        ? 'Operations will confirm each booking with the suppliers'
+                        : offer
+                          ? live
+                            ? 'Current proposal; no supplier booking has been made'
+                            : 'All resources held while you decide'
+                          : declined
+                            ? live
+                              ? 'Your preference has been recorded'
+                              : 'Your held seats and rooms have been released'
+                            : 'The operations team is recalculating your options'}
                   </span>
                 </div>
               </div>
               {offer ? (
                 <>
-                  <ItineraryView offer={offer} />
+                  <ItineraryView
+                    offer={offer}
+                    world={{ mode: live ? 'live' : 'simulation', epoch: state.epoch }}
+                  />
                   <div className="boarding-facts">
                     <span>
                       <Users size={15} /> {state.group.size} people stay together
                     </span>
                     {state.group.accessible && (
                       <span>
-                        <Accessibility size={15} /> Accessible throughout
+                        <Accessibility size={15} />{' '}
+                        {live ? 'Accessible travel requested' : 'Accessible throughout'}
                       </span>
                     )}
                     <span>
-                      <Clock3 size={15} /> Arrival {formatTime(offer.itinerary.arrival)}
+                      <Clock3 size={15} /> Arrival{' '}
+                      {live
+                        ? formatOperationTime(state.epoch, offer.itinerary.arrival)
+                        : formatTime(offer.itinerary.arrival)}
                     </span>
                   </div>
                   <div className="boarding-total">
                     <span>Complete group itinerary</span>
                     <strong>{formatCost(offer.itinerary.total_cost)}</strong>
                   </div>
-                  {!confirmed && (
+                  {!confirmed && !accepted && (
                     <>
                       <div className="hold-countdown">
                         <Dot tone={seconds < 60 ? 'amber' : 'mint'} />
                         <span>
                           {seconds > 0
-                            ? `Held for ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+                            ? `${live ? 'Proposal valid for' : 'Held for'} ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
                             : 'This hold has expired. Checking for an updated offer.'}
                         </span>
                       </div>
                       <button
                         className="accept-offer"
-                        disabled={busy || seconds <= 0}
-                        onClick={async () => {
-                          setBusy(true);
-                          setError('');
-                          try {
-                            await request(`/offers/${encodeURIComponent(offer.id)}/accept`, {
-                              token,
-                              idempotency_key: acceptKey.current,
-                            });
-                            await refresh();
-                          } catch (cause) {
-                            await refresh().catch(() => {});
-                            setError(
-                              cause instanceof Error
-                                ? cause.message
-                                : 'Could not confirm the itinerary',
-                            );
-                          } finally {
-                            setBusy(false);
-                          }
-                        }}
+                        disabled={busy || seconds <= 0 || Boolean(uncertain)}
+                        onClick={() => void answerOffer('accept')}
                       >
-                        {busy ? <Loader2 size={18} className="spin" /> : <Check size={18} />} Accept
-                        this itinerary
+                        {busyAction === 'accept' ? (
+                          <Loader2 size={18} className="spin" />
+                        ) : (
+                          <Check size={18} />
+                        )}{' '}
+                        Accept
+                        {live ? 'this proposal' : 'this itinerary'}
                       </button>
+                      <button
+                        className="decline-offer"
+                        disabled={busy || seconds <= 0 || Boolean(uncertain)}
+                        onClick={() => void answerOffer('decline')}
+                      >
+                        {busyAction === 'decline' && <Loader2 size={16} className="spin" />}
+                        Decline this offer
+                      </button>
+                      <p className="decline-offer-hint">
+                        {live
+                          ? 'Choosing a proposal records your preference. Only supplier confirmations complete your bookings.'
+                          : 'Declining releases every held segment for your group. You can update your needs while the team finds another option.'}
+                      </p>
                     </>
                   )}
                 </>
@@ -262,6 +369,16 @@ export default function Passenger() {
               <p className="form-error" role="alert">
                 {loadError || error}
               </p>
+            )}
+            {uncertain && (
+              <button
+                className="retry-offer"
+                disabled={busy}
+                onClick={() => void answerOffer(uncertain.action, uncertain)}
+              >
+                <RefreshCw size={16} className={busy ? 'spin' : ''} />
+                {uncertain.action === 'accept' ? 'Retry confirmation' : 'Retry decline'}
+              </button>
             )}
             <button
               className="passenger-preferences"
@@ -294,7 +411,6 @@ export default function Passenger() {
                     });
                     await refresh();
                     setEditing(false);
-                    acceptKey.current = key();
                   } catch (cause) {
                     setError(
                       cause instanceof Error ? cause.message : 'Could not update preferences',
@@ -312,7 +428,13 @@ export default function Passenger() {
                   >
                     {Array.from({ length: Math.max(3, deadlineDay + 1) }, (_, day) => (
                       <option key={day} value={day}>
-                        {day === 0 ? 'Scenario day' : day === 1 ? 'Next day' : `Day ${day + 1}`}
+                        {day === 0
+                          ? live
+                            ? 'Operation day'
+                            : 'Scenario day'
+                          : day === 1
+                            ? 'Next day'
+                            : `Day ${day + 1}`}
                       </option>
                     ))}
                   </select>
@@ -348,8 +470,9 @@ export default function Passenger() {
             <div className="passenger-trust">
               <ShieldCheck size={16} />
               <p>
-                Connected to the same live simulation as the operations desk. No real booking or
-                payment is made.
+                {live
+                  ? 'Your selection is shared with the operations team. It does not purchase tickets or rooms; supplier bookings require confirmation by the team.'
+                  : 'Connected to the same live simulation as the operations desk. No real booking or payment is made.'}
               </p>
             </div>
             <div className="passenger-reference">

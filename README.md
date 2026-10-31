@@ -1,10 +1,19 @@
 # Airport Recovery Live
 
+## Live assisted mode
+
+The application now starts with **no generated operational inventory**. Use **Live data inputs** to generate explicitly marked test passengers or import a real manifest, search live flight/coach suppliers, import group-specific Nuitee hotel quotes, and record operator-confirmed services. Passenger acceptance is a preference; external bookings require actual confirmation references.
+
+Duffel and Distribusion adapters require their own activated production accounts; absent access is shown explicitly. Scheduled coach offers preserve actual station endpoints, so any airport–station transfers must be sourced separately. The previous simulation is archived when switching to live mode. [Configuration, workflow and limits](docs/live-mode.md).
+
+
+## Modul de demonstrație existent
+
 Centru de operațiuni pentru recuperarea pasagerilor, cu **FastAPI, React/TypeScript, Three.js, Google Maps 3D și OpenAI**. Juriul modifică o situație prin voce sau text, iar agentul construiește strategii, evaluează inventarul comun și selectează un plan valid. Acceptarea pasagerului confirmă atomic întregul itinerar în simulator.
 
 ![Aplicația rulată cu hartă Google și operațiuni simulate](docs/verification/google-models-live.jpg)
 
-Captură din aplicația funcțională: imaginile geografice sunt reale, iar pasagerii, incidentele și rezervările sunt simulate. **268 de teste trecute**; interpretarea Sol Ultrafast, selecția Decisions și încărcarea Google Maps au fost verificate cu furnizorii reali. [Rezultate și limite](docs/verification/report.md).
+Captură din aplicația funcțională: imaginile geografice sunt reale, iar pasagerii, incidentele și rezervările sunt simulate. Validarea anterioară a demonstrației: interpretarea Sol Ultrafast, selecția Decisions și încărcarea Google Maps au fost verificate cu furnizorii reali. [Rezultate și limite](docs/verification/report.md).
 
 Specificația originală și imaginile de referință sunt în [docs/product-spec.md](docs/product-spec.md) și [docs/mockups](docs/mockups).
 
@@ -51,6 +60,19 @@ Prin voce sau text poți adăuga aeroporturi, curse de avion/autocar, cazare și
 ## Configurarea integrărilor
 
 Editează **backend/.env** local. Nu introduce chei în chat, în codul frontend sau în Git.
+
+**Real hotels & routes**, în panoul Resources, caută hoteluri reale din
+OpenStreetMap și distanțe/durate rutiere OSRM. Datele au sursă și moment de
+preluare; nu reprezintă camere sau locuri rezervate. Cheia privată
+`GOOGLE_MAPS_SERVER_API_KEY` activează opțional Places și Routes, iar
+`BOOKING_DEMAND_API_TOKEN` împreună cu `BOOKING_AFFILIATE_ID` permit căutarea
+ofertelor hoteliere pentru date și persoane. Accesul Booking trebuie autorizat
+de furnizor. [Configurare și limite](docs/real-data.md).
+
+Pentru compararea externă există **Open Momondo** și **Copy search details**.
+Ca alternativă API, adaptorul Nuitee/LiteAPI folosește `LITEAPI_API_KEY` și
+`LITEAPI_ENVIRONMENT=live` după activarea contului de producție. Cheile sandbox
+sunt marcate ca acces de test și nu afișează oferte reale.
 
 | Variabilă | Funcție |
 |---|---|

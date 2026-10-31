@@ -1,0 +1,11 @@
+# Always use a distinct project name so demo resets cannot touch live inventory:
+# docker compose -p airport-recovery-simulation -f compose.yaml -f compose.simulation.yaml up -d --build
+services:
+  api:
+    environment:
+      OPERATION_MODE: simulation
+      PUBLIC_BASE_URL: http://localhost:8081
+      CORS_ORIGINS: http://localhost:8081,http://127.0.0.1:8081
+  web:
+    ports: !override
+      - 127.0.0.1:8081:8080

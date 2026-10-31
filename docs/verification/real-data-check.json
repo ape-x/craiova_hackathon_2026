@@ -1,0 +1,62 @@
+{
+  "checked_at": "2026-10-31T15:22:28.040652+00:00",
+  "application": "http://localhost:8080",
+  "request": {
+    "airport_code": "CRA",
+    "destination_code": "OTP",
+    "checkin": "2026-10-31",
+    "checkout": "2026-11-01",
+    "adults": 2,
+    "rooms": 1
+  },
+  "google_places": {
+    "state": "ready",
+    "result_count": 10,
+    "place_ids": [
+      "ChIJjVhLVBDXUkcRSzLhZz_uges",
+      "ChIJG9AtzzzUUkcR-SyQ1Yvp7dA",
+      "ChIJeaiSJzHUUkcRZLhLP3dKcY8",
+      "ChIJd--lVsDWUkcRLs2G7t7d_EQ",
+      "ChIJkz6mW8DWUkcRX4UMKYHsIJo",
+      "ChIJeSJpSILXUkcRhZsi6BJPKRQ",
+      "ChIJ3zeDppLWUkcRDJYT9mZN1k8",
+      "ChIJ8Uw_YvPWUkcRYF78QgNW37Q",
+      "ChIJO1zIEgDXUkcR8axYdmGqLzY",
+      "ChIJBStgPt7WUkcReNLG1JaYcJ4"
+    ]
+  },
+  "google_routes": {
+    "state": "ready",
+    "result_count": 1
+  },
+  "booking": {
+    "state": "not_configured",
+    "account_check": "The connected account was denied Affiliate Partner Center access (USER_NOT_FOUND)."
+  },
+  "google_project": "hale-tracer-286910",
+  "eea_terms": "Accepted only after explicit owner confirmation in this chat.",
+  "scope": "Hotel identity, driving estimates and live Nuitee hotel rates verified. No room booking, coach fares or seat inventory claimed.",
+  "liteapi": {
+    "state": "ready",
+    "environment": "live",
+    "credential_kind": "production",
+    "credential_location": "Private, gitignored backend/.env",
+    "sandbox_field": "Optional in the official rates schema; omitted in the observed production response.",
+    "request": {
+      "airport_code": "CRA",
+      "destination_code": "OTP",
+      "checkin": "2026-10-31",
+      "checkout": "2026-11-01",
+      "adults": 2,
+      "rooms": 1
+    },
+    "result_count": 9,
+    "currency": "EUR",
+    "browser_verified": true,
+    "booking_performed": false,
+    "focused_provider_and_api_tests": {
+      "passed": 44
+    },
+    "schema_reference": "https://docs.liteapi.travel/reference/post_hotels-rates"
+  }
+}

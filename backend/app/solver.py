@@ -9,12 +9,36 @@ from __future__ import annotations
 import math
 import time
 from collections import Counter
+from datetime import datetime, timezone
 from .models import Allocation, Itinerary, Leg, PassengerGroup, Plan, Resource, Strategy, World
 from .weather import departure_allowed, landing_allowed, passenger_arrival_pending
 
 
 def units(resource: Resource, group: PassengerGroup) -> int:
+    if resource.quote_rooms is not None:
+        return resource.quote_rooms
     return math.ceil(group.size/resource.room_capacity) if resource.kind == "hotel" else group.size
+
+
+def resource_cost(resource: Resource, group: PassengerGroup) -> float:
+    return round(resource.quote_total_cost if resource.quote_total_cost is not None else resource.cost_per_person*units(resource,group),2)
+
+
+def live_resource_current(resource: Resource) -> bool:
+    """Local quote freshness is not a supplier hold or stock guarantee."""
+    if resource.source == "synthetic":
+        return False
+    try:
+        now=datetime.now(timezone.utc)
+        if resource.valid_until:
+            until=datetime.fromisoformat(resource.valid_until.replace("Z","+00:00"))
+            return until.tzinfo is not None and until>now
+        if resource.requires_revalidation:
+            at=datetime.fromisoformat(str(resource.provenance.get("quoted_at","")).replace("Z","+00:00"))
+            return at.tzinfo is not None and 0 <= (now-at).total_seconds() <= 120
+    except (ValueError,TypeError):
+        pass
+    return False
 
 
 def vehicle_conflict(a: Resource,b: Resource) -> bool:
@@ -39,18 +63,20 @@ def vehicle_schedule_errors(resources: list[Resource]) -> list[str]:
 
 
 def active_offers(world: World, confirmed_only=False):
-    statuses = {"confirmed"} if confirmed_only else {"confirmed", "held"}
+    statuses = {"confirmed"} if confirmed_only else {"confirmed", "held", "proposed", "accepted"}
     return [offer for offer in world.offers if offer.status in statuses]
 
 
 def inventory_used(world: World, confirmed_only=False) -> Counter:
     ids = {o.id for o in active_offers(world, confirmed_only)}
-    return Counter({r.id: sum(x.quantity for x in world.reservations if x.resource_id==r.id and x.offer_id in ids and x.status in ("held", "confirmed")) for r in world.resources})
+    return Counter({r.id: sum(x.quantity for x in world.reservations if x.resource_id==r.id and x.offer_id in ids and x.status in ("held", "proposed", "accepted", "confirmed")) for r in world.resources})
 
 
 def project_diversion(world: World, airport: str | None) -> tuple[World, list[dict]]:
     projected = world.model_copy(deep=True)
     changes = []
+    if world.mode=="live":
+        return projected,changes
     pending = [r for r in projected.resources if r.kind=="flight" and r.status=="needs_diversion"]
     if not pending:
         return projected, changes
@@ -71,6 +97,13 @@ def project_diversion(world: World, airport: str | None) -> tuple[World, list[di
 
 
 def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str, minute: int, used_ids: set[str]) -> bool:
+    if world.mode=="live":
+        if r.eligible_group_ids and g.id not in r.eligible_group_ids:
+            return False
+        if g.status!="confirmed" and not live_resource_current(r):
+            return False
+        if g.status=="confirmed" and r.source=="synthetic":
+            return False
     if not r.available or r.id in used_ids or r.origin != current or r.departure < minute:
         return False
     if r.arrival <= r.departure or r.arrival > g.deadline or (g.accessible and not r.accessible):
@@ -105,7 +138,7 @@ def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Iti
             # A next-day journey requires a dated hotel segment before departure.
             if r.departure//1440 > minute//1440:
                 continue
-            price = round(r.cost_per_person*units(r,group),2)
+            price = resource_cost(r,group)
             if cost+price > group.budget+1e-6:
                 continue
             leg = Leg(resource_id=r.id,kind=r.kind,origin=r.origin,destination=r.destination,departure=r.departure,arrival=r.arrival,cost=price)
@@ -135,7 +168,7 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
         if g.id in seen_groups:
             errors.append(f"Duplicate allocation for {g.id}")
         seen_groups.add(g.id)
-        location, minute = g.origin,max(world.sim_time,g.ready_at)
+        location, minute = g.origin,g.ready_at if world.mode=="live" and g.status=="confirmed" else max(world.sim_time,g.ready_at)
         seen_legs, subtotal = set(),0
         if not alloc.itinerary.legs:
             errors.append(f"{g.id}: empty journey")
@@ -150,7 +183,7 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
                 errors.append(f"{g.id}: unavailable, inaccessible or discontinuous {r.id}")
             if r.departure//1440 > minute//1440:
                 errors.append(f"{g.id}: missing overnight accommodation")
-            expected_price = round(r.cost_per_person*units(r,g),2)
+            expected_price = resource_cost(r,g)
             if (leg.origin,leg.destination,leg.departure,leg.arrival,leg.kind)!=(r.origin,r.destination,r.departure,r.arrival,r.kind) or not math.isfinite(leg.cost) or abs(leg.cost-expected_price)>0.005:
                 errors.append(f"{g.id}: tampered leg {r.id}")
             used[r.id] += units(r,g)

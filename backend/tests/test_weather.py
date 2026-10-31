@@ -175,7 +175,7 @@ def test_solver_rejects_previously_valid_itinerary_after_weather_change():
 
 def test_weather_is_not_a_live_provider_observation():
     world=seed_world()
-    world=world.model_copy(update={"mode":"live"})
+    world.mode="live"
     before=world.model_dump()
     with pytest.raises(DomainError,match="Simulation edits are disabled"):
         set_weather(world)
