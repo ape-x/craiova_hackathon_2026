@@ -4,12 +4,13 @@ import {
   commandContext,
   commandNeedsRegionalView,
   keepCommandReplyVisible,
+  recoveryCaseForResult,
   rememberCommand,
   rememberFailedCommand,
   verifiedCommandResult,
 } from './commandContext';
 import type { CommandExchange } from './commandContext';
-import type { AuditEvent, MutationResult, World } from './types';
+import type { AuditEvent, MutationResult, RecoveryJob, World } from './types';
 
 describe('conversation context for scenario authoring', () => {
   it('retains typed clarification details after a rejected request without labeling them applied', () => {
@@ -223,5 +224,74 @@ describe('regional view after a verified command', () => {
         applied: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe('scoped live recovery receipts', () => {
+  const world = {
+    mode: 'live',
+    scenario_id: 'live-operation',
+    version: 10,
+    incidents: [{ id: 'RC-ONE' }],
+  } as World;
+  const job = {
+    id: 'JOB-ONE',
+    incident_id: 'RC-ONE',
+    status: 'queued',
+    calls_dispatched: 0,
+    max_provider_calls: 7,
+  } as RecoveryJob;
+  const result: MutationResult = {
+    world,
+    applied: false,
+    incident_id: 'RC-ONE',
+    recovery_job: job,
+    command_interpretation_calls: 1,
+    recovery_total_call_limit: 8,
+    explanation:
+      'Cererea este înregistrată: 1 interpretare și cel mult 7 apeluri ale jobului. Nu confirmă un itinerar sau o rezervare.',
+  };
+
+  it('reads the verified queue receipt without claiming a plan or simulator mutation', () => {
+    const text = verifiedCommandResult(result);
+    expect(text).toContain('1 interpretare');
+    expect(text).toContain('7 apeluri');
+    expect(text).toContain('Nu confirmă un itinerar');
+    expect(text).not.toContain('Rezultat confirmat');
+    expect(text).not.toContain('simulator');
+    expect(keepCommandReplyVisible(result)).toBe(true);
+  });
+
+  it('opens the matching current case for both typed/voice receipts and exact retries', () => {
+    expect(recoveryCaseForResult(result, world)).toBe('RC-ONE');
+    expect(recoveryCaseForResult({ ...result, replayed: true }, { ...world, version: 12 })).toBe(
+      'RC-ONE',
+    );
+    expect(recoveryCaseForResult({ ...result, recovery_job: null }, world)).toBe('RC-ONE');
+  });
+
+  it('never opens a missing, replaced or mismatched case from a replay', () => {
+    expect(recoveryCaseForResult(result, { ...world, incidents: [] })).toBeNull();
+    expect(recoveryCaseForResult(result, { ...world, scenario_id: 'replacement' })).toBeNull();
+    expect(recoveryCaseForResult(result, { ...world, mode: 'simulation' })).toBeNull();
+    expect(
+      recoveryCaseForResult(
+        { ...result, recovery_job: { ...job, incident_id: 'RC-OTHER' } },
+        world,
+      ),
+    ).toBeNull();
+    expect(recoveryCaseForResult({ world, applied: false }, world)).toBeNull();
+  });
+
+  it('keeps queued history as reference and does not call a live applied result a simulator', () => {
+    const text = commandContext(
+      rememberCommand([], 'Recover RO321', verifiedCommandResult(result)),
+      null,
+    );
+    expect(text).toContain('Cererea este înregistrată');
+    expect(text).toContain('Nu reexecuta cereri anterioare');
+    expect(
+      verifiedCommandResult({ world, applied: true, explanation: 'Cerința a fost actualizată.' }),
+    ).toContain('Rezultat confirmat de aplicație.');
   });
 });

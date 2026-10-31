@@ -329,6 +329,7 @@ def validated_candidates(world: World,candidates):
 class RecoveryService:
     def __init__(self,settings: Settings,store: Store,ai=None):
         self.settings,self.store,self.ai=settings,store,ai
+        self.live_commands=None
         self._planning_timeout_seconds=2*settings.request_timeout_seconds+30
 
     async def _run_claimed(self,namespace,request,operation):
@@ -461,11 +462,17 @@ class RecoveryService:
         if world.version!=request.expected_version:
             raise DomainError(409,"World changed; refresh before sending a command",{"current_version":world.version})
         interpretation_started=time.perf_counter()
-        if request.context:
+        if world.mode=="live" and self.live_commands is not None:
+            interpreted=await self.live_commands.interpret(request,world,self.ai)
+        elif request.context:
             interpreted=await self.ai.interpret(request.text,world.model_dump(mode="json"),request.context)
         else:
             interpreted=await self.ai.interpret(request.text,world.model_dump(mode="json"))
         timings={"interpretation_ms":round((time.perf_counter()-interpretation_started)*1000,2)}
+        if world.mode=="live" and self.live_commands is not None:
+            routed=self.live_commands.route(request,world,interpreted)
+            if routed is not None:
+                return routed
         if not interpreted.get("events") and not interpreted.get("strategies"):
             return self.store.remember(key,payload,world.version,{"explanation":interpreted.get("explanation","No operational change requested."),"focus_id":interpreted.get("focus_id"),"applied":False,"mode":"ai"})
         if len(interpreted.get("events",[]))>MAX_COMMAND_EVENTS:

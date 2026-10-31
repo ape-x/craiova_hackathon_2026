@@ -191,14 +191,14 @@ class RecoveryJobs:
         self.ledger=RecoveryLedger(store,settings.request_timeout_seconds+60)
         self.task=None
 
-    def start(self,incident_id,request):
+    def start(self,incident_id,request,*,on_created=None):
         payload={**request.model_dump(mode="json"),"incident_id":incident_id}
         replay=self.ledger.replay("recovery-job:"+request.idempotency_key,payload)
-        if replay:
+        if replay and on_created is None:
             return replay
         world=self.store.read()
         digest=scope_fingerprint(world,incident_id,request.group_ids)
-        return self.ledger.create(incident_id,request,digest,world.scenario_id)
+        return self.ledger.create(incident_id,request,digest,world.scenario_id,on_created=on_created)
 
     def get(self,job_id):
         return {"job":self.ledger.get(job_id)}

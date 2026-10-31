@@ -1,0 +1,186 @@
+"""Durable interpretation and explicit case binding for live voice/text searches.
+
+No source calls occur here except the existing single command interpretation.
+The existing recovery worker owns all supplier searches and scoped plan commits.
+"""
+from __future__ import annotations
+
+import json
+import re
+import unicodedata
+
+from pydantic import ValidationError
+
+from .providers.ai import LiveRecoveryIntent
+from .providers.base import ProviderError
+from .recovery_jobs import RecoveryJobRequest
+from .store import DomainError, Store, utcnow
+
+
+def normalized(text):
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)).lower()
+
+
+_NUMBERS = {
+    "zero": 0, "one": 1, "un": 1, "unu": 1, "two": 2, "doua": 2, "doi": 2,
+    "three": 3, "trei": 3, "four": 4, "patru": 4, "five": 5, "cinci": 5,
+    "six": 6, "sase": 6, "seven": 7, "sapte": 7, "eight": 8, "opt": 8,
+    "nine": 9, "noua": 9, "ten": 10, "zece": 10,
+}
+_COUNT = r"(\d+|" + "|".join(_NUMBERS) + r")"
+_CALL_UNIT = r"\s*(?:de\s+)?(?:(?:api|provider|supplier|external|total)\s+){0,3}(?:calls?|apeluri|apel)\b"
+_CALL_LIMIT = re.compile(r"\b(?:maximum|maxim|max|at most|no more than|cel mult|limit(?:a)?)(?: to| of| de)?\s*" + _COUNT + _CALL_UNIT)
+_TRAILING_LIMIT = re.compile(r"\b" + _COUNT + _CALL_UNIT + r"\s+(?:maximum|maxim|max|in total|total|overall)\b")
+
+
+def literal_call_limit(text):
+    """A lower explicit numeric/short spoken limit wins over model extraction."""
+    values = [int(m[1]) if m[1].isdigit() else _NUMBERS[m[1]]
+              for pattern in (_CALL_LIMIT, _TRAILING_LIMIT) for m in pattern.finditer(normalized(text))]
+    return min(values) if values else None
+
+
+def mentioned(text, identifier):
+    # Spoken flight numbers may contain spaces/hyphens between their characters.
+    chars = re.sub(r"[\s-]", "", normalized(identifier))
+    return bool(chars and re.search(r"(?<![a-z0-9])" + r"[\s-]*".join(map(re.escape, chars)) + r"(?![a-z0-9])", normalized(text)))
+
+
+class LiveCommands:
+    def __init__(self, store, jobs):
+        self.store, self.jobs = store, jobs
+        with store.connect() as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS live_command_intents (
+                request_key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL,
+                scenario_id TEXT NOT NULL, state TEXT NOT NULL,
+                interpretation TEXT, created_at TEXT NOT NULL)""")
+
+    async def interpret(self, request, world, ai):
+        key = "command:" + request.idempotency_key
+        fingerprint = Store.fingerprint(request.model_dump())
+        with self.store.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT fingerprint,scenario_id,state,interpretation FROM live_command_intents WHERE request_key=?", (key,)).fetchone()
+            if row:
+                if row[0] != fingerprint or row[1] != world.scenario_id:
+                    raise DomainError(409, "This command key already identifies a different request or operation")
+                if row[2] == "interpreted":
+                    return json.loads(row[3])
+                raise DomainError(503, "The earlier command interpretation has an unconfirmed outcome or usage. It was not automatically repeated; review before explicitly starting another request.", {"interpretation_outcome": "unknown", "automatic_retry": False}, applied=None)
+            conn.execute("INSERT INTO live_command_intents VALUES(?,?,?,?,?,?)", (key, fingerprint, world.scenario_id, "dispatched", None, utcnow().isoformat()))
+        # A literal zero allowance must prevent even the first interpretation.
+        if literal_call_limit(request.text) == 0:
+            result = {"events": [], "strategies": [], "focus_id": None, "recovery": None,
+                      "explanation": "Limita de 0 apeluri nu permite interpretarea sau căutarea. Niciun apel nu a fost trimis.",
+                      "_zero_allowance": True, "_interpretation_calls": 0}
+        else:
+            try:
+                args = (request.text, world.model_dump(mode="json"))
+                result = await ai.interpret(*args, request.context) if request.context else await ai.interpret(*args)
+                result = {**result, "_interpretation_calls": 1}
+            except BaseException as exc:
+                with self.store.connect() as conn:
+                    conn.execute("UPDATE live_command_intents SET state='unknown' WHERE request_key=?", (key,))
+                if isinstance(exc, ProviderError):
+                    raise DomainError(502, "Command interpretation failed; upstream usage may be billable. No recovery job was queued and the same request will not dispatch another interpretation.", {"interpretation_outcome": "unknown", "automatic_retry": False}, applied=None) from exc
+                raise
+        with self.store.connect() as conn:
+            conn.execute("UPDATE live_command_intents SET state='interpreted',interpretation=? WHERE request_key=?", (json.dumps(result, allow_nan=False), key))
+        return result
+
+    def _reply(self, request, world, explanation, *, calls=1, **extra):
+        return self.store.remember("command:" + request.idempotency_key, request.model_dump(), world.version,
+                                   {"applied": False, "mode": "ai", "explanation": explanation,
+                                    "command_interpretation_calls": calls, **extra})
+
+    def route(self, request, world, interpreted):
+        if interpreted.get("_zero_allowance"):
+            return self._reply(request, world, interpreted["explanation"], calls=0)
+        raw = interpreted.get("recovery")
+        if raw is None:
+            # A dropped recovery intent must never turn an explicitly named
+            # case into global planning. Generic event commands and requests
+            # without a case/flight binding retain their existing semantics.
+            if interpreted.get("strategies") and not interpreted.get("events") and any(
+                mentioned(request.text, case.id) or mentioned(request.text, case.requested_flight_number)
+                for case in world.incidents
+            ):
+                return self._reply(request, world, "Cererea numește un caz sau zbor existent, dar interpretarea nu stabilește recuperarea acelui caz. Cere explicit căutarea pentru cazul sau zborul respectiv. Nu am pornit căutarea și nu am aplicat un plan global. Interpretarea a folosit 1 apel.")
+            return None
+        try:
+            intent = LiveRecoveryIntent.model_validate(raw, strict=True)
+        except ValidationError as exc:
+            raise DomainError(422, "AI returned an invalid scoped recovery intent; no job was queued") from exc
+        current = self.store.read()
+        if current.version != world.version or current.scenario_id != world.scenario_id:
+            raise DomainError(409, "Operation changed while interpreting this request; refresh before starting recovery")
+        if interpreted.get("events") or interpreted.get("strategies") or intent.requires_input_changes:
+            return self._reply(request, world, "Nu am pornit căutarea și nu am modificat datele. Înregistrează separat noile constrângeri ale cazului, apoi cere recuperarea pentru zborul sau cazul explicit. Interpretarea a folosit 1 apel.")
+
+        matches = [case for case in world.incidents if mentioned(request.text, case.id)]
+        if not matches:
+            matches = [case for case in world.incidents if mentioned(request.text, case.requested_flight_number)]
+            dates = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", request.text)
+            if dates:
+                matches = [case for case in matches if case.date_utc in dates]
+        if len(matches) != 1:
+            choices = "; ".join(f"{case.id}: {case.requested_flight_number}, {case.date_utc}" for case in matches[:5])
+            return self._reply(request, world, "Specifică explicit un singur caz sau zbor existent și data dacă există mai multe cazuri. Nu am pornit nicio căutare. Interpretarea a folosit 1 apel." + (" Cazuri: " + choices if choices else ""))
+        case = matches[0]
+        if intent.incident_id is not None and intent.incident_id.upper() != case.id.upper():
+            return self._reply(request, world, "Identitatea propusă de interpretare nu corespunde cazului numit în cerere. Repetă ID-ul exact al cazului; nu am pornit căutarea. Interpretarea a folosit 1 apel.")
+        if intent.action == "status":
+            jobs = self.jobs.list(case.id)["jobs"]
+            job = jobs[0] if jobs else None
+            explanation = (f"Caz {case.id}: {job['status']}; {job['message']} Apeluri ale jobului: {job['calls_dispatched']}/{job['max_provider_calls']}." if job else f"Cazul {case.id} nu are niciun job de recuperare înregistrat.")
+            return self._reply(request, world, explanation + " Verificarea prin limbaj natural a folosit 1 apel de interpretare.", incident_id=case.id, recovery_job=job)
+
+        literal = literal_call_limit(request.text)
+        reference = intent.call_limit_reference
+        model_limit = intent.max_total_calls
+        # A quoted phrase with an explicit call unit may clarify spoken numbers;
+        # an ambiguous reference may lower, but never increase, the default.
+        verified_reference = bool(reference and normalized(reference) in normalized(request.text) and re.search(r"\b(?:calls?|apeluri|apel)\b", normalized(reference)))
+        total_limit = min(27, literal) if literal is not None else 8
+        if model_limit is not None and verified_reference:
+            total_limit = min(total_limit, model_limit)
+        allowance = total_limit - 1
+        if allowance < 3:
+            return self._reply(request, world, f"Limita totală este {total_limit} apeluri; interpretarea a folosit 1. Rămân {max(0, allowance)}, sub minimul de 3 al jobului. Nu am pornit căutarea și nu am mărit limita.", recovery_total_call_limit=total_limit)
+        if len(request.text) > 2000:
+            return self._reply(request, world, "Cererea de recuperare depășește 2000 de caractere. Scurteaz-o fără a omite condiții; nu am pornit căutarea. Interpretarea a folosit 1 apel.")
+        linked = {group.id: group for group in world.groups if group.incident_id == case.id and group.id in case.group_ids}
+        confirmed = {group.id for group in linked.values() if group.status == "confirmed"} | {offer.group_id for offer in world.offers if offer.status == "confirmed"}
+        if intent.all_linked_groups:
+            explicit_groups = any(mentioned(request.text, group.id) or mentioned(request.text, group.name) for group in world.groups)
+            if intent.group_ids or explicit_groups:
+                return self._reply(request, world, "Cererea numește grupuri, dar interpretarea propune întregul caz. Precizează grupurile selectate; nu am extins căutarea și nu am pornit-o. Interpretarea a folosit 1 apel.")
+            groups = sorted(set(linked) - confirmed)
+        else:
+            groups = sorted(set(intent.group_ids))
+            if not groups or any(group_id not in linked or not (mentioned(request.text, group_id) or mentioned(request.text, linked[group_id].name)) for group_id in groups):
+                return self._reply(request, world, "Numește explicit grupurile existente legate de acest caz; nu am selectat un subset presupus. Nicio căutare pornită; interpretarea a folosit 1 apel.")
+        if not groups or len(groups) > 24 or set(groups) & confirmed:
+            return self._reply(request, world, "Selectează între 1 și 24 de grupuri legate de caz, fără rezervări confirmate. Nu am pornit căutarea și nu am înlocuit rezervări. Interpretarea a folosit 1 apel.")
+        job_request = RecoveryJobRequest(expected_version=world.version,
+            idempotency_key="live-command-" + Store.fingerprint({"key": request.idempotency_key, "scenario": world.scenario_id}),
+            group_ids=groups, objective=intent.objective, modes=intent.modes,
+            max_provider_calls=allowance, instructions=request.text)
+
+        def receipt(conn, receipt_world, result):
+            job = result["job"]
+            explanation = (f"Am înregistrat cererea de recuperare pentru {case.id}, {case.requested_flight_number}: "
+                f"{len(groups)} grupuri, job {job['id']}. Limita totală: {total_limit} apeluri — 1 interpretare și cel mult {allowance} apeluri ale jobului. "
+                "Urmărește progresul în panoul cazului; această confirmare nu dovedește găsirea unui itinerar sau efectuarea unei rezervări.")
+            skipped = sorted(set(linked) & confirmed)
+            if skipped:
+                explanation += f" {len(skipped)} grupuri cu rezervări confirmate au rămas în afara căutării."
+            response = {"world": self.store._with_observations(conn, receipt_world).model_dump(mode="json"),
+                "replayed": result["replayed"], "applied": False, "mode": "ai", "explanation": explanation,
+                "incident_id": case.id, "recovery_job": job, "command_interpretation_calls": 1,
+                "recovery_total_call_limit": total_limit}
+            conn.execute("INSERT INTO idempotency VALUES(?,?,?,?)", ("command:" + request.idempotency_key,
+                Store.fingerprint(request.model_dump()), json.dumps(self.store._without_observations(response)), utcnow().isoformat()))
+            return response
+
+        return self.jobs.start(case.id, job_request, on_created=receipt)

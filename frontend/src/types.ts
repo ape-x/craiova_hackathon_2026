@@ -354,4 +354,8 @@ export interface MutationResult {
   focus_id?: string | null;
   applied?: boolean;
   mode?: 'ai' | 'solver';
+  incident_id?: string;
+  recovery_job?: RecoveryJob | null;
+  command_interpretation_calls?: number;
+  recovery_total_call_limit?: number;
 }

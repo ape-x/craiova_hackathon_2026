@@ -90,12 +90,28 @@ export function commandContext(
 }
 
 export function verifiedCommandResult(result: MutationResult): string {
+  if (result.incident_id && result.recovery_job) {
+    // This is a receipt/status snapshot, not evidence that a journey was found
+    // or accepted. The case panel fetches the current job's progress separately.
+    return `${result.explanation ?? 'Cererea de recuperare este înregistrată; verifică progresul în panoul cazului.'} Versiunea ${result.world.version}.`;
+  }
   const status =
     result.applied === false
       ? 'Nicio modificare operațională aplicată.'
-      : 'Rezultat confirmat de simulator.';
+      : result.world.mode === 'live'
+        ? 'Rezultat confirmat de aplicație.'
+        : 'Rezultat confirmat de simulator.';
   const explanation = result.explanation ?? result.decision?.explanation;
   return `${status}${explanation ? ` ${explanation}` : ''} Versiunea ${result.world.version}.`;
+}
+
+/** Do not reopen an obsolete case from a replay after the operation changed. */
+export function recoveryCaseForResult(result: MutationResult, current: World): string | null {
+  if (current.mode !== 'live' || result.world.scenario_id !== current.scenario_id) return null;
+  const id = result.incident_id;
+  if (!id || !(current.incidents ?? []).some((incident) => incident.id === id)) return null;
+  if (result.recovery_job && result.recovery_job.incident_id !== id) return null;
+  return id;
 }
 
 /** A no-change response may be a question the operator still needs to answer. */

@@ -28,6 +28,7 @@ from .live_service import LiveOperations, HotelQuoteImport, ExternalConfirmation
 from .live_travel import LiveTravel, LiveTravelSearch, TravelQuoteImport
 from .providers.travel import TravelProvider
 from .recovery_jobs import RecoveryJobs, RecoveryJobRequest, RecoveryCancellation
+from .live_commands import LiveCommands
 from .ground_transfers import GroundTransfers, create_transfer_router
 from .incidents import FlightContextSelection, FlightLookupRequest, IncidentCreate, IncidentGroupBinding, IncidentService
 from .service import RecoveryService
@@ -93,6 +94,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     travel_provider=TravelProvider(settings)
     travel=LiveTravel(store,travel_provider)
     jobs=RecoveryJobs(settings,store,service,travel_provider,ai)
+    service.live_commands=LiveCommands(store,jobs)
     ground_transfers=GroundTransfers(settings)
     login_attempts=defaultdict(deque)
     # Reserve worst-case credit cost in the persistent shared request ledger;
@@ -142,6 +144,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     app.state.travel=travel
     app.state.incidents=incidents
     app.state.jobs=jobs
+    app.state.live_commands=service.live_commands
     app.state.ground_transfers=ground_transfers
     app.add_middleware(CORSMiddleware,allow_origins=settings.origins,allow_credentials=True,allow_methods=["GET","POST","DELETE"],allow_headers=["Content-Type","Authorization","Last-Event-ID"])
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[h.strip() for h in settings.allowed_hosts.split(",")])

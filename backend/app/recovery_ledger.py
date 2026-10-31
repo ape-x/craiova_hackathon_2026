@@ -58,7 +58,7 @@ class RecoveryLedger:
                 raise DomainError(409, "This recovery-job key already identifies a different request")
             return {"job": self._public(conn, json.loads(row[1])), "replayed": True}
 
-    def create(self, incident_id, request, scope_hash, scenario_id):
+    def create(self, incident_id, request, scope_hash, scenario_id, *, on_created=None):
         payload = {**request.model_dump(mode="json"), "incident_id": incident_id}
         key = "recovery-job:" + request.idempotency_key
         with self.store.connect() as conn:
@@ -67,7 +67,13 @@ class RecoveryLedger:
             if row:
                 if row[0] != Store.fingerprint(payload):
                     raise DomainError(409, "This recovery-job key already identifies a different request")
-                return {"job": self._public(conn,json.loads(row[1])), "replayed": True}
+                result = {"job": self._public(conn,json.loads(row[1])), "replayed": True}
+                if on_created is None:
+                    return result
+                world = self.store._load(conn)
+                if world.version != request.expected_version or world.scenario_id != scenario_id:
+                    raise DomainError(409, "Operation changed before the command receipt could be recorded; inspect the existing job")
+                return on_created(conn, world, result)
             world = self.store._load(conn)
             if world.version != request.expected_version or world.scenario_id != scenario_id:
                 raise DomainError(409, "Operation changed before this recovery job was queued")
@@ -85,7 +91,10 @@ class RecoveryLedger:
                    "cancel_requested":False, "gaps":[], "result":None,
                    "_request":payload, "_scope_hash":scope_hash, "_scenario_id":scenario_id}
             conn.execute("INSERT INTO recovery_jobs VALUES(?,?,?,?,?,?,?)", (job["id"],key,Store.fingerprint(payload),"queued",None,0,json.dumps(job)))
-            return {"job":self._public(conn,job), "replayed":False}
+            result = {"job":self._public(conn,job), "replayed":False}
+            # The command receipt and queued job commit together. In particular,
+            # a process failure cannot leave a paid job without its replay key.
+            return on_created(conn, world, result) if on_created else result
 
     def _recover_expired(self, conn):
         now = utcnow().timestamp()

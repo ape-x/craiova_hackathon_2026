@@ -39,6 +39,7 @@ import ThemeToggle from './ThemeToggle';
 import { LiveVoiceClient } from './liveVoice';
 import {
   commandContext,
+  recoveryCaseForResult,
   commandNeedsRegionalView,
   keepCommandReplyVisible,
   rememberCommand,
@@ -198,6 +199,11 @@ function Operations() {
         setSelectedId(focus);
         if (result.world.airports.some((airport) => airport.id === focus)) setMode('region');
         if (result.world.groups.some((group) => group.id === focus)) setMode('passenger');
+      }
+      const recoveryCase = recoveryCaseForResult(result, worldRef.current ?? result.world);
+      if (recoveryCase) {
+        setRecoveryCaseId(recoveryCase);
+        setModal('recovery-case');
       }
       return result;
     },
