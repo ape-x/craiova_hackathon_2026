@@ -38,6 +38,7 @@ import { WeatherNetworkOverlay } from './WeatherStatus';
 import { Brand, Dot, Modal, Tag } from './ui';
 import ThemeToggle from './ThemeToggle';
 import { LiveVoiceClient } from './liveVoice';
+import { voiceStartupScope } from './voiceScope';
 import {
   commandContext,
   recoveryCaseForResult,
@@ -332,6 +333,12 @@ function Operations() {
     setAudioBlocked(false);
     setVoiceMuted(false);
     const client = new LiveVoiceClient({
+      scope: voiceStartupScope(
+        worldRef.current,
+        selectedRef.current,
+        recoveryCaseId,
+        modal === 'recovery-case',
+      ),
       onState: (state, message) => {
         setVoiceState(state);
         if (state === 'idle' || state === 'error') voice.current = null;

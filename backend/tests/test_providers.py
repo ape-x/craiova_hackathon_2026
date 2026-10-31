@@ -328,6 +328,7 @@ async def test_voice_real_json_webrtc_handshake():
         assert request.url.path == "/v1/live/sessions"
         assert body["session"]["model"] == "gpt-live-1"
         assert body["session"]["delegation"]["type"] == "client"
+        assert "input" not in body["session"]
         assert body["transport"] == {"type": "webrtc", "sdp": "v=0\r\no=offer"}
         assert "audio.format" not in body["session"]
         return httpx.Response(201, json={"session": {"id": "live_keep-prefix"}, "transport": {"type": "webrtc", "sdp": "v=0\r\no=answer"}})

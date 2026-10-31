@@ -4,8 +4,14 @@
  */
 export type VoiceState = 'idle' | 'connecting' | 'listening' | 'working' | 'closing' | 'error';
 export type DelegationRequest = { text: string; delegationId: string; context: string };
+export interface VoiceStartupScope {
+  incident_id?: string;
+  group_id?: string;
+}
 export interface LiveVoiceOptions {
   sessionUrl?: string;
+  /** Selected IDs are reference context only; the server resolves facts and execution remains explicit. */
+  scope?: VoiceStartupScope;
   onState: (state: VoiceState, message: string) => void;
   onTranscript: (text: string, role: 'user' | 'assistant') => void;
   onAudioLevel?: (level: number) => void;
@@ -78,6 +84,16 @@ export class LiveVoiceClient {
       this.options.onState('error', 'Microfonul necesită HTTPS sau localhost.');
       return;
     }
+    // Snapshot only allowed IDs before microphone permission/SDP can yield.
+    // Do not forward caller-authored facts or let selection changes retarget startup.
+    const scope: VoiceStartupScope = {};
+    if (
+      typeof this.options.scope?.incident_id === 'string' &&
+      this.options.scope.incident_id.trim()
+    )
+      scope.incident_id = this.options.scope.incident_id;
+    if (typeof this.options.scope?.group_id === 'string' && this.options.scope.group_id.trim())
+      scope.group_id = this.options.scope.group_id;
     const generation = ++this.generation;
     this.finalized = false;
     this.closing = false;
@@ -154,7 +170,7 @@ export class LiveVoiceClient {
         credentials: 'same-origin',
         signal: abort.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sdp }),
+        body: JSON.stringify({ sdp, ...(Object.keys(scope).length ? { scope } : {}) }),
       });
       if (!this.isCurrent(generation, peer)) return;
       if (!response.ok) {

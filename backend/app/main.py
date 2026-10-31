@@ -34,10 +34,12 @@ from .transfer_planning import GroundPlanning, create_planning_transfer_router
 from .incidents import FlightContextSelection, FlightLookupRequest, IncidentCreate, IncidentGroupBinding, IncidentService
 from .service import RecoveryService
 from .store import DomainError, Store, utcnow
+from .voice_context import VoiceScope, build_voice_context
 
 
 class VoiceRequest(Model):
     sdp: str = Field(min_length=10,max_length=65536,pattern=r"^v=0\r?\n")
+    scope: VoiceScope | None = None
 
 
 class RedactAccessPaths(logging.Filter):
@@ -420,7 +422,10 @@ def create_app(settings: Settings | None=None) -> FastAPI:
 
     @app.post("/api/voice/session",dependencies=[Depends(operator)])
     async def voice_session(body: VoiceRequest):
-        return await voice.create(body.sdp)
+        if body.scope is None:
+            return await voice.create(body.sdp)
+        context=build_voice_context(await asyncio.to_thread(store.read),body.scope)
+        return await voice.create(body.sdp,reference_context=context)
 
     @app.post("/api/traffic/start",dependencies=[Depends(operator)])
     def traffic_start():

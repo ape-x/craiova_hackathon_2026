@@ -5,7 +5,7 @@ from datetime import timedelta
 import httpx
 import pytest
 
-from app.hotel_recovery_profile import PROFILE_KEY
+from app.hotel_recovery_profile import PROFILE_KEY, build_hotel_recovery_profile, read_hotel_recovery_profile
 from app.live_commands import LiveCommands, literal_call_limit
 from app.providers import AIProvider, ProviderError
 from app.store import DomainError
@@ -15,6 +15,42 @@ from test_hotel_recovery_profile import hotel_command_setup
 
 def hotel_text(suffix="with maximum eleven calls"):
     return "Recalculate RO321 on 2026-11-01 for G1 using saved hotel settings " + suffix
+
+
+@pytest.mark.asyncio
+async def test_actual_spoken_date_corruption_is_rejected_even_with_valid_hotel_interpretation(hotel_command_setup,monkeypatch):
+    _,store,service,jobs,ai,inputs=hotel_command_setup
+    def matching_scope(world):
+        case=world.incidents[0]
+        case.requested_flight_number="EK5"
+        case.date_utc="2026-10-31"
+        group=world.groups[0]
+        # Make even the corrupted group wording match, isolating the raw-date guard.
+        group.name="Planin d Ground 1"
+        group.original_flight_id="EK5"
+        group.provenance[PROFILE_KEY]=build_hotel_recovery_profile(world,group,inputs)
+    store.mutate("spoken-date-fixture",{},store.read().version,matching_scope)
+    ai.result["recovery"].update(incident_id="RC-ONE",group_ids=["G1"],all_linked_groups=False,
+        modes=["flight","hotel","bus"],max_total_calls=11,call_limit_reference="Maximum 11 apeluri în total",requires_input_changes=False)
+    dispatched=[]
+    def forbidden_start(*args,**kwargs):
+        dispatched.append("job")
+        pytest.fail("Ambiguous raw speech must not create a recovery job")
+    async def forbidden_source(*args,**kwargs):
+        dispatched.append("source")
+        pytest.fail("Ambiguous raw speech must not dispatch a source")
+    monkeypatch.setattr(jobs,"start",forbidden_start)
+    monkeypatch.setattr(jobs,"_call",forbidden_source)
+    before=store.read().model_dump(mode="json",exclude={"sim_time"})
+    text="Recalculează itinerarul complet pentru grupul Planin d Ground 1 al zborului EK5 din 30 și 1 octombrie 2020 și 6, folosind configurația salvată de hotel, ambele transferuri și zborul. Maximum 11 apeluri în total"
+    response=await service.command(request(store,text))
+    assert response["applied"] is False and response["command_interpretation_calls"]==1
+    assert "Data asociată cazului sau zborului este ambiguă ori invalidă" in response["explanation"]
+    assert "recovery_job" not in response and not jobs.list("RC-ONE")["jobs"]
+    assert dispatched==[] and len(ai.calls)==1 and ai.calls[0][0]==text
+    after=store.read()
+    assert after.model_dump(mode="json",exclude={"sim_time"})==before
+    assert read_hotel_recovery_profile(after,after.groups[0])==inputs.model_dump(mode="json")
 
 
 @pytest.mark.asyncio

@@ -157,6 +157,44 @@ function command(channel: FakeChannel, id = 'delegation-1') {
 }
 
 describe('GPT-Live lifecycle with mocked browser resources', () => {
+  it('sends only a snapshot of selected scope IDs after permission without executing a command', async () => {
+    const delayed = deferred<FakeStream>();
+    permission.mockReturnValue(delayed.promise);
+    const scope = {
+      incident_id: 'CASE1',
+      group_id: 'G1',
+      label: 'Do not send',
+      context: 'Do not send',
+      model: 'Do not send',
+      max_provider_calls: 26,
+    };
+    const { client, onDelegation } = clientWith({ scope });
+    const starting = client.start();
+    expect(fetchMock).not.toHaveBeenCalled();
+    scope.incident_id = 'CASE2';
+    scope.group_id = 'G2';
+    delayed.resolve(stream);
+    await starting;
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/voice/session');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      sdp: 'v=0\r\no=offer',
+      scope: { incident_id: 'CASE1', group_id: 'G1' },
+    });
+    expect(onDelegation).not.toHaveBeenCalled();
+    await end(client, FakePeer.instances.at(-1)!.channel);
+  });
+
+  it.each([undefined, {}, { incident_id: '', group_id: '  ' }])(
+    'omits an empty startup scope and retains the existing SDP-only request',
+    async (scope) => {
+      const { client, channel, onDelegation } = await connected({ scope });
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ sdp: 'v=0\r\no=offer' });
+      expect(onDelegation).not.toHaveBeenCalled();
+      await end(client, channel);
+    },
+  );
+
   it('delegates a complete free-form compound request once, never each transcript fragment', async () => {
     const { client, channel, onDelegation } = await connected();
     [
