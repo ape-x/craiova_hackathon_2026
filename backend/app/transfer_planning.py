@@ -232,7 +232,9 @@ def build_transfer_resource(world, context, response, option_id, *, now):
     """Compile verified server source receipts without I/O or mutating a world.
 
     Jobs may use this against a projected world; the caller still owns revision
-    retirement, capacity limits and an atomic operational commit.
+    retirement, capacity limits and an atomic operational commit. The supplied
+    context.quote_sequence must use the same persistent ordinal domain as manual
+    quote receipts; a job-local counter or timestamp is not interchangeable.
     """
     fresh = transfer_context(world, PlanningTransferRequest.model_validate(context["request"]), now=now)
     if (fresh["scenario_id"] != context["scenario_id"] or fresh["assumption"] != context["assumption"]
@@ -278,6 +280,185 @@ def build_transfer_resource(world, context, response, option_id, *, now):
     if is_return and not valid_airport_arrival(world,resource,group,now=now):
         raise DomainError(409, "The source return route no longer supports the exact onward flight and declared airport processing")
     return resource, point
+
+
+def prepare_transfer_response(context, quote_id, *, now):
+    """Build a fresh manual/job envelope from supplied identity and time only."""
+    assumption = context["assumption"]
+    is_return = context.get("direction") == "hotel_to_airport"
+    response = {"quote_id":quote_id,"state":"blocked","group_id":context["group_id"],"hotel_node_id":context["hotel_node_id"],
+        "direction":context.get("direction","initial_airport_to_hotel"),"source_version":context["source_version"],"created_at":now.isoformat(),
+        "usable_until":(now+timedelta(seconds=CACHE_SECONDS)).isoformat(),
+        "initial_point":None if is_return else {"id":assumption["point_id"],"label":assumption["label"],**assumption["coordinates"],
+            "source":"operator_declared","confirmed":True,"airport_context_id":assumption["airport_context_id"]},
+        "airport_arrival_assumption":copy.deepcopy(assumption) if is_return else None,
+        "onward_flight":copy.deepcopy(context.get("onward_flight")),
+        "geographic_screening":{"airport_reference_distance_m":context["airport_reference_distance_m"],"airport_reference_limit_m":MAX_AIRPORT_POINT_METERS,"road_snap_limit_m":MAX_SNAP_METERS,"policy_source":"application","terminal_or_pedestrian_access_verified":False},
+        "hotel":None,"transfer":None,"route":None,"blockers":[],"options":[],"replayed":False}
+    return response
+
+
+def prepare_transfer_inputs(context, hotel_metadata):
+    """Reconcile fetched property facts and return individually dispatchable inputs.
+
+    No provider, service or database is constructed. The caller persists/counts
+    each hotel metadata, APL, ECB and Google request separately. This function
+    neither reserves nor fabricates context.quote_sequence; that ordinal must
+    come from the same persistent sequence domain used by manual quote receipts.
+    """
+    result = {"context":copy.deepcopy(context),"hotel":None,"apl_request":None,"route_request":None,"blockers":[]}
+    context, response, metadata = result["context"], result, hotel_metadata
+    request = PlanningTransferRequest.model_validate(context["request"])
+    if not isinstance(metadata,dict):
+        result["blockers"].append(blocker("property_metadata_unavailable", "Exact hotel metadata was not supplied; no transfer requests were prepared"))
+        return result
+    postal = metadata.get("postal_address")
+    if metadata.get("latitude") != context["hotel_coordinates"]["latitude"] or metadata.get("longitude") != context["hotel_coordinates"]["longitude"]:
+        response["blockers"].append(blocker("property_location_changed", "The exact supplier property's coordinates changed; refresh its sourced hotel node before planning a transfer"))
+        return result
+    if not isinstance(postal, dict) or postal.get("hotel_id") != context["hotel_id"] or not postal.get("address") or not postal.get("country"):
+        response["blockers"].append(blocker("property_address_missing", "The supplier has not provided a usable address and country for this exact hotel; no APL or route request was sent"))
+        return result
+    if re.sub(r"[^a-z]", "", postal["country"].lower()) not in ("gb","uk","unitedkingdom","greatbritain") or coordinate_timezone(context["hotel_coordinates"]["latitude"],context["hotel_coordinates"]["longitude"]) != "Europe/London":
+        response["blockers"].append(blocker("property_outside_scope", "This transfer flow supports sourced UK hotel properties only"))
+        return result
+    response["hotel"] = {"node_id":context["hotel_node_id"],"hotel_id":context["hotel_id"],"name":postal.get("name") or context["hotel_name"],
+        "address":postal["address"],"city":postal.get("city"),"country":postal["country"],**context["hotel_coordinates"],
+        "source":postal.get("source"),"retrieved_at":postal.get("retrieved_at")}
+    destination = ", ".join(dict.fromkeys(str(item).strip() for item in (postal.get("name") or context["hotel_name"], postal["address"], postal.get("city"), postal["country"]) if item))
+    point = request.airport_dropoff if request.direction == "hotel_to_airport" else request.initial_point
+    origin = f'{context["airport_name"]} ({context["airport_code"]}), {point.label}'
+    if request.direction == "hotel_to_airport":
+        origin, destination = destination, origin
+    if len(origin) > 500 or len(destination) > 500:
+        response["blockers"].append(blocker("source_address_too_long", "The exact property or pickup address exceeds APL's supported input; it was not truncated"))
+        return result
+    query = APLQuoteRequest(origin=origin,destination=destination,passengers=context["size"],suitcases=request.suitcases,pickup_at=request.pickup_at,expected_hub=context["airport_code"],expected_direction="to_hub" if request.direction == "hotel_to_airport" else "from_hub")
+    context["apl_request"] = query.model_dump(mode="json")
+    route_origin, route_destination = route_points(context)
+    result["apl_request"] = copy.deepcopy(context["apl_request"])
+    result["route_request"] = {"origin":copy.deepcopy(route_origin),"destination":copy.deepcopy(route_destination),"pickup_at":request.pickup_at.isoformat()}
+    return result
+
+
+def _without_fx(quote):
+    result = copy.deepcopy(quote)
+    result.pop("fx",None)
+    for option in result.get("options",[]):
+        option.pop("eur_reference_estimate",None)
+    return result
+
+
+def assess_transfer_sources(context, response, *, hotel_metadata=None, apl_quote=None, fx_enrichment=None, dated_route=None, errors=(), now):
+    """Assess already-fetched sources; never dispatch or mutate supplied inputs.
+
+    fx_enrichment is the output of the existing pure EcbRates.enrich operation
+    for this same APL quote, after the caller separately fetched/counted rates.
+    Manual callers may supply their already enriched transfer in response.
+    Supplying hotel_metadata runs the same pure request preparation and places
+    its reconciled hotel evidence/blockers into the returned envelope.
+    Source failures are explicit blocker dictionaries, not implicit retries.
+    """
+    response = copy.deepcopy(response)
+    response["state"], response["options"] = "blocked", []
+    response.pop("road_snap_offsets_m",None)
+    response["blockers"].extend(copy.deepcopy(list(errors)))
+    if hotel_metadata is not None:
+        prepared = prepare_transfer_inputs(context, hotel_metadata)
+        context = prepared["context"]
+        response["hotel"] = prepared["hotel"]
+        response["blockers"].extend(prepared["blockers"])
+    if apl_quote is not None:
+        response["transfer"] = copy.deepcopy(apl_quote)
+    if dated_route is not None:
+        response["route"] = copy.deepcopy(dated_route)
+    if fx_enrichment is not None:
+        try:
+            if response["transfer"] is None or _without_fx(response["transfer"]) != _without_fx(fx_enrichment):
+                raise ValueError("Mismatched source quote")
+            response["transfer"] = copy.deepcopy(fx_enrichment)
+        except (ValueError,TypeError,AttributeError,KeyError):
+            response["blockers"].append(blocker("fx_quote_mismatch", "The ECB enrichment does not belong to this exact APL receipt; the GBP source quote is preserved"))
+    if (response.get("transfer") is not None or response.get("route") is not None) and response.get("hotel") is None:
+        response["blockers"].append(blocker("property_metadata_unavailable", "Exact reconciled hotel evidence is required before a transfer can be imported"))
+    if context.get("apl_request"):
+        for name in ("transfer","route"):
+            if response.get(name) is None and not any(item["code"].startswith(name+"_") for item in response["blockers"]):
+                response["blockers"].append(blocker(name+"_unavailable", "The required source result was not supplied; no substitute or retry was created"))
+    quote, route = response["transfer"], response["route"]
+    is_return = context.get("direction") == "hotel_to_airport"
+    point_label = context["assumption"]["dropoff"]["label"] if is_return else context["assumption"]["label"]
+    limits = [aware_timestamp(response["usable_until"]), aware_timestamp(context["request"]["pickup_at"])]
+    if quote:
+        limits.append(aware_timestamp(quote["received_at"])+timedelta(seconds=CACHE_SECONDS))
+        echoed = quote.get("request",{})
+        expected_request = context.get("apl_request",{})
+        try:
+            pickup_matches = aware_timestamp(echoed.get("pickup_at")) == aware_timestamp(expected_request.get("pickup_at"))
+        except (ValueError,TypeError):
+            pickup_matches = False
+        if not pickup_matches or any(echoed.get(key) != value for key,value in expected_request.items() if key!="pickup_at"):
+            response["blockers"].append(blocker("supplier_request_mismatch", "The server-held APL receipt does not match the exact pickup, destination, party and luggage request"))
+        resolved = quote.get("resolved_route", {})
+        if resolved.get("hub") not in (None,context["airport_code"]) or resolved.get("direction") not in (None,"to_hub" if is_return else "from_hub"):
+            response["blockers"].append(blocker("supplier_route_conflict", "APL returned a conflicting airport or direction"))
+        # A supplier pickup terminal is not an onward flight's departure terminal.
+        terminal = None if is_return else resolved.get("pickup_terminal")
+        stated_terminal, returned_terminal = terminal_ids(point_label), terminal_ids(terminal) if terminal else set()
+        if terminal and (len(stated_terminal)!=1 or len(returned_terminal)!=1 or stated_terminal!=returned_terminal):
+            response["blockers"].append(blocker("supplier_terminal_conflict", "The returned supplier terminal does not match the operator-declared meeting point"))
+        meeting = quote.get("meeting_point")
+        meeting_terms = terminal_ids(meeting.get("name")) if isinstance(meeting,dict) and meeting.get("name") else set()
+        if not is_return and meeting_terms and (len(stated_terminal)!=1 or meeting_terms!=stated_terminal):
+            response["blockers"].append(blocker("supplier_terminal_conflict", "APL's pickup instructions name a different terminal from the operator-declared initial point"))
+        if is_return and resolved.get("dropoff") is not None:
+            dropoff = resolved["dropoff"]
+            returned_terms = terminal_ids(dropoff)
+            if not (contains_address(context["airport_code"],dropoff) or contains_address(context["airport_name"],dropoff)):
+                response["blockers"].append(blocker("supplier_airport_unverified", "APL's returned dropoff cannot be reconciled to the selected onward airport"))
+            if returned_terms and (len(stated_terminal)!=1 or returned_terms!=stated_terminal):
+                response["blockers"].append(blocker("supplier_terminal_conflict", "APL's returned dropoff conflicts with the operator-declared airport point; the flight terminal remains unknown"))
+        address = response["hotel"]["address"] if response["hotel"] else None
+        city = response["hotel"].get("city") if response["hotel"] else None
+        source_postcodes = full_postcodes(address) if address else set()
+        destinations = [resolved[key] for key in ("resolved_address","pickup" if is_return else "dropoff") if resolved.get(key) is not None]
+        conflicts = [value for value in destinations if address and (not contains_address(address,value)
+            or (city and not contains_address(city,value) and not (source_postcodes and source_postcodes <= full_postcodes(value))))]
+        if conflicts:
+            response["blockers"].append(blocker("supplier_address_unverified", "APL's returned hotel endpoint cannot be reconciled to this supplier property's exact sourced address"))
+        if not quote.get("options"):
+            response["blockers"].append(blocker("no_vehicle_options", "APL returned no vehicle options for this exact request"))
+    if route:
+        limits.append(aware_timestamp(route["fetched_at"])+timedelta(seconds=CACHE_SECONDS))
+        expected_origin, expected_destination = route_points(context)
+        if route["request"]["origin"] != expected_origin or route["request"]["destination"] != expected_destination or aware_timestamp(route["request"]["departure_time"]) != aware_timestamp(context["request"]["pickup_at"]):
+            response["blockers"].append(blocker("route_request_mismatch", "The dated route evidence does not match the requested points and pickup"))
+        offsets = {side:round(meters_between(route["request"][side],route["road_endpoints"][side]),2) for side in ("origin","destination")}
+        response["road_snap_offsets_m"] = offsets
+        if any(value > MAX_SNAP_METERS for value in offsets.values()):
+            response["blockers"].append(blocker("road_connection_unverified", "Google's road endpoint is over 100 metres from a requested point; this app screening rule cannot verify that physical connection"))
+        arrival = context["departure"]+int((Decimal(route["duration_seconds"])/60).to_integral_value(rounding=ROUND_CEILING))
+        if is_return and arrival+context["assumption"]["processing_minutes"] > context["onward_flight"]["departure"]:
+            response["blockers"].append(blocker("airport_processing_time", "The driving estimate plus the operator-declared airport processing time misses the exact onward flight"))
+        if arrival > min(context["deadline"],HORIZON_MINUTES):
+            response["blockers"].append(blocker("arrival_deadline", "Even the sourced driving estimate arrives after the group's deadline"))
+    response["usable_until"] = min(limits).isoformat()
+    if min(limits) <= now:
+        response["blockers"].append(blocker("source_receipt_expired", "A source receipt or pickup time expired before assessment; a new explicit source request is required"))
+    response["blockers"] = list({(item["code"],item["message"]):item for item in response["blockers"]}.values())
+    if quote and route:
+        for option in quote["options"]:
+            reasons = list(response["blockers"])
+            if not option.get("fits_request"):
+                reasons.append(blocker("party_or_luggage", "This vehicle quote cannot fit the declared party and suitcases"))
+            try:
+                build_apl_price_evidence(quote,option["id"],now=now)
+            except (ValueError,TypeError,KeyError) as exc:
+                reasons.append(blocker("reference_price_unavailable", str(exc)))
+            response["options"].append({"option_id":option["id"],"importable":not reasons,"blockers":reasons})
+        if any(item["importable"] for item in response["options"]):
+            response["state"] = "ready"
+    return response
 
 
 class GroundPlanning:
@@ -346,20 +527,10 @@ class GroundPlanning:
         if "response" in reserved:
             return reserved["response"]
         identity, context = reserved["quote_id"], reserved["context"]
-        assumption = context["assumption"]
-        is_return = context.get("direction") == "hotel_to_airport"
-        response = {"quote_id":identity,"state":"blocked","group_id":context["group_id"],"hotel_node_id":context["hotel_node_id"],
-            "direction":context.get("direction","initial_airport_to_hotel"),"source_version":context["source_version"],"created_at":self.now().isoformat(),
-            "usable_until":(self.now()+timedelta(seconds=CACHE_SECONDS)).isoformat(),
-            "initial_point":None if is_return else {"id":assumption["point_id"],"label":assumption["label"],**assumption["coordinates"],
-                "source":"operator_declared","confirmed":True,"airport_context_id":assumption["airport_context_id"]},
-            "airport_arrival_assumption":copy.deepcopy(assumption) if is_return else None,
-            "onward_flight":copy.deepcopy(context.get("onward_flight")),
-            "geographic_screening":{"airport_reference_distance_m":context["airport_reference_distance_m"],"airport_reference_limit_m":MAX_AIRPORT_POINT_METERS,"road_snap_limit_m":MAX_SNAP_METERS,"policy_source":"application","terminal_or_pedestrian_access_verified":False},
-            "hotel":None,"transfer":None,"route":None,"blockers":[],"options":[],"replayed":False}
+        response = prepare_transfer_response(context, identity, now=self.now())
         try:
             await self._source(context, request, response)
-            self._assess(context, response)
+            response = self._assess(context, response)
             # A request cancellation must not abandon an in-flight SQLite
             # receipt commit or create a second dispatch on an original-key retry.
             saving = asyncio.create_task(asyncio.to_thread(self._finish,identity,context,response))
@@ -383,32 +554,16 @@ class GroundPlanning:
         except ProviderError as exc:
             response["blockers"].append(blocker("hotel_"+exc.code, str(exc)))
             return
-        postal = metadata.get("postal_address")
-        if metadata.get("latitude") != context["hotel_coordinates"]["latitude"] or metadata.get("longitude") != context["hotel_coordinates"]["longitude"]:
-            response["blockers"].append(blocker("property_location_changed", "The exact supplier property's coordinates changed; refresh its sourced hotel node before planning a transfer"))
+        prepared = prepare_transfer_inputs(context, metadata)
+        context.update(prepared["context"])
+        response["hotel"] = prepared["hotel"]
+        response["blockers"].extend(prepared["blockers"])
+        if prepared["blockers"]:
             return
-        if not isinstance(postal, dict) or postal.get("hotel_id") != context["hotel_id"] or not postal.get("address") or not postal.get("country"):
-            response["blockers"].append(blocker("property_address_missing", "The supplier has not provided a usable address and country for this exact hotel; no APL or route request was sent"))
-            return
-        if re.sub(r"[^a-z]", "", postal["country"].lower()) not in ("gb","uk","unitedkingdom","greatbritain") or coordinate_timezone(context["hotel_coordinates"]["latitude"],context["hotel_coordinates"]["longitude"]) != "Europe/London":
-            response["blockers"].append(blocker("property_outside_scope", "This transfer flow supports sourced UK hotel properties only"))
-            return
-        response["hotel"] = {"node_id":context["hotel_node_id"],"hotel_id":context["hotel_id"],"name":postal.get("name") or context["hotel_name"],
-            "address":postal["address"],"city":postal.get("city"),"country":postal["country"],**context["hotel_coordinates"],
-            "source":postal.get("source"),"retrieved_at":postal.get("retrieved_at")}
-        destination = ", ".join(dict.fromkeys(str(item).strip() for item in (postal.get("name") or context["hotel_name"], postal["address"], postal.get("city"), postal["country"]) if item))
-        point = request.airport_dropoff if request.direction == "hotel_to_airport" else request.initial_point
-        origin = f'{context["airport_name"]} ({context["airport_code"]}), {point.label}'
-        if request.direction == "hotel_to_airport":
-            origin, destination = destination, origin
-        if len(origin) > 500 or len(destination) > 500:
-            response["blockers"].append(blocker("source_address_too_long", "The exact property or pickup address exceeds APL's supported input; it was not truncated"))
-            return
-        query = APLQuoteRequest(origin=origin,destination=destination,passengers=context["size"],suitcases=request.suitcases,pickup_at=request.pickup_at,expected_hub=context["airport_code"],expected_direction="to_hub" if request.direction == "hotel_to_airport" else "from_hub")
-        context["apl_request"] = query.model_dump(mode="json")
-        route_origin, route_destination = route_points(context)
+        query = APLQuoteRequest.model_validate(prepared["apl_request"])
+        route_query = prepared["route_request"]
         tasks = [asyncio.create_task(self.transfers.quote(query)),
-                 asyncio.create_task(self.routes.dated_route(route_origin,route_destination,request.pickup_at))]
+                 asyncio.create_task(self.routes.dated_route(route_query["origin"],route_query["destination"],aware_timestamp(route_query["pickup_at"])))]
         try:
             results = await asyncio.gather(*tasks, return_exceptions=True)
         finally:
@@ -425,76 +580,7 @@ class GroundPlanning:
                 response[name] = result
 
     def _assess(self, context, response):
-        quote, route = response["transfer"], response["route"]
-        is_return = context.get("direction") == "hotel_to_airport"
-        point_label = context["assumption"]["dropoff"]["label"] if is_return else context["assumption"]["label"]
-        limits = [aware_timestamp(response["usable_until"]), aware_timestamp(context["request"]["pickup_at"])]
-        if quote:
-            limits.append(aware_timestamp(quote["received_at"])+timedelta(seconds=CACHE_SECONDS))
-            echoed = quote.get("request",{})
-            expected_request = context.get("apl_request",{})
-            try:
-                pickup_matches = aware_timestamp(echoed.get("pickup_at")) == aware_timestamp(expected_request.get("pickup_at"))
-            except (ValueError,TypeError):
-                pickup_matches = False
-            if not pickup_matches or any(echoed.get(key) != value for key,value in expected_request.items() if key!="pickup_at"):
-                response["blockers"].append(blocker("supplier_request_mismatch", "The server-held APL receipt does not match the exact pickup, destination, party and luggage request"))
-            resolved = quote.get("resolved_route", {})
-            if resolved.get("hub") not in (None,context["airport_code"]) or resolved.get("direction") not in (None,"to_hub" if is_return else "from_hub"):
-                response["blockers"].append(blocker("supplier_route_conflict", "APL returned a conflicting airport or direction"))
-            # A supplier pickup terminal is not an onward flight's departure terminal.
-            terminal = None if is_return else resolved.get("pickup_terminal")
-            stated_terminal, returned_terminal = terminal_ids(point_label), terminal_ids(terminal) if terminal else set()
-            if terminal and (len(stated_terminal)!=1 or len(returned_terminal)!=1 or stated_terminal!=returned_terminal):
-                response["blockers"].append(blocker("supplier_terminal_conflict", "The returned supplier terminal does not match the operator-declared meeting point"))
-            meeting = quote.get("meeting_point")
-            meeting_terms = terminal_ids(meeting.get("name")) if isinstance(meeting,dict) and meeting.get("name") else set()
-            if not is_return and meeting_terms and (len(stated_terminal)!=1 or meeting_terms!=stated_terminal):
-                response["blockers"].append(blocker("supplier_terminal_conflict", "APL's pickup instructions name a different terminal from the operator-declared initial point"))
-            if is_return and resolved.get("dropoff") is not None:
-                dropoff = resolved["dropoff"]
-                returned_terms = terminal_ids(dropoff)
-                if not (contains_address(context["airport_code"],dropoff) or contains_address(context["airport_name"],dropoff)):
-                    response["blockers"].append(blocker("supplier_airport_unverified", "APL's returned dropoff cannot be reconciled to the selected onward airport"))
-                if returned_terms and (len(stated_terminal)!=1 or returned_terms!=stated_terminal):
-                    response["blockers"].append(blocker("supplier_terminal_conflict", "APL's returned dropoff conflicts with the operator-declared airport point; the flight terminal remains unknown"))
-            address = response["hotel"]["address"] if response["hotel"] else None
-            city = response["hotel"].get("city") if response["hotel"] else None
-            source_postcodes = full_postcodes(address) if address else set()
-            destinations = [resolved[key] for key in ("resolved_address","pickup" if is_return else "dropoff") if resolved.get(key) is not None]
-            conflicts = [value for value in destinations if address and (not contains_address(address,value)
-                or (city and not contains_address(city,value) and not (source_postcodes and source_postcodes <= full_postcodes(value))))]
-            if conflicts:
-                response["blockers"].append(blocker("supplier_address_unverified", "APL's returned hotel endpoint cannot be reconciled to this supplier property's exact sourced address"))
-            if not quote.get("options"):
-                response["blockers"].append(blocker("no_vehicle_options", "APL returned no vehicle options for this exact request"))
-        if route:
-            limits.append(aware_timestamp(route["fetched_at"])+timedelta(seconds=CACHE_SECONDS))
-            expected_origin, expected_destination = route_points(context)
-            if route["request"]["origin"] != expected_origin or route["request"]["destination"] != expected_destination or aware_timestamp(route["request"]["departure_time"]) != aware_timestamp(context["request"]["pickup_at"]):
-                response["blockers"].append(blocker("route_request_mismatch", "The dated route evidence does not match the requested points and pickup"))
-            offsets = {side:round(meters_between(route["request"][side],route["road_endpoints"][side]),2) for side in ("origin","destination")}
-            response["road_snap_offsets_m"] = offsets
-            if any(value > MAX_SNAP_METERS for value in offsets.values()):
-                response["blockers"].append(blocker("road_connection_unverified", "Google's road endpoint is over 100 metres from a requested point; this app screening rule cannot verify that physical connection"))
-            arrival = context["departure"]+int((Decimal(route["duration_seconds"])/60).to_integral_value(rounding=ROUND_CEILING))
-            if is_return and arrival+context["assumption"]["processing_minutes"] > context["onward_flight"]["departure"]:
-                response["blockers"].append(blocker("airport_processing_time", "The driving estimate plus the operator-declared airport processing time misses the exact onward flight"))
-            if arrival > min(context["deadline"],HORIZON_MINUTES):
-                response["blockers"].append(blocker("arrival_deadline", "Even the sourced driving estimate arrives after the group's deadline"))
-        if quote and route:
-            for option in quote["options"]:
-                reasons = list(response["blockers"])
-                if not option.get("fits_request"):
-                    reasons.append(blocker("party_or_luggage", "This vehicle quote cannot fit the declared party and suitcases"))
-                try:
-                    build_apl_price_evidence(quote,option["id"],now=self.now())
-                except (ValueError,TypeError,KeyError) as exc:
-                    reasons.append(blocker("reference_price_unavailable", str(exc)))
-                response["options"].append({"option_id":option["id"],"importable":not reasons,"blockers":reasons})
-            if any(item["importable"] for item in response["options"]):
-                response["state"] = "ready"
-        response["usable_until"] = min(limits).isoformat()
+        return assess_transfer_sources(context, response, now=self.now())
 
     def import_quote(self, quote_id, request: PlanningTransferImport):
         payload = {"quote_id":quote_id,**request.model_dump(mode="json")}

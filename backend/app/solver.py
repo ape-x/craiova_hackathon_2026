@@ -15,6 +15,7 @@ from .airport_catalog import lookup_airport
 from .weather import departure_allowed, landing_allowed, passenger_arrival_pending
 from .initial_position import valid_initial_position
 from .airport_arrival import valid_airport_arrival
+from .stay_requirements import StayRequirementError, itinerary_stay_errors, read_stay_requirement
 from .pricing import APL_SOURCE, app_receipt_deadline, aware_timestamp, cost_summary, matching_cost_summary, valid_apl_resource_price
 
 
@@ -177,6 +178,7 @@ def connection_minutes(previous: Resource | None, resource: Resource) -> int | N
 
 
 def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Itinerary]:
+    read_stay_requirement(group)  # Invalid initial inputs are not a silent no-route result.
     if passenger_arrival_pending(world,group):
         return []
     options = []
@@ -191,7 +193,7 @@ def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Iti
             return
         previous = resources[legs[-1].resource_id] if legs else None
         if location==group.destination and legs and previous.airport_arrival_assumption is None:
-            if any(leg.kind in ("bus","flight") for leg in legs):
+            if any(leg.kind in ("bus","flight") for leg in legs) and not itinerary_stay_errors(world,group,legs):
                 options.append(Itinerary(legs=legs,arrival=legs[-1].arrival,total_cost=round(cost,2),cost_evidence=cost_summary(legs)))
             return
         if len(legs)>=max_legs or len(options)>=limit:
@@ -246,6 +248,7 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
         if g.id in seen_groups:
             errors.append(f"Duplicate allocation for {g.id}")
         seen_groups.add(g.id)
+        errors.extend(itinerary_stay_errors(world,g,alloc.itinerary.legs))
         location, minute = g.origin,g.ready_at if world.mode=="live" and g.status=="confirmed" else max(world.sim_time,g.ready_at)
         seen_legs, subtotal = set(),0
         if not alloc.itinerary.legs:
@@ -297,12 +300,20 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
     errors.extend(vehicle_schedule_errors([resources[i] for i in occupied_resources]))
     if total_cost > world.budget+0.005:
         errors.append("Scenario budget exceeded")
-    return {"valid":not errors,"errors":errors,"checks":["family_integrity","shared_capacities","temporal_continuity","full_destination","accessibility","deadlines","group_budgets","scenario_budget","hotel_room_occupancy","vehicle_schedule"],"total_committed_cost":round(total_cost,2)}
+    return {"valid":not errors,"errors":errors,"checks":["family_integrity","shared_capacities","temporal_continuity","full_destination","accessibility","deadlines","group_budgets","scenario_budget","hotel_room_occupancy","requested_hotel_stay","vehicle_schedule"],"total_committed_cost":round(total_cost,2)}
 
 
 def validate_plan(world: World, plan: Plan, *, scope_group_ids: set[str] | None = None) -> dict:
     """Recheck allocation facts and the candidate's own monetary summary."""
     result = validate_allocations(world, plan.allocations, scope_group_ids=scope_group_ids)
+    groups = {group.id: group for group in world.groups}
+    for exception in plan.exceptions:
+        group = groups.get(exception.get("group_id"))
+        if group is not None:
+            try:
+                read_stay_requirement(group)
+            except StayRequirementError as exc:
+                result["errors"].append(f"{group.id}: {exc}")
     legs = [leg for allocation in plan.allocations for leg in allocation.itinerary.legs]
     if not matching_cost_summary(legs, plan.cost_evidence, plan.total_cost):
         result["errors"].append("Missing or changed plan cost evidence")
@@ -317,7 +328,12 @@ def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] 
     started = time.perf_counter()
     projected,changes = project_diversion(world,strategy.preferred_airport)
     groups = [g for g in projected.groups if g.status not in ("confirmed","scheduled") and (scope_group_ids is None or g.id in scope_group_ids)]
-    options = {g.id:itinerary_options(projected,g) for g in groups}
+    options, invalid_stays = {}, {}
+    for g in groups:
+        try:
+            options[g.id] = itinerary_options(projected,g)
+        except StayRequirementError as exc:
+            options[g.id], invalid_stays[g.id] = [], str(exc)
     resources = {r.id:r for r in projected.resources}
     fixed = fixed_offers(projected,scope_group_ids)
     fixed_ids = {offer.id for offer in fixed}
@@ -383,7 +399,12 @@ def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] 
     for g in groups:
         if g.id not in recovered:
             reason = "No complete itinerary meets this group's accessibility, deadline, budget and transfer constraints." if not options[g.id] else "Feasible individual routes exist, but shared seats, rooms, vehicle schedules or remaining scenario budget cannot accommodate this indivisible group in this bounded allocation."
-            exception.append({"group_id":g.id,"passengers":g.size,"reason":reason})
+            if g.id in invalid_stays:
+                exception.append({"group_id":g.id,"passengers":g.size,"reason":invalid_stays[g.id],"code":StayRequirementError.code})
+            else:
+                if not options[g.id] and read_stay_requirement(g) is not None:
+                    reason = "No complete sourced itinerary includes the requested hotel interval, room count and rest while meeting the group's other constraints."
+                exception.append({"group_id":g.id,"passengers":g.size,"reason":reason})
     pax = sum(g.size for g in groups if g.id in recovered)
     arrival = sum(a.itinerary.arrival*next(g.size for g in groups if g.id==a.group_id) for a in best)/pax if pax else 0
     plan = Plan(id=f"plan-{strategy.id}",strategy=strategy,allocations=best,exceptions=exception,recovered_passengers=pax,
