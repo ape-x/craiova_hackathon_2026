@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { api, ApiError, TransportError } from './api';
 import { RecoveryJobDetails } from './RecoveryJobPanel';
-import { mergeRecoveryJobs, recoveryJobActive } from './recoveryJobs';
+import { classifyRecoveryJobGaps, mergeRecoveryJobs, recoveryJobActive } from './recoveryJobs';
 import type { RecoveryJob, RecoveryJobInput, RecoveryJobResponse, World } from './types';
 
 const input: RecoveryJobInput = {
@@ -235,6 +235,76 @@ function completedWithWait(overrides: Partial<RecordedWait> = {}): RecoveryJob {
     },
   };
 }
+
+describe('search exclusions versus unresolved passenger requirements', () => {
+  const exclusion = {
+    code: 'quote_not_usable',
+    message: 'Sourced offer does not meet this incident’s route or timing constraints.',
+    group_ids: ['G-1'],
+  };
+  const emptySearch = {
+    code: 'no_flight_offers',
+    message: 'No offers returned for one selected dated search.',
+    group_ids: ['G-1'],
+  };
+
+  it('keeps a successful two-passenger proposal successful when other supplier alternatives were rejected', () => {
+    const completed = completedWithWait();
+    completed.result!.waits = [];
+    completed.gaps = [exclusion, emptySearch];
+    const html = renderToStaticMarkup(<RecoveryJobDetails job={completed} world={waitWorld} />);
+    expect(html).toContain('<strong>2</strong> passengers proposed');
+    expect(html).toContain('<strong>0</strong> with unresolved requirements');
+    expect(html).toContain('Source exclusions and search outcomes');
+    expect(html).toContain(exclusion.message);
+    expect(html).toContain(emptySearch.message);
+    expect(html).toContain('Groups: G-1');
+    expect(html).not.toContain('Requirements still unresolved');
+    expect(html).not.toContain('aria-label="Recovery gaps"');
+  });
+
+  it('preserves real missing requirements separately when the attempt has no complete journey', () => {
+    const missing = {
+      code: 'no_complete_journey',
+      message: 'No complete sourced itinerary passed the required checks.',
+      group_ids: ['G-1'],
+    };
+    const blocked: RecoveryJob = {
+      ...job,
+      status: 'blocked',
+      stage: 'finished',
+      gaps: [exclusion, missing],
+    };
+    const html = renderToStaticMarkup(<RecoveryJobDetails job={blocked} world={waitWorld} />);
+    const requirements = html.split('aria-label="Recovery gaps"')[1].split('</section>')[0];
+    expect(requirements).toContain('Requirements still unresolved');
+    expect(requirements).toContain(missing.message);
+    expect(requirements).not.toContain(exclusion.message);
+    const sources = html
+      .split('aria-label="Source exclusions and search outcomes"')[1]
+      .split('</section>')[0];
+    expect(sources).toContain(exclusion.message);
+    expect(sources).not.toContain(missing.message);
+  });
+
+  it('retains every recorded reason and does not downgrade new or explicit requirements', () => {
+    const wait = {
+      code: 'overnight_wait_without_accommodation',
+      message: 'Review the overnight wait.',
+      group_ids: ['G-1'],
+    };
+    const unknown = {
+      code: 'future_required_constraint',
+      message: 'A newly supported mandatory condition is not satisfied.',
+      group_ids: ['G-2'],
+    };
+    expect(classifyRecoveryJobGaps([exclusion, wait, unknown, emptySearch])).toEqual({
+      requirements: [unknown],
+      sourceExclusions: [exclusion, emptySearch],
+      waitingNotes: [wait],
+    });
+  });
+});
 
 describe('recorded waits and local time', () => {
   it('shows elapsed duration and source-location local times without making an overnight wait a failure', () => {

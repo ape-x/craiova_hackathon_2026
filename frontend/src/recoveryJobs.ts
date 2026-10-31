@@ -3,6 +3,20 @@ import type { RecoveryJob, RecoveryJobStage } from './types';
 export const recoveryJobActive = (job: RecoveryJob): boolean =>
   job.status === 'queued' || job.status === 'running';
 
+/** Search outcomes describe alternatives; they do not invalidate a selected plan. */
+export function classifyRecoveryJobGaps(gaps: RecoveryJob['gaps']) {
+  const requirements: RecoveryJob['gaps'] = [];
+  const sourceExclusions: RecoveryJob['gaps'] = [];
+  const waitingNotes: RecoveryJob['gaps'] = [];
+  for (const gap of gaps) {
+    if (gap.code === 'overnight_wait_without_accommodation') waitingNotes.push(gap);
+    else if (gap.code === 'quote_not_usable' || gap.code === 'no_flight_offers')
+      sourceExclusions.push(gap);
+    else requirements.push(gap); // Unknown requirements remain visible, never silently downgraded.
+  }
+  return { requirements, sourceExclusions, waitingNotes };
+}
+
 export const recoveryStageLabel: Record<RecoveryJobStage, string> = {
   queued: 'Queued',
   validating: 'Checking case and passenger requirements',

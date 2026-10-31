@@ -10,7 +10,12 @@ import type {
 } from './types';
 import { passengerSourceLabel } from './liveData';
 import { utcTimestamp } from './recoveryCase';
-import { mergeRecoveryJobs, recoveryJobActive, recoveryStageLabel } from './recoveryJobs';
+import {
+  classifyRecoveryJobGaps,
+  mergeRecoveryJobs,
+  recoveryJobActive,
+  recoveryStageLabel,
+} from './recoveryJobs';
 import { Tag } from './ui';
 
 function waitDuration(minutes: number): string {
@@ -48,8 +53,11 @@ function waitClock(from: string, to: string, timezone: string | null) {
 
 export function RecoveryJobDetails({ job, world }: { job: RecoveryJob; world: World }) {
   const result = job.result;
-  const waitNotes = job.gaps.filter((gap) => gap.code === 'overnight_wait_without_accommodation');
-  const unresolved = job.gaps.filter((gap) => gap.code !== 'overnight_wait_without_accommodation');
+  const {
+    requirements: unresolved,
+    sourceExclusions,
+    waitingNotes: waitNotes,
+  } = classifyRecoveryJobGaps(job.gaps);
   const currentOfferIds = new Set(
     world.offers
       .filter(
@@ -180,6 +188,23 @@ export function RecoveryJobDetails({ job, world }: { job: RecoveryJob; world: Wo
             {unresolved.map((gap, index) => (
               <li key={`${gap.code}-${index}`}>
                 <strong>{gap.message}</strong>
+                {gap.group_ids.length > 0 && <small>Groups: {gap.group_ids.join(', ')}</small>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {sourceExclusions.length > 0 && (
+        <section className="case-job-gaps" aria-label="Source exclusions and search outcomes">
+          <h4>Source exclusions and search outcomes</h4>
+          <p className="field-hint">
+            These reasons describe alternatives that were excluded or searches that returned no
+            offers. They do not indicate an unresolved requirement in a selected proposal.
+          </p>
+          <ul>
+            {sourceExclusions.map((gap, index) => (
+              <li key={`${gap.code}-${index}`}>
+                <span>{gap.message}</span>
                 {gap.group_ids.length > 0 && <small>Groups: {gap.group_ids.join(', ')}</small>}
               </li>
             ))}
