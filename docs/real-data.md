@@ -235,12 +235,41 @@ Official operator/marketplace listings identify these airport routes:
 - [BILETERIA: SBZ airport → OTP airport](https://bileteria.ro/Transport/SibiuAeroportInternational-Otopeni),
   with operator-specific itineraries and purchase cutoffs.
 
-These are route listings and a consumer checkout path, not an implemented
-integration, a requested-date quote, or proof of seats for a recovery group.
-No dated search, account creation or booking was performed for this review.
-Actual stops, connections, passenger count, luggage terms, fare currency,
-purchase cutoff and availability would need verification for the chosen trip;
-a request-only service must not be presented as an immediately confirmed seat.
+That 31 October review established route listings and a consumer checkout path,
+not an implemented integration, a requested-date fare or proof of seats for a
+recovery group. No dated search, account creation or booking was performed in
+that earlier review.
+
+A subsequent read-only consumer search on 1 November 2026 selected **Aeroport
+Craiova → Aeroport Otopeni, 2 November 2026, two adults**. The
+[exact dated search](https://www.bileteria.ro/Transport/AeroportCraiova-Otopeni?zi=2026-11-02&pas=2-0-0-0-0)
+displayed Union Business & Travel services at **190 lei for the selected party**;
+the preceding one-adult search displayed 95 lei. One example departed at 00:15
+and arrived at 03:20, from CRA **Terminal Plecari/Sosiri** to OTP **Terminal
+PLECARI/ DEPARTURES**. These are the site's displayed times; no UTC offset was
+shown. An enabled **Cumpără bilet** button and the wording **Se pot face
+rezervări înainte de îmbarcare** were present. A connecting B&B result lacked a
+price and cannot be treated as a zero-cost offer.
+
+The search required no account or transport-company registration. A separate
+unauthenticated HTTP GET to the same public URL returned 200 with the selected
+date, party parameter, fare and stop names in the HTML. This establishes a
+technical path for a bounded automatic consumer-search adapter; none is
+implemented in the app yet. It does not establish a supported inventory API or
+an integration contract.
+
+The displayed party fare and purchase button are **not proof that two seats were
+checked, held or reserved**. No remaining-seat count or supplier quote expiry was
+exposed. The boarding wording is retained as source text, not invented as a
+quote-expiration timestamp. The check stopped at fare display without clicking
+the purchase button, creating an account or reservation, accepting terms or
+making a payment. Any
+future adapter must preserve original RON pricing, exact dated party/stops,
+source observation time and unknown availability/expiry; EUR conversion needs
+explicit estimate provenance. Luggage terms, current sellability and any
+connections still need verification for the selected trip. An application cache
+lifetime cannot be presented as a supplier hold.
+
 No open consumer inventory API was verified. The
 [documented Autogari API](https://www.autogari.ro/blog/beneficiile-si-costurile-ecosistemului-autogari-ro/)
 concerns transport-operator system synchronization and commercial onboarding,
