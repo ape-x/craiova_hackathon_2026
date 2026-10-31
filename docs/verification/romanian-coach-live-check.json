@@ -1,0 +1,100 @@
+{
+  "state": "verified_manual_consumer_fare_search",
+  "observed_at": "2026-10-31T23:31:39+00:00",
+  "runtime": {
+    "api_revision": "e35cdeb",
+    "frontend_revision": "e35cdeb",
+    "bundle": "/assets/index-C8uAWHq9.js",
+    "application": "http://localhost:8080"
+  },
+  "request": {
+    "origin_airport": "CRA",
+    "destination_airport": "OTP",
+    "travel_date": "2026-11-02",
+    "adults": 2
+  },
+  "manual_search_submissions": 1,
+  "provider": "BILETERIA",
+  "direct_fare_count": 14,
+  "excluded_source_rows": 1,
+  "source_url": "https://www.bileteria.ro/Transport/AeroportCraiova-Otopeni?zi=2026-11-02&pas=2-0-0-0-0",
+  "sample": {
+    "operator": "Union Business & Travel",
+    "departure_date": "2026-11-02",
+    "departure_time": "00:15",
+    "arrival_date": "2026-11-02",
+    "arrival_time": "03:20",
+    "duration_text": "3h 05m",
+    "departure_stop": "Aeroport Craiova · Terminal Plecari/Sosiri",
+    "arrival_stop": "Aeroport Otopeni · Terminal PLECARI/ DEPARTURES",
+    "original_price": {
+      "amount": "190.00",
+      "currency": "RON",
+      "scope": "requested_party",
+      "adults": 2
+    },
+    "eur_reference_estimate": "35.55",
+    "seat_availability": null,
+    "supplier_valid_until": null,
+    "source_utc_offset": null,
+    "advance_reservation_notice_present": true
+  },
+  "overnight_examples": [
+    {
+      "departure_date": "2026-11-02",
+      "departure_time": "21:10",
+      "arrival_date": "2026-11-03",
+      "arrival_time": "00:10"
+    },
+    {
+      "departure_date": "2026-11-02",
+      "departure_time": "22:10",
+      "arrival_date": "2026-11-03",
+      "arrival_time": "01:10"
+    }
+  ],
+  "fx": {
+    "source": "European Central Bank",
+    "source_currency": "RON",
+    "base_currency": "EUR",
+    "rate_date": "2026-10-30",
+    "source_units_per_eur": "5.3447",
+    "as_of": "2026-10-31T23:31:39+00:00",
+    "max_age_calendar_days": 3,
+    "age_timezone": "Europe/Berlin",
+    "settlement_guaranteed": false
+  },
+  "verification": {
+    "browser_console_errors": 0,
+    "operational_fields_unchanged": true,
+    "world_version_before": 49,
+    "world_version_after": 49,
+    "group_count": 2,
+    "resource_count": 24,
+    "confirmed_resources": 0,
+    "confirmed_offers": 0,
+    "flight_feed_running": false,
+    "new_application_server_started": false,
+    "new_voice_session_started": false,
+    "new_recovery_model_call_started": false,
+    "checkout_requested": false,
+    "booking_or_hold_created": false,
+    "github_actions": {
+      "revision": "e35cdeb",
+      "main": {
+        "run_number": 117,
+        "conclusion": "success"
+      },
+      "codex/airport-recovery-live": {
+        "run_number": 116,
+        "conclusion": "success"
+      }
+    }
+  },
+  "limits": [
+    "This verifies browser → authenticated API → public consumer source/ECB → displayed references, not verified seats or a complete ground itinerary.",
+    "Automatic recovery call accounting and reference exclusion are verified offline with mocked sources; no new live automatic recovery job was started.",
+    "Source local clocks lack a supplier UTC offset. Enabled purchase actions do not establish party availability.",
+    "The adapter supports only CRA→OTP and adult-only groups of 1–8; unsupported connections and other routes are not silently substituted."
+  ]
+}
