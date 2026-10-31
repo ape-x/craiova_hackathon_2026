@@ -2,6 +2,14 @@
 
 The command bar and voice agent accept a complete new simulation in ordinary Romanian or English. A request to create a demonstration authorizes the agent to choose missing synthetic counts, fares, schedules and budgets; the verified response states those assumptions. Changing an existing scenario does not authorize silently inventing additional inventory.
 
+To keep demonstrations separate from an instance using real inventory, run:
+
+```sh
+docker compose -p airport-recovery-simulation -f compose.yaml -f compose.simulation.yaml up -d --build
+```
+
+The simulator is at **http://localhost:8081** and has its own database volume. The distinct project name is required. It uses the server credentials already configured in `backend/.env`; those credentials are not copied into the browser. The regular instance on port 8080 keeps its current mode and inventory.
+
 Example:
 
 > Resetează complet simularea și creează de la zero un scenariu nou: furtună la Lisabona, aeroportul nu permite aterizări, iar un avion este deja în aer spre Lisabona cu pasageri la bord. Alege tu cea mai bună deviere și organizează transportul pasagerilor până la destinație.
