@@ -65,7 +65,7 @@ export default function WorkspaceHeader(props: Props) {
         <button
           className="icon-button header-help"
           onClick={props.onHelp}
-          aria-label={props.mode === 'live' ? 'Live operation guide' : 'Demo guide'}
+          aria-label={props.mode === 'live' ? 'Operation guide' : 'Simulation guide'}
           title="Guide"
         >
           <HelpCircle size={18} />

@@ -205,7 +205,7 @@ export default function LiveTravelSearch({
                 {world.groups.map((group) => (
                   <option key={group.id} value={group.id}>
                     {group.name} · {group.size} people
-                    {group.source === 'synthetic' ? ' · TEST' : ''}
+                    {group.source === 'synthetic' ? ' · Planning assumptions' : ''}
                   </option>
                 ))}
               </select>

@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Check,
   Globe2,
-  HelpCircle,
   Loader2,
   LogOut,
   Mic,
@@ -644,7 +643,7 @@ function Operations() {
                 onClick={showScenario}
                 title={
                   live
-                    ? 'Manage live operation data and test passengers'
+                    ? 'Manage passenger requirements and sourced services'
                     : 'Change the simulation conditions or describe a scenario by voice or text'
                 }
               >
@@ -680,7 +679,7 @@ function Operations() {
         />
       </div>
       <footer
-        aria-label="Scenario assistant"
+        aria-label={live ? 'Recovery assistant' : 'Scenario assistant'}
         className={`voice-console ${isVoiceActive ? 'listening' : ''}`}
       >
         <button
@@ -809,9 +808,6 @@ function Operations() {
               {(lastDecision.latency_ms / 1000).toFixed(2)}s <span>last decision</span>
             </span>
           )}
-          <button onClick={() => setModal('help')} className="icon-button" aria-label="Demo guide">
-            <HelpCircle size={17} />
-          </button>
         </div>
       </footer>
       {notice && (
@@ -937,12 +933,17 @@ function Operations() {
         </Modal>
       )}
       {modal === 'help' && live && (
-        <Modal title="Live assisted recovery" onClose={closeModal}>
+        <Modal title="Operation guide" onClose={closeModal}>
           <p className="modal-copy">
-            Generate clearly marked test passengers or import a real manifest. Add live provider
-            quotes or inventory confirmed by an operator. Replan proposes complete journeys;
-            passenger acceptance saves a preference. Record supplier confirmations only after each
-            service has actually been booked.
+            Import the affected passenger manifest, or enter clearly labeled planning assumptions
+            while passenger details are unavailable. Search connected suppliers and add current
+            quotes or documented operator-verified services to the operation. Evaluate complete
+            journeys using those resources and the passengers’ requirements.
+          </p>
+          <p className="modal-copy">
+            Flight observations establish aircraft context; they do not establish a disruption or
+            bookable seats. Passenger acceptance records a preference. Record supplier confirmations
+            only after every service has actually been booked for verified passengers.
           </p>
           <button className="primary-button" onClick={() => setModal('live-data')}>
             Manage operation data

@@ -52,7 +52,7 @@ function SourceStatus({ section }: { section: RealDataSection<unknown> }) {
       )}
       <Tag tone={section.state === 'ready' && !testAccess ? 'cyan' : 'amber'}>
         {testAccess
-          ? 'TEST ACCESS'
+          ? 'NON-PRODUCTION SOURCE'
           : section.state === 'ready'
             ? 'SOURCE DATA'
             : section.state === 'not_configured'
@@ -142,7 +142,7 @@ export default function RealDataDialog({
         airports.some((airport) => airport.code === code),
       )
     ) {
-      setError('The scenario airports changed. Choose the current airports again.');
+      setError('The operation locations changed. Choose the current airports again.');
       return;
     }
     currentRequest.current?.abort();
@@ -435,8 +435,8 @@ export default function RealDataDialog({
             {(result.hotel_offers.state === 'sandbox' ||
               result.hotel_offers.mode === 'sandbox') && (
               <p className="field-hint">
-                This supplier is connected in test mode. Live room prices and availability are not
-                available through this connection.
+                This supplier connection does not provide production inventory. Live room prices and
+                availability are unavailable through this connection.
               </p>
             )}
             {result.hotel_offers.state === 'ready' &&
@@ -471,8 +471,9 @@ export default function RealDataDialog({
             )}
           </section>
           <p className="real-data-footnote">
-            External results are reference data. The recovery scenario uses its own simulated
-            inventory; this search does not change it.
+            Place listings and road routes are reference information, not confirmed availability.
+            Supplier quotes must be imported into the operation before planning. This search does
+            not change inventory or make bookings.
           </p>
           {(result.hotels.source.includes('OpenStreetMap') ||
             result.transport.source.includes('OSRM')) && (

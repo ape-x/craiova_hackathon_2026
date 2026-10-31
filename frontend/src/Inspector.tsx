@@ -23,6 +23,7 @@ import { Dot, Tag } from './ui';
 import { observationInfo } from './observation';
 import { AirportWeatherStatus } from './WeatherStatus';
 import { airportWeatherState } from './weather';
+import { passengerSourceLabel } from './liveData';
 
 export function ItineraryView({
   offer,
@@ -617,10 +618,7 @@ export default function Inspector({
               </div>
               <div>
                 <span className="eyebrow">
-                  {group.id} ·{' '}
-                  {group.source === 'manifest_import'
-                    ? 'imported passengers'
-                    : 'synthetic test passengers'}
+                  {group.id} · {passengerSourceLabel(group.source)}
                 </span>
                 <h3>{group.name}</h3>
                 <span>{group.size} people travelling together</span>
@@ -873,7 +871,7 @@ export default function Inspector({
             </div>
             <p className="muted small">
               {provenance.label === 'SANDBOX'
-                ? 'Static provider sample used for integration testing.'
+                ? 'Provider sample. This is not live operational data.'
                 : provenance.label === 'STALE'
                   ? 'This position is old. Current aircraft location is unverified.'
                   : 'Last received aircraft position from the connected feed.'}

@@ -14,6 +14,12 @@ export const MANIFEST_COLUMNS = [
 ] as const;
 export const MANIFEST_TEMPLATE = MANIFEST_COLUMNS.join(',') + '\n';
 
+export function passengerSourceLabel(source?: string): string {
+  if (source === 'manifest_import') return 'Imported manifest';
+  if (source === 'synthetic') return 'Planning assumptions';
+  return 'Source unverified';
+}
+
 export function supplierStationRoute(segment: unknown): string | null {
   if (!segment || typeof segment !== 'object') return null;
   const stationName = (side: 'departure_station' | 'arrival_station') => {

@@ -122,7 +122,7 @@ export default function ResourceRail({
       {world.mode === 'live' && (
         <button className="real-data-launch" onClick={onLiveData}>
           <Users size={16} aria-hidden="true" />
-          <span>Operation data &amp; test passengers</span>
+          <span>Passenger requirements &amp; services</span>
           <ArrowUpRight size={13} aria-hidden="true" />
         </button>
       )}
@@ -170,7 +170,7 @@ export default function ResourceRail({
           <div className="rail-secondary">
             <p className="field-hint">
               {!world.groups.length
-                ? 'Generate test passengers or import your manifest.'
+                ? 'Import a passenger manifest or enter planning assumptions.'
                 : 'Add real supplier quotes or verified transport to plan recovery.'}
             </p>
             <button className="secondary-button" onClick={onLiveData}>
@@ -213,7 +213,7 @@ export default function ResourceRail({
                   <small>
                     {group.id} · {group.size} {group.size === 1 ? 'passenger' : 'passengers'} ·{' '}
                     {group.destination}
-                    {group.source === 'synthetic' ? ' · TEST' : ''}
+                    {group.source === 'synthetic' ? ' · Planning assumptions' : ''}
                   </small>
                 </span>
                 {group.accessible ? (

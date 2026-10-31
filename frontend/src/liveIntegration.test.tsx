@@ -122,6 +122,8 @@ describe('integrated live and simulation presentation', () => {
       );
       expect(html).toContain(mode === 'live' ? 'Live · assisted' : 'Simulation');
       if (mode === 'live') expect(html).not.toContain('Simulation');
+      expect(html).toContain(mode === 'live' ? 'Operation guide' : 'Simulation guide');
+      expect(html).not.toContain('Demo guide');
       expect(html).toContain('Switch to dark mode');
     }
   });
@@ -183,6 +185,21 @@ describe('integrated live and simulation presentation', () => {
     expect(coach).toContain('SIMULATED RESOURCE');
     expect(coach).toContain('Available');
     expect(coach).not.toContain('Verified');
+  });
+  it('distinguishes planning assumptions, imported manifests and missing passenger provenance', () => {
+    const world = operation('live', 'proposed');
+    for (const [source, label] of [
+      ['synthetic', 'Planning assumptions'],
+      ['manifest_import', 'Imported manifest'],
+      [undefined, 'Source unverified'],
+    ] as const) {
+      world.groups[0].source = source;
+      const html = render(world, 'FAMILY-1');
+      expect(html).toContain(label);
+      expect(html).not.toContain('test passengers');
+      expect(html).not.toContain('Supplier bookings confirmed');
+      if (source !== 'manifest_import') expect(html).not.toContain('Imported manifest');
+    }
   });
   it('keeps simulated airport closures visible despite the reference status defaulting to unknown', () => {
     const world = operation('simulation', 'held');

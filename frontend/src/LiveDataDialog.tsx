@@ -91,7 +91,7 @@ export default function LiveDataDialog({
   onClose: () => void;
   onApplied: (result: MutationResult) => void;
 }) {
-  const [tab, setTab] = useState<Tab>('generate');
+  const [tab, setTab] = useState<Tab>('passengers');
   const [csv, setCsv] = useState('');
   const [generated, setGenerated] = useState({
     passengers: '20',
@@ -268,7 +268,9 @@ export default function LiveDataDialog({
       return;
     }
     if (world.groups.find((group) => group.id === selectedOffer.group_id)?.source === 'synthetic') {
-      setError('Test passengers cannot receive real supplier bookings.');
+      setError(
+        'Planning assumptions cannot receive supplier bookings. Import the actual passenger manifest first.',
+      );
       return;
     }
     try {
@@ -300,17 +302,17 @@ export default function LiveDataDialog({
     URL.revokeObjectURL(url);
   }
   return createPortal(
-    <Modal title="Live operation · verified data" onClose={close} wide>
+    <Modal title="Operation data" onClose={close} wide>
       <p className="live-dialog-intro">
-        Generate clearly marked test passengers or import a real manifest. Add transport and hotel
-        inventory from verified suppliers.
+        Import a passenger manifest or enter explicitly labeled planning assumptions. Transport and
+        accommodation must come from live supplier quotes or documented operator verification.
       </p>
       <div className="live-tabs" role="tablist" aria-label="Live data actions">
         {(
           [
             ['search', 'Find live travel'],
-            ['generate', 'Test passengers'],
-            ['passengers', 'Import CSV'],
+            ['generate', 'Planning assumptions'],
+            ['passengers', 'Passenger manifest'],
             ['transport', 'Transport'],
             ['hotels', 'Hotel quotes'],
             ['confirm', 'Booking confirmations'],
@@ -358,7 +360,7 @@ export default function LiveDataDialog({
               };
               void send(
                 () => api.liveInput(world, 'generate-passengers', payload),
-                'Test passenger groups generated',
+                'Planning assumptions saved',
               );
             } catch (cause) {
               setError((cause as Error).message);
@@ -366,10 +368,11 @@ export default function LiveDataDialog({
           }}
         >
           <fieldset className="live-form-fieldset" disabled={busy || Boolean(uncertain)}>
-            <Tag tone="amber">SYNTHETIC TEST PASSENGERS</Tag>
+            <Tag tone="amber">PLANNING ASSUMPTIONS</Tag>
             <p className="field-hint">
-              These passengers are generated for recovery testing. Transport, prices and room quotes
-              remain supplier data.
+              These groups represent assumed passenger requirements, not verified passenger
+              identities. They can be evaluated against real services but cannot receive supplier
+              booking confirmations. Import the actual manifest before booking.
             </p>
             <div className="live-form-grid">
               {(
@@ -439,7 +442,7 @@ export default function LiveDataDialog({
               </Field>
             </div>
             <button className="primary-button" type="submit">
-              <Plus size={14} /> Generate test passengers
+              <Plus size={14} /> Save planning assumptions
             </button>
           </fieldset>
         </form>
@@ -740,8 +743,8 @@ export default function LiveDataDialog({
           <fieldset disabled={busy || Boolean(uncertain)} className="live-form-fieldset">
             <p className="field-hint">
               Use this only after every segment has actually been booked with its supplier.
-              Passenger acceptance alone does not book a service. Test passenger groups cannot
-              receive real bookings.
+              Passenger acceptance alone does not book a service. Groups based on planning
+              assumptions cannot receive supplier booking confirmations.
             </p>
             <Field label="Current itinerary">
               <select
@@ -762,7 +765,7 @@ export default function LiveDataDialog({
                     {offer.group_id} · {offer.id} · {offer.status}
                     {world.groups.find((group) => group.id === offer.group_id)?.source ===
                     'synthetic'
-                      ? ' · TEST GROUP'
+                      ? ' · Planning assumptions'
                       : ''}
                   </option>
                 ))}
