@@ -1,0 +1,85 @@
+{
+  "checked_at": "2026-10-31T10:48:07.082219+00:00",
+  "scope": "Authorized bounded live account/model check; no microphone or live scenario mutation.",
+  "api_origin": "https://api.openai.com",
+  "credential_present": true,
+  "credential_file_private": true,
+  "requested_models": [
+    "gpt-6.1-sol",
+    "gpt-6-luna",
+    "gpt-live-1"
+  ],
+  "requested_service_tier": "ultrafast",
+  "model_access": {
+    "gpt-6.1-sol": {
+      "listed": true
+    },
+    "gpt-6-luna": {
+      "listed": true
+    },
+    "gpt-live-1": {
+      "listed": true
+    }
+  },
+  "interpretation": {
+    "state": "passed",
+    "command_kind": "visual_focus_only",
+    "world_groups": 1,
+    "world_resources": 4,
+    "max_output_tokens": 3000,
+    "latency_ms": 3178.2,
+    "focus_id_matches": true,
+    "event_count": 0,
+    "strategy_count": 0,
+    "requested_tier_confirmed": true,
+    "schema_validated": true,
+    "references_validated": true
+  },
+  "decisions": {
+    "state": "passed",
+    "candidate_count": 2,
+    "local_candidates_validated": true,
+    "latency_ms": 858.6,
+    "selected_from_validated_candidates": true,
+    "selected_earliest_arrival": true,
+    "selected_recovered_passengers": 4,
+    "selected_total_cost_eur": 720.0,
+    "selected_arrival_minutes": 1080.0
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/v1/models",
+      "http_status": 200,
+      "latency_ms": 1331.5
+    },
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "http_status": 200,
+      "usage": {
+        "input_tokens": 1568,
+        "output_tokens": 41,
+        "total_tokens": 1609
+      },
+      "reported_model": "gpt-6.1-sol",
+      "reported_service_tier": "ultrafast"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/decisions",
+      "http_status": 200,
+      "usage": {
+        "input_tokens": 1276,
+        "output_tokens": 0,
+        "total_tokens": 1276
+      },
+      "reported_model": "gpt-6-luna"
+    }
+  ],
+  "authentication": {
+    "state": "verified",
+    "http_status": 200
+  },
+  "updated_at": "2026-10-31T10:49:09.818960+00:00"
+}

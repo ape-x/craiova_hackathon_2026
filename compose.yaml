@@ -1,0 +1,44 @@
+name: airport-recovery-live
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - path: backend/.env
+        required: false
+    environment:
+      ENVIRONMENT: development
+      DATABASE_PATH: /data/recovery.sqlite3
+      PUBLIC_BASE_URL: http://localhost:8080
+      ALLOWED_HOSTS: localhost,127.0.0.1,api
+      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+    volumes:
+      - recovery_data:/data
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - 127.0.0.1:8080:8080
+    environment:
+      SITE_ADDRESS: :8080
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  recovery_data:
+  caddy_data:
+  caddy_config:

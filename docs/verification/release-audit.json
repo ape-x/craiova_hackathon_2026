@@ -1,0 +1,19 @@
+{
+  "backend_tests_passed": 95,
+  "frontend_tests_passed": 34,
+  "initial_version": 10,
+  "final_clean_version": 18,
+  "revoked_confirmation_replay_http": 404,
+  "repeated_diversion_preserves_confirmation": true,
+  "ready": {
+    "status": "ready",
+    "database": "connected",
+    "simulation": true
+  },
+  "provider_configuration": {
+    "openai": false,
+    "fr24": false,
+    "google_maps": false
+  },
+  "external_calls_made": false
+}

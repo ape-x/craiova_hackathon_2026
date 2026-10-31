@@ -1,0 +1,63 @@
+{
+  "checked_at": "2026-10-31T11:28:04.391210+00:00",
+  "scope": "one GPT-Live WebRTC transport check with synthetic silence only",
+  "requested_model": "gpt-live-1",
+  "api_origin": "https://api.openai.com",
+  "aiortc_version": "1.15.0",
+  "application_watchdog_seconds": 30,
+  "planned_connected_seconds_before_close": 5,
+  "maximum_connected_seconds_before_close": 10,
+  "microphone_accessed": false,
+  "ambient_audio_recorded": false,
+  "speaker_playback_used": false,
+  "operational_world_accessed_or_mutated": false,
+  "delegated_backend_work_executed": false,
+  "secrets_sdp_session_ids_network_addresses_saved": false,
+  "model_output_text_saved": false,
+  "session_creation_attempts": 1,
+  "retries": 0,
+  "official_origin_verified": true,
+  "peer_connected": true,
+  "data_channel_opened": true,
+  "session_started_received": true,
+  "requested_model_confirmed": true,
+  "sideband_connected": true,
+  "session_close_sent_on_data_channel": true,
+  "session_closed_received": true,
+  "session_closed_sources": [
+    "sideband",
+    "data_channel"
+  ],
+  "final_usage_seconds": 15.0,
+  "finalization_confirmed": true,
+  "state": "passed",
+  "sources": [
+    "https://developers.openai.com/api/docs/guides/voice-webrtc",
+    "https://developers.openai.com/api/docs/guides/live-conversations",
+    "https://developers.openai.com/api/docs/guides/voice-server-controls",
+    "https://aiortc.readthedocs.io/en/latest/api.html"
+  ],
+  "limitations": [
+    "Synthetic silence verifies transport and lifecycle only.",
+    "No user microphone, spoken command, delegation, audible playback or interruption was tested.",
+    "This is one bounded account check, not a reliability or latency benchmark."
+  ],
+  "http_status": 201,
+  "http_response_headers_ms": 1226.9,
+  "handshake_and_sideband_ms": 1842.3,
+  "connected_seconds_before_close": 5.003,
+  "close_reason": "close_requested",
+  "server_watchdog_final_state": "closed",
+  "synthetic_silent_frames_sent": 293,
+  "nonzero_generated_audio_frames": 0,
+  "elapsed_ms": 8439.8,
+  "event_counts": {
+    "data_channel:session.closed": 1,
+    "data_channel:session.started": 1,
+    "sideband:session.closed": 1,
+    "sideband:session.input_audio.append": 27,
+    "sideband:session.output_audio.delta": 22,
+    "sideband:session.started": 1
+  },
+  "updated_at": "2026-10-31T11:28:12.831292+00:00"
+}

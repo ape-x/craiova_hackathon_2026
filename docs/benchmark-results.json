@@ -1,0 +1,1414 @@
+{
+  "measured_at": "2026-10-31T05:58:15.828857+00:00",
+  "mode": "deterministic_solver_only",
+  "ai_calls": 0,
+  "optimality": "feasible heuristic; global optimality not proven",
+  "environment": {
+    "python": "3.12.16",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "architecture": "arm64",
+    "processor": "Apple M1 Max",
+    "logical_cpus": 10
+  },
+  "measurement": "In-process service and local SQLite, no HTTP/network/provider latency; warm imports, fresh database per sample; p95 uses nearest rank; server_total excludes telemetry write and response transmission.",
+  "cases": [
+    {
+      "passengers": 180,
+      "scenario": "initial_cancellation",
+      "sample_count": 12,
+      "timings_ms": {
+        "interpretation_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "solver_ms": {
+          "median": 32.51,
+          "p95": 38.87,
+          "min": 31.7,
+          "max": 38.87
+        },
+        "decisions_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "apply_ms": {
+          "median": 0.71,
+          "p95": 0.89,
+          "min": 0.64,
+          "max": 0.89
+        },
+        "transaction_ms": {
+          "median": 5.51,
+          "p95": 11.3,
+          "min": 5.11,
+          "max": 11.3
+        },
+        "server_total_ms": {
+          "median": 40.15,
+          "p95": 46.69,
+          "min": 38.09,
+          "max": 46.69
+        },
+        "handler_wall_ms": {
+          "median": 41.5,
+          "p95": 47.88,
+          "min": 39.35,
+          "max": 47.88
+        }
+      },
+      "outcomes": [
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 120,
+          "exceptions": 0,
+          "validated": true,
+          "candidate_count": 3
+        }
+      ],
+      "raw_samples_ms": [
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 32.55,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.78,
+          "transaction_ms": 6.65,
+          "server_total_ms": 40.96,
+          "handler_wall_ms": 42.36
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 38.87,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.69,
+          "transaction_ms": 5.57,
+          "server_total_ms": 46.1,
+          "handler_wall_ms": 47.35
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 32.47,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.89,
+          "transaction_ms": 6.04,
+          "server_total_ms": 40.08,
+          "handler_wall_ms": 41.29
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 32.47,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.64,
+          "transaction_ms": 5.14,
+          "server_total_ms": 39.02,
+          "handler_wall_ms": 40.43
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 33.62,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.79,
+          "transaction_ms": 5.86,
+          "server_total_ms": 40.94,
+          "handler_wall_ms": 42.38
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 34.08,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.85,
+          "transaction_ms": 11.3,
+          "server_total_ms": 46.69,
+          "handler_wall_ms": 47.88
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 31.7,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.68,
+          "transaction_ms": 5.17,
+          "server_total_ms": 38.09,
+          "handler_wall_ms": 39.35
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 31.87,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.89,
+          "transaction_ms": 5.21,
+          "server_total_ms": 38.44,
+          "handler_wall_ms": 39.75
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 32.35,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.67,
+          "transaction_ms": 5.11,
+          "server_total_ms": 38.78,
+          "handler_wall_ms": 39.84
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 31.95,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.69,
+          "transaction_ms": 5.44,
+          "server_total_ms": 38.7,
+          "handler_wall_ms": 39.86
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 36.62,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.64,
+          "transaction_ms": 5.35,
+          "server_total_ms": 43.36,
+          "handler_wall_ms": 44.87
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 32.58,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.74,
+          "transaction_ms": 6.04,
+          "server_total_ms": 40.22,
+          "handler_wall_ms": 41.72
+        }
+      ]
+    },
+    {
+      "passengers": 180,
+      "scenario": "CRA_closed",
+      "sample_count": 12,
+      "timings_ms": {
+        "interpretation_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "solver_ms": {
+          "median": 84.23,
+          "p95": 87.61,
+          "min": 80.19,
+          "max": 87.61
+        },
+        "decisions_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "apply_ms": {
+          "median": 0.88,
+          "p95": 1.1,
+          "min": 0.83,
+          "max": 1.1
+        },
+        "transaction_ms": {
+          "median": 9.19,
+          "p95": 9.71,
+          "min": 8.78,
+          "max": 9.71
+        },
+        "server_total_ms": {
+          "median": 94.65,
+          "p95": 98.37,
+          "min": 90.51,
+          "max": 98.37
+        },
+        "handler_wall_ms": {
+          "median": 96.6,
+          "p95": 100.17,
+          "min": 92.24,
+          "max": 100.17
+        }
+      },
+      "outcomes": [
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 8,
+          "validated": true,
+          "candidate_count": 6
+        }
+      ],
+      "raw_samples_ms": [
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 81.57,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.89,
+          "transaction_ms": 8.78,
+          "server_total_ms": 91.78,
+          "handler_wall_ms": 93.66
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 87.61,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.87,
+          "transaction_ms": 9.26,
+          "server_total_ms": 98.37,
+          "handler_wall_ms": 100.17
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 80.77,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.86,
+          "transaction_ms": 8.98,
+          "server_total_ms": 91.03,
+          "handler_wall_ms": 92.86
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 86.01,
+          "decisions_ms": 0.0,
+          "apply_ms": 1.1,
+          "transaction_ms": 9.58,
+          "server_total_ms": 96.89,
+          "handler_wall_ms": 98.73
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 80.19,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.86,
+          "transaction_ms": 9.08,
+          "server_total_ms": 90.51,
+          "handler_wall_ms": 92.24
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 86.58,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.92,
+          "transaction_ms": 9.71,
+          "server_total_ms": 97.63,
+          "handler_wall_ms": 99.54
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 81.93,
+          "decisions_ms": 0.0,
+          "apply_ms": 1.09,
+          "transaction_ms": 9.39,
+          "server_total_ms": 92.76,
+          "handler_wall_ms": 94.94
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 83.28,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.88,
+          "transaction_ms": 9.17,
+          "server_total_ms": 93.73,
+          "handler_wall_ms": 95.41
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 87.46,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.88,
+          "transaction_ms": 9.09,
+          "server_total_ms": 97.84,
+          "handler_wall_ms": 99.98
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 84.5,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.83,
+          "transaction_ms": 9.27,
+          "server_total_ms": 94.95,
+          "handler_wall_ms": 97.01
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 85.64,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.88,
+          "transaction_ms": 8.82,
+          "server_total_ms": 95.67,
+          "handler_wall_ms": 97.39
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 83.97,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.88,
+          "transaction_ms": 9.21,
+          "server_total_ms": 94.34,
+          "handler_wall_ms": 96.19
+        }
+      ]
+    },
+    {
+      "passengers": 240,
+      "scenario": "initial_cancellation",
+      "sample_count": 12,
+      "timings_ms": {
+        "interpretation_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "solver_ms": {
+          "median": 52.26,
+          "p95": 102.3,
+          "min": 50.76,
+          "max": 102.3
+        },
+        "decisions_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "apply_ms": {
+          "median": 0.86,
+          "p95": 0.97,
+          "min": 0.84,
+          "max": 0.97
+        },
+        "transaction_ms": {
+          "median": 7.31,
+          "p95": 9.6,
+          "min": 6.65,
+          "max": 9.6
+        },
+        "server_total_ms": {
+          "median": 60.94,
+          "p95": 113.22,
+          "min": 59.31,
+          "max": 113.22
+        },
+        "handler_wall_ms": {
+          "median": 62.38,
+          "p95": 115.49,
+          "min": 60.74,
+          "max": 115.49
+        }
+      },
+      "outcomes": [
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 4,
+          "validated": true,
+          "candidate_count": 3
+        }
+      ],
+      "raw_samples_ms": [
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 57.73,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.86,
+          "transaction_ms": 7.79,
+          "server_total_ms": 67.11,
+          "handler_wall_ms": 68.52
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 52.26,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.88,
+          "transaction_ms": 7.22,
+          "server_total_ms": 60.89,
+          "handler_wall_ms": 62.33
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 50.76,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.86,
+          "transaction_ms": 7.74,
+          "server_total_ms": 60.07,
+          "handler_wall_ms": 61.61
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 58.1,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.86,
+          "transaction_ms": 7.4,
+          "server_total_ms": 66.88,
+          "handler_wall_ms": 68.27
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 51.06,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.85,
+          "transaction_ms": 7.87,
+          "server_total_ms": 60.3,
+          "handler_wall_ms": 61.87
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 51.9,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.88,
+          "transaction_ms": 6.79,
+          "server_total_ms": 60.04,
+          "handler_wall_ms": 61.41
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 58.89,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.84,
+          "transaction_ms": 7.03,
+          "server_total_ms": 67.21,
+          "handler_wall_ms": 68.61
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 50.9,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.97,
+          "transaction_ms": 7.5,
+          "server_total_ms": 59.66,
+          "handler_wall_ms": 61.4
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 50.89,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.95,
+          "transaction_ms": 6.98,
+          "server_total_ms": 59.31,
+          "handler_wall_ms": 60.74
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 58.84,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.85,
+          "transaction_ms": 6.65,
+          "server_total_ms": 66.83,
+          "handler_wall_ms": 68.18
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 102.3,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.92,
+          "transaction_ms": 9.6,
+          "server_total_ms": 113.22,
+          "handler_wall_ms": 115.49
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 52.26,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.87,
+          "transaction_ms": 6.66,
+          "server_total_ms": 60.98,
+          "handler_wall_ms": 62.42
+        }
+      ]
+    },
+    {
+      "passengers": 240,
+      "scenario": "CRA_closed",
+      "sample_count": 12,
+      "timings_ms": {
+        "interpretation_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "solver_ms": {
+          "median": 118.09,
+          "p95": 128.06,
+          "min": 111.2,
+          "max": 128.06
+        },
+        "decisions_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "apply_ms": {
+          "median": 0.81,
+          "p95": 7.4,
+          "min": 0.76,
+          "max": 7.4
+        },
+        "transaction_ms": {
+          "median": 9.68,
+          "p95": 16.04,
+          "min": 8.63,
+          "max": 16.04
+        },
+        "server_total_ms": {
+          "median": 129.18,
+          "p95": 145.4,
+          "min": 122.06,
+          "max": 145.4
+        },
+        "handler_wall_ms": {
+          "median": 131.0,
+          "p95": 147.78,
+          "min": 124.02,
+          "max": 147.78
+        }
+      },
+      "outcomes": [
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 68,
+          "validated": true,
+          "candidate_count": 6
+        }
+      ],
+      "raw_samples_ms": [
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 119.05,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.78,
+          "transaction_ms": 8.99,
+          "server_total_ms": 129.55,
+          "handler_wall_ms": 131.32
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 122.13,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.78,
+          "transaction_ms": 9.23,
+          "server_total_ms": 132.77,
+          "handler_wall_ms": 134.64
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 117.44,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.87,
+          "transaction_ms": 9.69,
+          "server_total_ms": 128.49,
+          "handler_wall_ms": 130.41
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 115.54,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.79,
+          "transaction_ms": 8.7,
+          "server_total_ms": 125.57,
+          "handler_wall_ms": 127.43
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 118.82,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.78,
+          "transaction_ms": 8.63,
+          "server_total_ms": 128.8,
+          "handler_wall_ms": 130.68
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 115.08,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.8,
+          "transaction_ms": 9.83,
+          "server_total_ms": 126.25,
+          "handler_wall_ms": 128.64
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 122.91,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.84,
+          "transaction_ms": 9.74,
+          "server_total_ms": 134.13,
+          "handler_wall_ms": 136.39
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 112.39,
+          "decisions_ms": 0.0,
+          "apply_ms": 7.4,
+          "transaction_ms": 16.04,
+          "server_total_ms": 130.0,
+          "handler_wall_ms": 132.17
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 112.44,
+          "decisions_ms": 0.0,
+          "apply_ms": 1.19,
+          "transaction_ms": 9.98,
+          "server_total_ms": 123.9,
+          "handler_wall_ms": 126.05
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 118.74,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.82,
+          "transaction_ms": 9.67,
+          "server_total_ms": 129.83,
+          "handler_wall_ms": 131.75
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 111.2,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.76,
+          "transaction_ms": 9.53,
+          "server_total_ms": 122.06,
+          "handler_wall_ms": 124.02
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 128.06,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.88,
+          "transaction_ms": 15.96,
+          "server_total_ms": 145.4,
+          "handler_wall_ms": 147.78
+        }
+      ]
+    },
+    {
+      "passengers": 300,
+      "scenario": "initial_cancellation",
+      "sample_count": 12,
+      "timings_ms": {
+        "interpretation_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "solver_ms": {
+          "median": 70.33,
+          "p95": 75.59,
+          "min": 67.18,
+          "max": 75.59
+        },
+        "decisions_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "apply_ms": {
+          "median": 0.81,
+          "p95": 0.85,
+          "min": 0.79,
+          "max": 0.85
+        },
+        "transaction_ms": {
+          "median": 7.27,
+          "p95": 13.46,
+          "min": 6.8,
+          "max": 13.46
+        },
+        "server_total_ms": {
+          "median": 79.39,
+          "p95": 84.94,
+          "min": 75.52,
+          "max": 84.94
+        },
+        "handler_wall_ms": {
+          "median": 80.91,
+          "p95": 86.37,
+          "min": 77.1,
+          "max": 86.37
+        }
+      },
+      "outcomes": [
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        },
+        {
+          "recovered_passengers": 176,
+          "exceptions": 64,
+          "validated": true,
+          "candidate_count": 3
+        }
+      ],
+      "raw_samples_ms": [
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 70.04,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.82,
+          "transaction_ms": 13.46,
+          "server_total_ms": 84.94,
+          "handler_wall_ms": 86.37
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 68.23,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.79,
+          "transaction_ms": 7.8,
+          "server_total_ms": 77.47,
+          "handler_wall_ms": 79.36
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 70.81,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.8,
+          "transaction_ms": 7.22,
+          "server_total_ms": 79.49,
+          "handler_wall_ms": 81.08
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 73.94,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.81,
+          "transaction_ms": 7.41,
+          "server_total_ms": 82.68,
+          "handler_wall_ms": 84.31
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 68.05,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.82,
+          "transaction_ms": 7.67,
+          "server_total_ms": 77.22,
+          "handler_wall_ms": 78.79
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 74.83,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.83,
+          "transaction_ms": 7.24,
+          "server_total_ms": 83.48,
+          "handler_wall_ms": 85.11
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 68.93,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.82,
+          "transaction_ms": 7.23,
+          "server_total_ms": 77.6,
+          "handler_wall_ms": 79.3
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 75.59,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.85,
+          "transaction_ms": 7.3,
+          "server_total_ms": 84.49,
+          "handler_wall_ms": 86.07
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 70.61,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.85,
+          "transaction_ms": 7.36,
+          "server_total_ms": 79.29,
+          "handler_wall_ms": 80.75
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 75.54,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.81,
+          "transaction_ms": 6.8,
+          "server_total_ms": 83.72,
+          "handler_wall_ms": 85.22
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 67.24,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.8,
+          "transaction_ms": 6.93,
+          "server_total_ms": 75.52,
+          "handler_wall_ms": 77.1
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 67.18,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.8,
+          "transaction_ms": 7.04,
+          "server_total_ms": 75.59,
+          "handler_wall_ms": 77.18
+        }
+      ]
+    },
+    {
+      "passengers": 300,
+      "scenario": "CRA_closed",
+      "sample_count": 12,
+      "timings_ms": {
+        "interpretation_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "solver_ms": {
+          "median": 153.88,
+          "p95": 160.72,
+          "min": 147.03,
+          "max": 160.72
+        },
+        "decisions_ms": {
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "apply_ms": {
+          "median": 0.84,
+          "p95": 1.0,
+          "min": 0.77,
+          "max": 1.0
+        },
+        "transaction_ms": {
+          "median": 10.29,
+          "p95": 11.53,
+          "min": 9.93,
+          "max": 11.53
+        },
+        "server_total_ms": {
+          "median": 166.07,
+          "p95": 172.02,
+          "min": 158.76,
+          "max": 172.02
+        },
+        "handler_wall_ms": {
+          "median": 168.49,
+          "p95": 174.23,
+          "min": 161.15,
+          "max": 174.23
+        }
+      },
+      "outcomes": [
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        },
+        {
+          "recovered_passengers": 172,
+          "exceptions": 128,
+          "validated": true,
+          "candidate_count": 6
+        }
+      ],
+      "raw_samples_ms": [
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 154.73,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.87,
+          "transaction_ms": 11.53,
+          "server_total_ms": 167.65,
+          "handler_wall_ms": 169.93
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 156.26,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.87,
+          "transaction_ms": 10.09,
+          "server_total_ms": 168.41,
+          "handler_wall_ms": 170.59
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 158.12,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.82,
+          "transaction_ms": 10.37,
+          "server_total_ms": 170.38,
+          "handler_wall_ms": 172.84
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 158.21,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.77,
+          "transaction_ms": 10.22,
+          "server_total_ms": 170.03,
+          "handler_wall_ms": 172.42
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 160.72,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.8,
+          "transaction_ms": 10.07,
+          "server_total_ms": 172.02,
+          "handler_wall_ms": 174.23
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 147.03,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.77,
+          "transaction_ms": 10.32,
+          "server_total_ms": 158.76,
+          "handler_wall_ms": 161.15
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 157.3,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.9,
+          "transaction_ms": 10.83,
+          "server_total_ms": 169.7,
+          "handler_wall_ms": 171.83
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 150.65,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.82,
+          "transaction_ms": 10.25,
+          "server_total_ms": 162.52,
+          "handler_wall_ms": 167.05
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 153.04,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.8,
+          "transaction_ms": 9.98,
+          "server_total_ms": 164.5,
+          "handler_wall_ms": 166.89
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 150.3,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.96,
+          "transaction_ms": 10.47,
+          "server_total_ms": 162.14,
+          "handler_wall_ms": 164.4
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 148.33,
+          "decisions_ms": 0.0,
+          "apply_ms": 1.0,
+          "transaction_ms": 10.38,
+          "server_total_ms": 160.26,
+          "handler_wall_ms": 162.38
+        },
+        {
+          "interpretation_ms": 0.0,
+          "solver_ms": 151.54,
+          "decisions_ms": 0.0,
+          "apply_ms": 0.93,
+          "transaction_ms": 9.93,
+          "server_total_ms": 162.82,
+          "handler_wall_ms": 165.53
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+.git
+**/node_modules
+**/.venv
+**/*.egg-info
+**/__pycache__
+**/.pytest_cache
+**/dist
+**/.env
+**/.env.*
+**/*.sqlite*
+**/*.db*
+**/data
+backups
+**/*.log
+docs/mockups
+docs/verification
+# Explicit protection for private account-console evidence.
+docs/verification/google-billing-*

@@ -1,0 +1,117 @@
+"""GPT-Live WebRTC handshake. Browser handles delegated simulator commands."""
+from __future__ import annotations
+
+import asyncio
+import json
+from urllib.parse import quote
+
+from .base import HTTPProvider, ProviderError, secret_value
+
+
+class VoiceProvider(HTTPProvider):
+    def __init__(self, settings, *, client=None, connect=None):
+        super().__init__(settings, client=client)
+        self._connect = connect
+        self._sockets = {}
+        self._watchdogs: dict[str, asyncio.Task] = {}
+        self.session_status: dict[str, dict] = {}
+
+    @property
+    def configured(self) -> bool:
+        return bool(secret_value(getattr(self.settings, "openai_api_key", "")))
+
+    async def create(self, sdp: str) -> dict:
+        if not self.configured:
+            raise ProviderError("OPENAI_API_KEY is missing; GPT-Live is unavailable.", provider="GPT-Live", code="not_configured")
+        if not isinstance(sdp, str) or not sdp.startswith("v=0") or len(sdp) > 65536:
+            raise ProviderError("A valid WebRTC SDP offer is required.", provider="GPT-Live", code="invalid_offer")
+        result = await self.request("POST", getattr(self.settings, "openai_base_url", "https://api.openai.com/v1").rstrip("/") + "/live/sessions", provider="GPT-Live", headers={"Authorization": f"Bearer {secret_value(self.settings.openai_api_key)}", "Content-Type": "application/json"}, json={
+            "session": {
+                "model": getattr(self.settings, "openai_voice_model", "gpt-live-1"),
+                "instructions": "Vorbește concis, în română. Ești interfața vocală Airport Recovery Live, un simulator pentru recuperarea pasagerilor. Deleagă toate cererile operaționale, de comparație sau de focalizare pe hartă aplicației. Nu presupune că ai modificat ceva. Așteaptă rezultatul verificat al aplicației înainte să anunți o acțiune reușită. Nu inventa resurse, rezervări, rezultate sau date de trafic. Cere clarificări pentru referințe ambigue. Ofertele și transportul sunt simulate. Nu repeta o comandă deja executată.",
+                "audio": {"output": {"voice": "marin"}},
+                "delegation": {"type": "client", "acknowledgement_delay_ms": 600},
+                "client": {"data_channel": {
+                    "allowed_client_events": ["session.close", "session.thinking.append", "session.commentary.append", "session.input_audio.mute", "session.input_audio.unmute"],
+                    "allowed_server_events": "all",
+                }},
+            },
+            "transport": {"type": "webrtc", "sdp": sdp},
+        })
+        try:
+            session_id, answer = result["session"]["id"], result["transport"]["sdp"]
+            if not isinstance(session_id, str) or not session_id or not isinstance(answer, str) or not answer.startswith("v=0"):
+                raise ValueError("invalid session")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProviderError("GPT-Live returned an invalid WebRTC session.", provider="GPT-Live", code="invalid_response") from exc
+        max_seconds = min(600, max(30, int(getattr(self.settings, "voice_max_seconds", 180))))
+        await self._attach_watchdog(session_id, max_seconds)
+        return {"session_id": session_id, "sdp": answer, "max_seconds": max_seconds}
+
+    async def _attach_watchdog(self, session_id: str, max_seconds: int) -> None:
+        """Server owns a second connection so a vanished tab cannot disable TTL."""
+        connector = self._connect
+        if connector is None:
+            from websockets.asyncio.client import connect
+            connector = connect
+        base = getattr(self.settings, "openai_base_url", "https://api.openai.com/v1").rstrip("/")
+        websocket_base = base.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
+        try:
+            socket = await asyncio.wait_for(connector(
+                websocket_base + "/live/sessions/" + quote(session_id, safe="") + "/attach",
+                additional_headers={"Authorization": f"Bearer {secret_value(self.settings.openai_api_key)}"},
+                open_timeout=min(10, self.timeout), max_size=2**20,
+            ), timeout=min(10, self.timeout))
+        except Exception as exc:
+            self.session_status[session_id] = {"state": "unconfirmed", "message": "Watchdog connection failed after session initialization; final provider usage is unconfirmed."}
+            raise ProviderError("GPT-Live initialized but its server duration watchdog could not connect; final usage is unconfirmed. Do not retry automatically.", provider="GPT-Live", code="watchdog_failed") from exc
+        self._sockets[session_id] = socket
+        self.session_status[session_id] = {"state": "active", "max_seconds": max_seconds}
+        self._watchdogs[session_id] = asyncio.create_task(self._watch(session_id, socket, max_seconds))
+
+    async def _watch(self, session_id: str, socket, max_seconds: float) -> None:
+        async def receive_final():
+            while True:
+                event = json.loads(await socket.recv())
+                if event.get("type") == "session.closed":
+                    self.session_status[session_id] = {"state": "closed", "usage": event.get("usage", {})}
+                    return
+        try:
+            try:
+                await asyncio.wait_for(receive_final(), timeout=max_seconds)
+            except asyncio.TimeoutError:
+                self.session_status[session_id] = {"state": "closing", "reason": "server_duration_limit"}
+                await socket.send(json.dumps({"type": "session.close"}))
+                await asyncio.wait_for(receive_final(), timeout=15)
+        except asyncio.CancelledError:
+            self.session_status[session_id] = {"state": "unconfirmed", "message": "Server stopped before final usage."}
+            raise
+        except Exception:
+            self.session_status[session_id] = {"state": "unconfirmed", "message": "Voice control connection ended before final usage."}
+        finally:
+            self._sockets.pop(session_id, None)
+            self._watchdogs.pop(session_id, None)
+            await socket.close()
+            while len(self.session_status) > 100:
+                finished = next((key for key, value in self.session_status.items() if value.get("state") not in ("active", "closing")), None)
+                if finished is None:
+                    break
+                self.session_status.pop(finished)
+
+    async def close(self, session_id: str) -> None:
+        """Only sessions initialized by this provider instance may be closed."""
+        socket, task = self._sockets.get(session_id), self._watchdogs.get(session_id)
+        if socket is None or task is None:
+            return
+        try:
+            await socket.send(json.dumps({"type": "session.close"}))
+            await asyncio.wait_for(asyncio.shield(task), timeout=16)
+        except Exception:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def aclose(self) -> None:
+        await asyncio.gather(*(self.close(session_id) for session_id in list(self._sockets)), return_exceptions=True)
+        await super().aclose()
+
+    create_session = create

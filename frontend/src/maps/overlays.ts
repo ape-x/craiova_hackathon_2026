@@ -1,0 +1,276 @@
+import type { Airport, Observation, Resource, SceneMode, World } from '../types';
+import type { Camera, GeoPoint } from './contracts';
+
+export const COLORS = {
+  observed: '#58ddeb',
+  scenario: '#f8bb69',
+  confirmed: '#6fe2b6',
+  unavailable: '#f3717a',
+  muted: '#a3b4c4',
+};
+export interface GeoMarker {
+  id: string;
+  label: string;
+  title: string;
+  point: GeoPoint;
+  color: string;
+  observed: boolean;
+  selected: boolean;
+}
+export interface GeoRoute {
+  id: string;
+  path: GeoPoint[];
+  color: string;
+  dashed: boolean;
+  observed: boolean;
+  selected: boolean;
+}
+export interface TrackPoint extends GeoPoint {
+  timestamp: string;
+}
+export type ObservationTracks = Map<string, TrackPoint[]>;
+
+export function pointOf(airport: Airport): GeoPoint {
+  return { lat: airport.lat, lng: airport.lon, altitude: 0 };
+}
+export function observedPoint(observation: Observation): GeoPoint | null {
+  const lat = observation.lat ?? observation.latitude,
+    lng = observation.lon ?? observation.longitude;
+  if (
+    typeof lat !== 'number' ||
+    typeof lng !== 'number' ||
+    !Number.isFinite(lat + lng) ||
+    Math.abs(lat) > 90 ||
+    Math.abs(lng) > 180
+  )
+    return null;
+  const feet = observation.altitude_ft ?? observation.alt ?? observation.altitude;
+  return {
+    lat,
+    lng,
+    ...(typeof feet === 'number' && Number.isFinite(feet) ? { altitude: feet * 0.3048 } : {}),
+  };
+}
+
+export function updateObservationTracks(
+  tracks: ObservationTracks,
+  observations: Observation[],
+): void {
+  const current = new Set<string>();
+  for (const observation of observations) {
+    const id = String(observation.id ?? observation.fr24_id ?? '');
+    const timestamp = observation.observed_at ?? observation.timestamp;
+    const point = observedPoint(observation);
+    if (!id || !point || !timestamp || !Number.isFinite(Date.parse(timestamp))) continue;
+    current.add(id);
+    const history = tracks.get(id) ?? [];
+    if (!history.some((sample) => sample.timestamp === timestamp)) {
+      history.push({ ...point, timestamp });
+      history.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+    }
+    tracks.set(id, history.slice(-30));
+  }
+  for (const id of tracks.keys()) if (!current.has(id)) tracks.delete(id);
+}
+
+/** Schematic network connector, NOT a navigable road route or flight plan. */
+export function schematicPath(
+  origin: GeoPoint,
+  destination: GeoPoint,
+  flight: boolean,
+): GeoPoint[] {
+  return Array.from({ length: 25 }, (_, index) => {
+    const t = index / 24;
+    return {
+      lat: origin.lat + (destination.lat - origin.lat) * t,
+      lng: origin.lng + (destination.lng - origin.lng) * t,
+      altitude: flight ? 300 + Math.sin(t * Math.PI) * 9000 : 10,
+    };
+  });
+}
+
+export function resourcePoint(resource: Resource, world: World): GeoPoint | null {
+  const origin = world.airports.find((a) => a.id === resource.origin),
+    destination = world.airports.find((a) => a.id === resource.destination);
+  if (!origin) return null;
+  if (!destination || resource.kind === 'hotel' || !resource.available) return pointOf(origin);
+  const progress = Math.max(
+    0,
+    Math.min(
+      1,
+      (world.sim_time - resource.departure) / Math.max(1, resource.arrival - resource.departure),
+    ),
+  );
+  const path = schematicPath(pointOf(origin), pointOf(destination), resource.kind === 'flight');
+  return path[Math.round(progress * (path.length - 1))];
+}
+
+export function buildOverlays(
+  world: World,
+  selectedId: string | null,
+  tracks: ObservationTracks,
+  now = Date.now(),
+): { markers: GeoMarker[]; routes: GeoRoute[] } {
+  const markers: GeoMarker[] = world.airports.map((airport) => ({
+    id: airport.id,
+    label: `${airport.code}${airport.available ? '' : ' · CLOSED IN SIM'}`,
+    title: `${airport.name}. Airport availability is simulated.`,
+    point: pointOf(airport),
+    color: airport.available ? COLORS.scenario : COLORS.unavailable,
+    observed: false,
+    selected: selectedId === airport.id,
+  }));
+  const routes: GeoRoute[] = [];
+  const active = world.offers.filter(
+    (offer) => offer.status === 'held' || offer.status === 'confirmed',
+  );
+  const selectedGroupOffer = active.find((offer) => offer.group_id === selectedId);
+  const selectedResources = new Set(
+    selectedGroupOffer?.itinerary.legs.map((leg) => leg.resource_id) ?? [],
+  );
+  if (selectedId) selectedResources.add(selectedId);
+  // Draw a single representative route per origin/destination/type/status. A
+  // selected resource remains distinguishable even when parallel services exist.
+  const drawn = new Set<string>();
+  for (const resource of [...world.resources].sort(
+    (a, b) => Number(selectedResources.has(b.id)) - Number(selectedResources.has(a.id)),
+  )) {
+    if (resource.kind === 'hotel' || resource.origin === resource.destination) continue;
+    const origin = world.airports.find((airport) => airport.id === resource.origin),
+      destination = world.airports.find((airport) => airport.id === resource.destination);
+    if (!origin || !destination) continue;
+    const confirmed = active.some(
+      (offer) =>
+        offer.status === 'confirmed' &&
+        offer.itinerary.legs.some((leg) => leg.resource_id === resource.id),
+    );
+    const selected = selectedResources.has(resource.id);
+    const key = `${resource.origin}:${resource.destination}:${resource.kind}:${resource.available}:${confirmed}`;
+    if (drawn.has(key) && !selected) continue;
+    drawn.add(key);
+    routes.push({
+      id: resource.id,
+      path: schematicPath(pointOf(origin), pointOf(destination), resource.kind === 'flight'),
+      color: !resource.available
+        ? COLORS.unavailable
+        : confirmed
+          ? COLORS.confirmed
+          : COLORS.scenario,
+      dashed: !confirmed,
+      observed: false,
+      selected,
+    });
+  }
+  const selectedResource = world.resources.find((resource) => resource.id === selectedId);
+  if (selectedResource) {
+    const point = resourcePoint(selectedResource, world);
+    if (point)
+      markers.push({
+        id: selectedResource.id,
+        label: `${selectedResource.id} · SIM`,
+        title: `${selectedResource.id}: illustrative scenario position, not a GPS observation.`,
+        point,
+        color: selectedResource.available ? COLORS.scenario : COLORS.unavailable,
+        observed: false,
+        selected: true,
+      });
+  }
+  const selectedGroup = world.groups.find((group) => group.id === selectedId);
+  if (selectedGroup) {
+    const airport = world.airports.find((a) => a.id === selectedGroup.origin);
+    if (airport)
+      markers.push({
+        id: selectedGroup.id,
+        label: `${selectedGroup.name} · SIM`,
+        title: `${selectedGroup.size} synthetic passengers; scenario origin, not a physical location.`,
+        point: pointOf(airport),
+        color: selectedGroup.status === 'confirmed' ? COLORS.confirmed : COLORS.scenario,
+        observed: false,
+        selected: true,
+      });
+  }
+  for (const observation of world.observations) {
+    const point = observedPoint(observation);
+    const id = String(observation.id ?? observation.fr24_id ?? '');
+    const timestamp = observation.observed_at ?? observation.timestamp;
+    if (!point || !id) continue;
+    const age = timestamp ? Math.floor((now - Date.parse(timestamp)) / 1000) : NaN;
+    const sandbox = observation.mode === 'SANDBOX';
+    const replay = observation.mode === 'REPLAY';
+    const knownTime = Number.isFinite(age) && age >= -60;
+    const provenance = sandbox
+      ? 'SANDBOX'
+      : replay
+        ? 'REPLAY'
+        : knownTime
+          ? age > 90
+            ? 'STALE OBS'
+            : 'OBSERVED'
+          : 'TIME UNKNOWN';
+    const observationColor =
+      sandbox || replay || !knownTime || age > 90 ? COLORS.muted : COLORS.observed;
+    markers.push({
+      id,
+      label: `${observation.callsign ?? observation.flight ?? id} · ${provenance}`,
+      title: `${observation.source ?? 'External source'} · ${timestamp ?? 'no source timestamp'}${knownTime ? ` · ${Math.max(0, age)}s old` : ''}. ${sandbox ? 'Static provider sample.' : 'Last received position; altitude follows provider data.'}`,
+      point,
+      color: observationColor,
+      observed: true,
+      selected: selectedId === id,
+    });
+    const history = tracks.get(id);
+    if (history && history.length > 1)
+      routes.push({
+        id: `observed-${id}`,
+        path: history,
+        color: observationColor,
+        dashed: false,
+        observed: true,
+        selected: selectedId === id,
+      });
+  }
+  return { markers, routes };
+}
+
+export function cameraFor(world: World, mode: SceneMode, selectedId: string | null): Camera {
+  const home = world.airports.find((airport) => airport.id === 'CRA') ?? world.airports[0];
+  const fallback = home ? pointOf(home) : { lat: 44.3181, lng: 23.8886, altitude: 0 };
+  const observation = world.observations.find(
+    (o) => String(o.id ?? o.fr24_id ?? '') === selectedId,
+  );
+  const observed = observation && observedPoint(observation);
+  if (observed) return { center: observed, range: 4000, tilt: 60, heading: 20 };
+  const airport = world.airports.find((a) => a.id === selectedId);
+  if (airport && mode !== 'region')
+    return { center: pointOf(airport), range: 6500, tilt: 65, heading: 25 };
+  const resource = world.resources.find((r) => r.id === selectedId);
+  if (resource && mode !== 'region')
+    return {
+      center: resourcePoint(resource, world) ?? fallback,
+      range: resource.kind === 'flight' ? 3500 : resource.kind === 'bus' ? 1200 : 6500,
+      tilt: 60,
+      heading: 25,
+    };
+  if (mode === 'region') {
+    const regional = world.airports.filter((a) => a.diversion_eligible || a.id === 'CRA');
+    const points = regional.length ? regional.map(pointOf) : [fallback];
+    return {
+      center: {
+        lat: points.reduce((sum, p) => sum + p.lat, 0) / points.length,
+        lng: points.reduce((sum, p) => sum + p.lng, 0) / points.length,
+        altitude: 0,
+      },
+      range: 330000,
+      tilt: 25,
+      heading: 0,
+    };
+  }
+  const group = world.groups.find((g) => g.id === selectedId);
+  const groupOrigin = group && world.airports.find((a) => a.id === group.origin);
+  return {
+    center: groupOrigin ? pointOf(groupOrigin) : fallback,
+    range: mode === 'passenger' ? 4200 : 8000,
+    tilt: 65,
+    heading: 25,
+  };
+}

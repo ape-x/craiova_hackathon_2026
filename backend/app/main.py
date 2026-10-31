@@ -1,0 +1,337 @@
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import re
+import secrets
+import time
+import sqlite3
+from contextlib import asynccontextmanager, suppress
+from collections import defaultdict, deque
+
+from fastapi import Depends, FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import Field, ValidationError
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+from .config import Settings
+from .models import AcceptRequest, CommandRequest, ConstraintRequest, EventRequest, LoginRequest, Model, Mutation, ReplanRequest, World
+from .providers import AIProvider, FlightProvider, ProviderError, VoiceProvider
+from .service import RecoveryService
+from .store import DomainError, Store, utcnow
+
+
+class VoiceRequest(Model):
+    sdp: str = Field(min_length=10,max_length=65536,pattern=r"^v=0\r?\n")
+
+
+class RedactAccessPaths(logging.Filter):
+    """Passenger links are bearer credentials; do not write them into access logs."""
+    def filter(self,record):
+        if isinstance(record.args,tuple) and len(record.args)==5 and isinstance(record.args[2],str):
+            args=list(record.args)
+            path=args[2].split("?",1)[0]
+            args[2]=re.sub(r"(/(?:api/)?(?:passenger|p)/)[^/]+",r"\1[redacted]",path)
+            record.args=tuple(args)
+        return True
+
+
+class BodySizeLimit:
+    """Bound JSON/SDP input even when an HTTP client omits Content-Length."""
+    def __init__(self,app,max_bytes):
+        self.app,self.max_bytes=app,max_bytes
+
+    async def __call__(self,scope,receive,send):
+        if scope["type"]!="http" or scope["method"] not in ("POST","PUT","PATCH"):
+            return await self.app(scope,receive,send)
+        messages=[]
+        size=0
+        while True:
+            message=await receive()
+            messages.append(message)
+            if message["type"]=="http.disconnect":
+                return
+            size+=len(message.get("body",b""))
+            if size>self.max_bytes:
+                return await JSONResponse({"detail":"Request body too large"},status_code=413)(scope,receive,send)
+            if not message.get("more_body",False):
+                break
+        index=0
+        async def replay():
+            nonlocal index
+            if index<len(messages):
+                message=messages[index];index+=1
+                return message
+            return await receive()
+        return await self.app(scope,replay,send)
+
+
+def create_app(settings: Settings | None=None) -> FastAPI:
+    settings=settings or Settings()
+    access_logger=logging.getLogger("uvicorn.access")
+    if not any(isinstance(item,RedactAccessPaths) for item in access_logger.filters):
+        access_logger.addFilter(RedactAccessPaths())
+    store=Store(settings.database_path,settings.observation_retention_seconds)
+    ai,flights,voice=AIProvider(settings),FlightProvider(settings),VoiceProvider(settings)
+    service=RecoveryService(settings,store,ai if ai.configured else None)
+    login_attempts=defaultdict(deque)
+    # Reserve worst-case credit cost in the persistent shared request ledger;
+    # restarting or adding a worker cannot replenish the paid provider budget.
+    poll_request_limit=min(settings.fr24_max_requests,settings.fr24_max_credits//(settings.fr24_result_limit*8))
+
+    async def flight_loop():
+        while True:
+            try:
+                await asyncio.to_thread(store.purge_observations)
+            except sqlite3.Error:
+                logging.getLogger(__name__).warning("Observation cache cleanup could not access the database")
+                await asyncio.sleep(1)
+                continue
+            if flights.configured and await asyncio.to_thread(store.control,"traffic_running",False):
+                if await asyncio.to_thread(store.acquire_poll,settings.flight_poll_seconds,poll_request_limit):
+                    try:
+                        observations=await flights.fetch()
+                        await asyncio.to_thread(store.set_observations,observations,{"state":"connected","source":"Flightradar24","updated_at":utcnow().isoformat(),"environment":settings.fr24_environment})
+                    except ProviderError as exc:
+                        old=await asyncio.to_thread(store.read)
+                        await asyncio.to_thread(store.set_observations,old.observations,{"state":"error","message":str(exc),"code":exc.code,"updated_at":utcnow().isoformat()})
+                        if exc.code in ("budget_exhausted","http_401","http_403","http_429"):
+                            await asyncio.to_thread(store.set_control,"traffic_running",False)
+                    except Exception:
+                        logging.getLogger(__name__).exception("Observation polling stopped after an unexpected failure")
+                        await asyncio.to_thread(store.set_control,"traffic_running",False)
+                        old=await asyncio.to_thread(store.read)
+                        await asyncio.to_thread(store.set_observations,old.observations,{"state":"error","message":"Observation polling stopped after an internal error; inspect server logs.","updated_at":utcnow().isoformat()})
+                elif await asyncio.to_thread(store.poll_usage)>=poll_request_limit:
+                    await asyncio.to_thread(store.set_control,"traffic_running",False)
+                    old=await asyncio.to_thread(store.read)
+                    await asyncio.to_thread(store.set_observations,old.observations,{"state":"budget_exhausted","message":"Session-wide shared request budget exhausted. No further calls are made.","updated_at":utcnow().isoformat()})
+            await asyncio.sleep(1)
+
+    @asynccontextmanager
+    async def lifespan(app):
+        task=asyncio.create_task(flight_loop())
+        yield
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose())
+
+    app=FastAPI(title="Airport Recovery Live",version="0.1.0",lifespan=lifespan,docs_url=None if settings.production else "/docs",redoc_url=None,openapi_url=None if settings.production else "/openapi.json")
+    app.state.store,app.state.service,app.state.settings=store,service,settings
+    app.add_middleware(CORSMiddleware,allow_origins=settings.origins,allow_credentials=True,allow_methods=["GET","POST","DELETE"],allow_headers=["Content-Type","Authorization","Last-Event-ID"])
+    app.add_middleware(TrustedHostMiddleware,allowed_hosts=[h.strip() for h in settings.allowed_hosts.split(",")])
+    app.add_middleware(BodySizeLimit,max_bytes=settings.max_request_bytes)
+
+    def session_cookie():
+        payload=f"{int(time.time())}.{secrets.token_hex(12)}"
+        digest=hmac.new(settings.operator_token.encode(),payload.encode(),hashlib.sha256).hexdigest()
+        store.set_control("session:"+digest,int(time.time())+settings.session_ttl_seconds)
+        return payload+"."+digest
+
+    def valid_session(value):
+        try:
+            issued,nonce,digest=value.split(".")
+            age=time.time()-int(issued)
+            expected=hmac.new(settings.operator_token.encode(),f"{issued}.{nonce}".encode(),hashlib.sha256).hexdigest()
+            return 0<=age<=settings.session_ttl_seconds and hmac.compare_digest(digest.encode(),expected.encode()) and bool(store.control("session:"+digest,False))
+        except (ValueError,AttributeError,TypeError):
+            return False
+
+    def authenticated(request: Request):
+        if not settings.operator_token:
+            return True
+        bearer=request.headers.get("authorization","")
+        if bearer.startswith("Bearer ") and secrets.compare_digest(bearer[7:].encode(),settings.operator_token.encode()):
+            return True
+        return valid_session(request.cookies.get("recovery_session",""))
+
+    def operator(request: Request):
+        if not authenticated(request):
+            raise DomainError(401,"Operator authentication required")
+
+    @app.middleware("http")
+    async def security_headers(request,call_next):
+        if request.method in ("POST","PUT","PATCH","DELETE"):
+            origin=request.headers.get("origin")
+            if origin and origin.rstrip("/") not in settings.origins:
+                return JSONResponse({"detail":"Origin is not allowed"},status_code=403)
+            try:
+                if int(request.headers.get("content-length","0"))>settings.max_request_bytes:
+                    return JSONResponse({"detail":"Request body too large"},status_code=413)
+            except ValueError:
+                return JSONResponse({"detail":"Invalid Content-Length"},status_code=400)
+        response=await call_next(request)
+        response.headers["X-Content-Type-Options"]="nosniff"
+        response.headers["Referrer-Policy"]="no-referrer"
+        response.headers["Cache-Control"]="no-store"
+        if settings.production:
+            response.headers["Strict-Transport-Security"]="max-age=31536000"
+        return response
+
+    @app.exception_handler(DomainError)
+    async def domain_error(request,exc):
+        headers={"Retry-After":str(exc.details["retry_after_seconds"])} if isinstance(exc.details,dict) and exc.details.get("in_progress") else None
+        return JSONResponse({"detail":exc.message,"details":exc.details,"applied":exc.applied},status_code=exc.status,headers=headers)
+
+    @app.exception_handler(ProviderError)
+    async def provider_error(request,exc):
+        return JSONResponse({"detail":str(exc),"provider":exc.provider,"code":exc.code,"applied":False},status_code=503 if exc.code=="not_configured" else 502)
+
+    @app.exception_handler(ValidationError)
+    async def invalid_provider_output(request,exc):
+        # Internal structured provider validation is an upstream error, never a partial apply.
+        return JSONResponse({"detail":"Structured command failed schema validation; no changes were applied","applied":False},status_code=502)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request,exc):
+        # FastAPI's default errors include raw input/ctx: tokens and SDP would
+        # be reflected, and NaN input cannot be serialized by JSONResponse.
+        # Unknown property names can also contain credentials, so only expose
+        # known schema locations and fixed local descriptions.
+        fields={"body","query","path","header","expected_version","idempotency_key","type","target_id","value","mode","text","token","deadline","accessible","budget","sdp","offer_id"}
+        errors=[]
+        for error in exc.errors():
+            location=[part if isinstance(part,int) or part in fields else "unknown_field" for part in error.get("loc",())]
+            errors.append({"loc":location,"msg":"Request field failed validation","type":"request_validation"})
+        return JSONResponse({"detail":errors,"applied":False},status_code=422)
+
+    @app.get("/api/health")
+    def health():
+        return {"status":"ok","service":"airport-recovery-live","simulation":True}
+
+    @app.get("/api/ready")
+    def ready():
+        try:
+            with store.connect() as conn:
+                row=conn.execute("SELECT data FROM world WHERE id=1").fetchone()
+            if not row:
+                raise sqlite3.DatabaseError("Authoritative world is missing")
+            World.model_validate_json(row[0])
+        except (sqlite3.Error,ValidationError):
+            return JSONResponse({"status":"unavailable","database":"unavailable"},status_code=503)
+        return {"status":"ready","database":"connected","simulation":True}
+
+    @app.get("/api/config")
+    def config(request: Request):
+        return {"environment":settings.environment,"auth_required":bool(settings.operator_token),"authenticated":authenticated(request),
+            "ai_configured":ai.configured,"voice_configured":voice.configured,"fr24_configured":flights.configured,
+            "google_maps_api_key":settings.google_maps_api_key,"public_base_url":settings.public_base_url,
+            "hold_ttl_seconds":settings.hold_ttl_seconds,"models":{"reasoning":settings.openai_model,"decision":settings.openai_decision_model,"voice":settings.openai_voice_model},
+            "traffic_running":store.control("traffic_running",False),"traffic_requests_used":store.poll_usage(),"traffic_request_budget":poll_request_limit,
+            "traffic_credit_budget":settings.fr24_max_credits,"traffic_credits_reserved":store.poll_usage()*settings.fr24_result_limit*8,
+            "observation_retention_seconds":settings.observation_retention_seconds,
+            "simulation_only":True,"solver_optimality":"bounded heuristic; global optimality not proven"}
+
+    @app.post("/api/auth/login")
+    def login(body: LoginRequest,request: Request,response: Response):
+        ip=request.client.host if request.client else "unknown"
+        attempts=login_attempts[ip]
+        now=time.monotonic()
+        while attempts and attempts[0]<now-60:
+            attempts.popleft()
+        if len(attempts)>=10:
+            raise DomainError(429,"Too many login attempts; wait one minute")
+        attempts.append(now)
+        if settings.operator_token and not secrets.compare_digest(body.token.encode(),settings.operator_token.encode()):
+            raise DomainError(401,"Invalid operator token")
+        response.set_cookie("recovery_session",session_cookie(),httponly=True,secure=settings.production,samesite="strict",max_age=settings.session_ttl_seconds,path="/api")
+        return {"authenticated":True}
+
+    @app.post("/api/auth/logout")
+    def logout(request: Request,response: Response):
+        cookie=request.cookies.get("recovery_session","")
+        if valid_session(cookie):
+            store.set_control("session:"+cookie.split(".")[-1],None)
+        response.delete_cookie("recovery_session",path="/api")
+        return {"authenticated":False}
+
+    def world_response():
+        world=store.read()
+        world.provider_status.update({"ai":{"configured":ai.configured,"state":"configured_unverified" if ai.configured else "not_configured"},"voice":{"configured":voice.configured},"traffic_running":store.control("traffic_running",False)})
+        return world
+
+    @app.get("/api/world",dependencies=[Depends(operator)])
+    def world():
+        return world_response()
+
+    @app.get("/api/audit",dependencies=[Depends(operator)])
+    def audit_history():
+        return {"events":store.audit_history()}
+
+    @app.get("/api/stream",dependencies=[Depends(operator)])
+    async def stream(request: Request):
+        async def events():
+            last=request.headers.get("last-event-id","")
+            heartbeat=0
+            while not await request.is_disconnected():
+                if not authenticated(request):
+                    break
+                snapshot=await asyncio.to_thread(world_response)
+                payload=snapshot.model_dump_json()
+                signature=f"{snapshot.version}-"+hashlib.sha256(payload.encode()).hexdigest()[:12]
+                if signature!=last:
+                    yield f"id: {signature}\nevent: world\ndata: {payload}\n\n"
+                    last=signature
+                elif heartbeat%15==0:
+                    yield ": heartbeat\n\n"
+                heartbeat+=1
+                # A revoked/expired operator session closes the stream as well.
+                await asyncio.sleep(1)
+        return StreamingResponse(events(),media_type="text/event-stream",headers={"X-Accel-Buffering":"no","Cache-Control":"no-cache"})
+
+    @app.post("/api/events",dependencies=[Depends(operator)])
+    def scenario_event(body: EventRequest):
+        return service.event(body)
+
+    @app.post("/api/replan",dependencies=[Depends(operator)])
+    async def replan(body: ReplanRequest):
+        return await service.replan(body)
+
+    @app.post("/api/commands",dependencies=[Depends(operator)])
+    async def command(body: CommandRequest):
+        return await service.command(body)
+
+    @app.post("/api/reset",dependencies=[Depends(operator)])
+    def reset(body: Mutation):
+        return service.reset(body)
+
+    @app.get("/api/passenger/{token}")
+    def passenger(token: str):
+        return service.passenger(token)
+
+    @app.post("/api/passenger/{token}/constraints")
+    def constraints(token: str,body: ConstraintRequest):
+        return service.constraints(token,body)
+
+    @app.post("/api/offers/{offer_id}/accept")
+    def accept(offer_id: str,body: AcceptRequest):
+        return service.accept(offer_id,body)
+
+    @app.post("/api/voice/session",dependencies=[Depends(operator)])
+    async def voice_session(body: VoiceRequest):
+        return await voice.create(body.sdp)
+
+    @app.post("/api/traffic/start",dependencies=[Depends(operator)])
+    def traffic_start():
+        if not flights.configured:
+            raise DomainError(503,"Flightradar24 API key is not configured. Synthetic scenario remains available.")
+        if store.poll_usage()>=poll_request_limit:
+            raise DomainError(409,"Shared Flightradar24 request budget exhausted")
+        store.set_control("traffic_running",True)
+        return {"running":True,"poll_seconds":settings.flight_poll_seconds,"requests_used":store.poll_usage(),"max_requests":poll_request_limit}
+
+    @app.post("/api/traffic/stop",dependencies=[Depends(operator)])
+    def traffic_stop():
+        store.set_control("traffic_running",False)
+        return {"running":False,"requests_used":store.poll_usage()}
+
+    return app
+
+
+app=create_app()

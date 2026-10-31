@@ -1,0 +1,33 @@
+{
+  admin off
+}
+{$SITE_ADDRESS::8080} {
+  encode zstd gzip
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+    X-Frame-Options DENY
+    Permissions-Policy "camera=(), geolocation=(), microphone=(self)"
+    Content-Security-Policy "default-src 'self'; script-src 'self' https://*.googleapis.com https://*.gstatic.com 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.googleusercontent.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.openai.com data: blob:; worker-src 'self' blob:; media-src 'self' blob:; frame-src https://*.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+  }
+  handle /api/* {
+    reverse_proxy api:8000 {
+      flush_interval -1
+      transport http {
+        # A command can make two sequential provider calls (45s each by default).
+        response_header_timeout 120s
+      }
+    }
+  }
+  handle /assets/* {
+    root * /srv
+    header Cache-Control "public, max-age=31536000, immutable"
+    file_server
+  }
+  handle {
+    root * /srv
+    try_files {path} /index.html
+    header Cache-Control "no-cache"
+    file_server
+  }
+}

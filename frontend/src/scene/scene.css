@@ -1,0 +1,385 @@
+.airport-scene {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  overflow: hidden;
+  background: #182a32;
+  color: #d6e3e9;
+  isolation: isolate;
+}
+.airport-scene canvas {
+  display: block;
+  touch-action: none;
+}
+.scene-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, #07111b42, transparent 16%, transparent 78%, #07111b7a),
+    linear-gradient(90deg, #07121a20, transparent 14%, transparent 88%, #07121a2b);
+  z-index: 1;
+}
+.scene-location {
+  position: absolute;
+  left: 22px;
+  top: 22px;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 7px auto;
+  gap: 6px 9px;
+  pointer-events: none;
+  text-shadow: 0 2px 6px #061017;
+  font:
+    10px 'IBM Plex Mono',
+    monospace;
+  letter-spacing: 1.2px;
+}
+.scene-location > i {
+  width: 5px;
+  height: 5px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #78d6df;
+  box-shadow: 0 0 9px #75d8e591;
+}
+.scene-location small {
+  grid-column: 2;
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: #8ca3b0;
+}
+.scene-tools {
+  position: absolute;
+  top: 22px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #5c798447;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #0b1a24e6;
+  box-shadow: 0 10px 24px #050c122c;
+  z-index: 30;
+}
+.scene-tools button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 39px;
+  border: 0;
+  color: #aac2cc;
+  background: transparent;
+  cursor: pointer;
+}
+.scene-tools button:hover {
+  background: #29414b;
+  color: #7fe4ef;
+}
+.scene-tools > span {
+  height: 1px;
+  background: #68828d38;
+}
+.scene-tag {
+  --tag-color: #8dd6df;
+  border: 1px solid color-mix(in srgb, var(--tag-color) 48%, #223843);
+  border-radius: 4px;
+  box-shadow: 0 4px 14px #07121a52;
+  background: linear-gradient(120deg, #101f2cf2, #0a1822ed);
+  color: #e0eaf1;
+  padding: 6px 9px;
+  white-space: nowrap;
+  min-width: 55px;
+  display: grid;
+  grid-template-columns: 5px auto;
+  align-items: center;
+  text-align: left;
+  gap: 4px 6px;
+  cursor: pointer;
+  font:
+    11px 'IBM Plex Mono',
+    monospace;
+  transform: translateY(-7px);
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+  line-height: 1.1;
+}
+.scene-tag i {
+  width: 4px;
+  height: 4px;
+  background: var(--tag-color);
+  border-radius: 50%;
+  box-shadow: 0 0 5px color-mix(in srgb, var(--tag-color) 50%, transparent);
+}
+.scene-tag strong {
+  font-weight: 600;
+  letter-spacing: 0.35px;
+}
+.scene-tag span {
+  grid-column: 2;
+  font-family: Inter, Arial, sans-serif;
+  color: #a5b8c2;
+  font-size: 8px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+.scene-tag.selected {
+  background: #163039;
+  box-shadow:
+    0 0 0 1px var(--tag-color),
+    0 5px 20px #07121a77;
+}
+.scene-tag.compact {
+  padding: 5px 7px;
+  font-size: 10px;
+  min-width: 42px;
+}
+.scene-tag:hover {
+  background: #223c46;
+}
+.scene-tag-stem {
+  position: absolute;
+  left: 50%;
+  top: calc(100% - 7px);
+  height: 14px;
+  width: 1px;
+  opacity: 0.7;
+  pointer-events: none;
+}
+.scene-tag-stem:after {
+  content: '';
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  position: absolute;
+  bottom: 0;
+  left: -1px;
+  background: inherit;
+}
+.scene-static-label {
+  font:
+    8px 'IBM Plex Mono',
+    monospace;
+  letter-spacing: 1.4px;
+  white-space: nowrap;
+  color: #c3d3d5;
+  background: #1b303bc4;
+  border: 1px solid #6f8b9447;
+  border-radius: 3px;
+  padding: 4px 6px;
+}
+.scene-hotel-label {
+  cursor: pointer;
+}
+.scene-runway-label {
+  font:
+    15px 'IBM Plex Mono',
+    monospace;
+  color: #c2d0d09c;
+  letter-spacing: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.scene-legend {
+  position: absolute;
+  bottom: 45px;
+  left: 21px;
+  z-index: 3;
+  border: 1px solid #6b87904d;
+  padding: 10px 12px;
+  background: #0a1921d9;
+  border-radius: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font:
+    9px Inter,
+    Arial,
+    sans-serif;
+  backdrop-filter: blur(7px);
+  color: #b8cbd3;
+}
+.scene-legend span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.scene-legend i {
+  display: block;
+  width: 19px;
+  border-top: 2px solid #68cbdc;
+}
+.scene-legend .proposed {
+  border-color: #eab367;
+  border-top-style: dashed;
+}
+.scene-legend .confirmed {
+  border-color: #89e3c1;
+}
+.scene-geography-note {
+  position: absolute;
+  bottom: 17px;
+  left: 21px;
+  z-index: 3;
+  font:
+    8px 'IBM Plex Mono',
+    monospace;
+  letter-spacing: 0.4px;
+  color: #99aeb9;
+}
+.scene-compass {
+  position: absolute;
+  right: 22px;
+  bottom: 44px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #acc1cc;
+}
+.scene-compass b {
+  font:
+    10px 'IBM Plex Mono',
+    monospace;
+}
+.scene-drag-hint {
+  position: absolute;
+  bottom: 17px;
+  right: 21px;
+  font:
+    8px Inter,
+    Arial,
+    sans-serif;
+  color: #a7bac5;
+  z-index: 3;
+}
+.scene-city {
+  font:
+    12px Inter,
+    Arial,
+    sans-serif;
+  white-space: nowrap;
+  color: #c7d2cf;
+  text-shadow:
+    0 1px 5px #081713,
+    0 0 7px #0a1c19;
+}
+.region-tag {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.region-tag span {
+  font-size: 9px;
+}
+.scene-fallback {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 13px;
+  padding: 30px;
+  background: #0d202b;
+  color: #a7c4d4;
+  text-align: center;
+  font:
+    13px Inter,
+    Arial,
+    sans-serif;
+}
+.scene-fallback strong {
+  font-size: 17px;
+  color: #e0ebee;
+}
+.scene-fallback p {
+  max-width: 500px;
+  color: #e7a994;
+}
+.scene-fallback span {
+  max-width: 420px;
+  line-height: 1.6;
+}
+.airport-scene button:focus-visible {
+  outline: 2px solid #8ce7ee;
+  outline-offset: 3px;
+}
+@media (max-width: 900px) {
+  .scene-location {
+    left: 14px;
+    top: 14px;
+    font-size: 8px;
+  }
+  .scene-location small {
+    font-size: 7px;
+  }
+  .scene-tools {
+    top: 14px;
+    right: 12px;
+  }
+  .scene-legend {
+    left: 12px;
+    bottom: 39px;
+    font-size: 8px;
+    padding: 8px;
+  }
+  .scene-geography-note {
+    left: 12px;
+    font-size: 7px;
+  }
+  .scene-drag-hint {
+    display: none;
+  }
+  .scene-compass {
+    right: 13px;
+    bottom: 17px;
+  }
+  .scene-tag {
+    font-size: 9px;
+    padding: 5px 7px;
+  }
+  .scene-tag span {
+    font-size: 7px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-tag {
+    transition: none;
+  }
+}
+.scene-label-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 3;
+}
+.scene-projected-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+  pointer-events: auto;
+}
+.airport-scene .scene-tools {
+  top: 68px;
+}
+.airport-scene .scene-compass {
+  bottom: 65px;
+}
+.airport-scene .scene-tools button {
+  width: 34px;
+  height: 35px;
+}
+@media (max-width: 900px) {
+  .airport-scene .scene-tools {
+    top: 62px;
+  }
+  .airport-scene .scene-compass {
+    bottom: 72px;
+  }
+}

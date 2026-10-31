@@ -1,0 +1,56 @@
+name: airport-recovery-live
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      ENVIRONMENT: production
+      DATABASE_PATH: /data/recovery.sqlite3
+      PUBLIC_BASE_URL: https://${APP_DOMAIN:?Set APP_DOMAIN}
+      ALLOWED_HOSTS: ${APP_DOMAIN},127.0.0.1,localhost,api
+      CORS_ORIGINS: https://${APP_DOMAIN}
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:?Set a random OPERATOR_TOKEN of at least 32 characters}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      FR24_API_KEY: ${FR24_API_KEY:-}
+      FR24_ENVIRONMENT: ${FR24_ENVIRONMENT:-live}
+      FR24_BOUNDS: ${FR24_BOUNDS:-46.0,43.8,23.0,26.5}
+      FR24_RESULT_LIMIT: ${FR24_RESULT_LIMIT:-5}
+      FLIGHT_POLL_SECONDS: ${FLIGHT_POLL_SECONDS:-30}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      FR24_MAX_REQUESTS: ${FR24_MAX_REQUESTS:-80}
+      FR24_MAX_CREDITS: ${FR24_MAX_CREDITS:-4000}
+      OBSERVATION_RETENTION_SECONDS: ${OBSERVATION_RETENTION_SECONDS:-3600}
+      VOICE_MAX_SECONDS: ${VOICE_MAX_SECONDS:-180}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-45}
+    volumes:
+      - recovery_data:/data
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - 80:80
+      - 443:443
+      - 443:443/udp
+    environment:
+      SITE_ADDRESS: ${APP_DOMAIN:?Set APP_DOMAIN}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  recovery_data:
+  caddy_data:
+  caddy_config:

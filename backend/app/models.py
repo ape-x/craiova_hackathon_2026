@@ -1,0 +1,227 @@
+from __future__ import annotations
+
+from typing import Any, Literal
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def canonical_id(value: str | None) -> str | None:
+    """Normalize presentation prefixes; strict lookups still reject unknown IDs."""
+    if value is None:
+        return None
+    normalized=value.strip().upper()
+    for prefix in ("RESOURCE_","RESOURCE-","BUS_","BUS-","FLIGHT_","FLIGHT-","AIRPORT_","AIRPORT-","GROUP_","GROUP-"):
+        if normalized.startswith(prefix):
+            return normalized[len(prefix):]
+    return normalized
+
+
+class Model(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_assignment=True, allow_inf_nan=False)
+
+
+class Airport(Model):
+    id: str
+    code: str
+    name: str
+    lat: float
+    lon: float
+    available: bool = True
+    diversion_eligible: bool = True
+
+
+class Resource(Model):
+    id: str
+    kind: Literal["bus", "flight", "hotel"]
+    name: str
+    origin: str
+    destination: str
+    departure: int = Field(ge=0)
+    arrival: int = Field(gt=0)
+    capacity: int = Field(ge=0, le=10000)
+    accessible: bool = True
+    available: bool = True
+    cost_per_person: float = Field(ge=0, le=100000)
+    room_capacity: int = Field(default=2, ge=1, le=10)
+    vehicle_id: str | None = None
+    status: str = "scheduled"
+    source: str = "synthetic"
+
+
+class PassengerGroup(Model):
+    id: str
+    name: str
+    size: int = Field(ge=1, le=12)
+    members: list[str] = Field(default_factory=list)
+    origin: str
+    destination: str
+    deadline: int = Field(ge=0)
+    ready_at: int = Field(default=600, ge=0)
+    accessible: bool = False
+    budget: float = Field(ge=0)
+    original_flight_id: str
+    status: Literal["scheduled", "waiting", "offered", "confirmed", "affected", "exception"] = "waiting"
+    token: str
+    priority: int = Field(default=1, ge=1, le=10)
+
+
+class Leg(Model):
+    resource_id: str
+    kind: Literal["bus", "flight", "hotel"]
+    origin: str
+    destination: str
+    departure: int
+    arrival: int
+    cost: float
+
+
+class Itinerary(Model):
+    legs: list[Leg]
+    arrival: int
+    total_cost: float
+
+
+class Offer(Model):
+    id: str
+    group_id: str
+    itinerary: Itinerary
+    status: Literal["held", "confirmed", "expired", "invalidated", "superseded"]
+    expires_at: str
+    created_version: int
+    confirmed_at: str | None = None
+    reason: str | None = None
+
+
+class Reservation(Model):
+    id: str
+    offer_id: str
+    group_id: str
+    resource_id: str
+    quantity: int
+    status: Literal["held", "confirmed", "released"]
+    expires_at: str
+
+
+class AuditEvent(Model):
+    id: str
+    type: str
+    timestamp: str
+    version: int
+    target_id: str | None = None
+    description: str
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class Strategy(Model):
+    id: str = "balanced"
+    label: str = "Balanced recovery"
+    objective: Literal["balanced", "fastest", "lowest_cost"] = "balanced"
+    preferred_airport: str | None = None
+    weights: dict[str, float] = Field(default_factory=dict)
+
+    @field_validator("preferred_airport")
+    @classmethod
+    def normalize_airport(cls,value):
+        return canonical_id(value)
+
+
+class Allocation(Model):
+    group_id: str
+    itinerary: Itinerary
+
+
+class Plan(Model):
+    id: str
+    strategy: Strategy
+    allocations: list[Allocation]
+    exceptions: list[dict[str, Any]]
+    recovered_passengers: int
+    total_cost: float
+    average_arrival: float
+    scenario_changes: list[dict[str, Any]] = Field(default_factory=list)
+    validation: dict[str, Any]
+    solver: str = "bounded_multi_start_allocator"
+    optimality: str = "feasible heuristic; global optimality not proven"
+    latency_ms: float = 0
+
+
+class Decision(Model):
+    id: str
+    timestamp: str
+    source_version: int
+    applied_version: int
+    mode: Literal["ai", "solver"]
+    provider: str
+    request: str
+    explanation: str
+    selected_plan_id: str
+    candidates: list[Plan]
+    latency_ms: float
+    timings_ms: dict[str, float] = Field(default_factory=dict)
+    focus_id: str | None = None
+
+
+class World(Model):
+    scenario_id: str
+    version: int = 1
+    epoch: str
+    sim_time: int = 600
+    mode: Literal["simulation"] = "simulation"
+    currency: str = "EUR"
+    budget: float = 45000
+    airports: list[Airport]
+    resources: list[Resource]
+    groups: list[PassengerGroup]
+    offers: list[Offer] = Field(default_factory=list)
+    reservations: list[Reservation] = Field(default_factory=list)
+    events: list[AuditEvent] = Field(default_factory=list)
+    decisions: list[Decision] = Field(default_factory=list)
+    observations: list[dict[str, Any]] = Field(default_factory=list)
+    stats: dict[str, Any] = Field(default_factory=dict)
+    provider_status: dict[str, Any] = Field(default_factory=dict)
+
+
+class Mutation(Model):
+    expected_version: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=8, max_length=120)
+
+
+EventType = Literal["resource_unavailable", "flight_cancelled", "airport_closed", "resource_capacity", "budget_changed", "group_deadline", "group_accessibility", "resource_accessibility", "flight_diverted", "group_budget", "resource_restored"]
+
+
+class ScenarioChange(Model):
+    type: EventType
+    target_id: str | None = None
+    value: Any = None
+
+    @field_validator("target_id")
+    @classmethod
+    def normalize_target(cls,value):
+        return canonical_id(value)
+
+
+class EventRequest(Mutation, ScenarioChange):
+    pass
+
+
+class ReplanRequest(Mutation):
+    mode: Literal["ai", "solver"] = "solver"
+
+
+class CommandRequest(Mutation):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class AcceptRequest(Model):
+    token: str = Field(min_length=20, max_length=200)
+    idempotency_key: str = Field(min_length=8, max_length=120)
+
+
+class ConstraintRequest(Model):
+    idempotency_key: str = Field(min_length=8, max_length=120)
+    deadline: int | None = Field(default=None, ge=600, le=10080)
+    accessible: bool | None = None
+    budget: float | None = Field(default=None, ge=0, le=100000)
+
+
+class LoginRequest(Model):
+    token: str = Field(min_length=1, max_length=512)
