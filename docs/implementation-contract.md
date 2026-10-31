@@ -15,35 +15,35 @@ Updated 31 October 2026. FastAPI owns the validated schema, operational state an
 
 Operator endpoints require operator authentication. Mutations use `expected_version` and `idempotency_key` where specified by their typed request; passenger actions use the group's current token. Source lookups do not accept browser-supplied prices or provider credentials.
 
-| Endpoint | Contract |
-|---|---|
-| `GET /api/health`, `GET /api/ready` | Liveness and database readiness |
-| `GET /api/config` | Public configuration and configured-provider flags; not a claim of verified account access |
-| `GET /api/world`, `GET /api/stream` | Current operational world and authenticated SSE updates |
-| `GET /api/audit` | Operator audit history |
-| `POST /api/flights/lookup` | Flight number and explicit first-tracked UTC date; return exact FR24 matches, freshness and opaque selection references |
-| `POST /api/incidents` | Append operator report for the selected flight and optional explicit group selection |
-| `POST /api/incidents/{id}/groups` | Append compatible existing groups; do not move their locations or replace existing bookings |
-| `POST /api/incidents/{id}/refresh-flight` | Refresh the same exact flight leg/date; never silently substitute another match |
-| `POST /api/incidents/{id}/recovery-jobs` | HTTP202 with `{job,replayed}`; explicit group scope, objective, modes, call limit and instructions |
-| `GET /api/incidents/{id}/recovery-jobs`, `GET /api/recovery-jobs/{id}` | Read durable progress; no new supplier dispatch |
-| `POST /api/recovery-jobs/{id}/cancel` | Idempotent cancellation request; an already-running external call may finish |
-| `POST /api/live/import-passengers` | Validated manifest with evidence and group constraints |
-| `POST /api/live/generate-passengers` | Explicit planning assumptions only; creates no transport or hotel inventory |
-| `POST /api/live/resources` | Operator-documented dated service with evidence, price, capacity and validity |
-| `POST /api/real-data/search` | Reference hotels/routes and supplier hotel offers; no operational import or booking |
-| `POST /api/live/hotel-quotes` | Group-specific complete hotel quotes at actual property nodes; sourced stay-policy validation or separately declared property-agreed times |
-| `POST /api/live/travel/search`, `POST /api/live/travel/import` | Separate dated supplier search and server-held quote import |
-| `GET /api/transfers/status`, `POST /api/transfers/quote` | APL UK price snapshots in GBP per vehicle; no import, booking, duration guarantee or EUR budget conversion |
-| `POST /api/live/offers/{id}/confirm` | Explicit operator booking references for every segment of a real passenger group's proposal |
-| `GET /api/passenger/{token}` | Only the authorized group's data and itinerary |
-| `POST /api/offers/{id}/accept` | Record live passenger preference; no supplier booking |
-| `POST /api/offers/{id}/decline` | Decline an eligible proposed/accepted offer and release its local segment records atomically |
-| `POST /api/passenger/{token}/constraints` | Update supported group constraints and invalidate the impacted proposal |
-| `POST /api/commands` | Validated commands; explicit existing-case recovery intent can queue a scoped durable job and return its receipt |
-| `POST /api/replan` | Validated AI/solver operation over sourced inventory; not an unrestricted supplier search |
-| `POST /api/voice/session` | Server-mediated GPT-Live session and bounded lifecycle |
-| `POST /api/traffic/start`, `POST /api/traffic/stop` | Explicit shared FR24 collection with persistent request/credit budget |
+| Endpoint                                                               | Contract                                                                                                                                   |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/health`, `GET /api/ready`                                    | Liveness and database readiness                                                                                                            |
+| `GET /api/config`                                                      | Public configuration and configured-provider flags; not a claim of verified account access                                                 |
+| `GET /api/world`, `GET /api/stream`                                    | Current operational world and authenticated SSE updates                                                                                    |
+| `GET /api/audit`                                                       | Operator audit history                                                                                                                     |
+| `POST /api/flights/lookup`                                             | Flight number and explicit first-tracked UTC date; return exact FR24 matches, freshness and opaque selection references                    |
+| `POST /api/incidents`                                                  | Append operator report for the selected flight and optional explicit group selection                                                       |
+| `POST /api/incidents/{id}/groups`                                      | Append compatible existing groups; do not move their locations or replace existing bookings                                                |
+| `POST /api/incidents/{id}/refresh-flight`                              | Refresh the same exact flight leg/date; never silently substitute another match                                                            |
+| `POST /api/incidents/{id}/recovery-jobs`                               | HTTP202 with `{job,replayed}`; explicit group scope, objective, modes, call limit and instructions                                         |
+| `GET /api/incidents/{id}/recovery-jobs`, `GET /api/recovery-jobs/{id}` | Read durable progress; no new supplier dispatch                                                                                            |
+| `POST /api/recovery-jobs/{id}/cancel`                                  | Idempotent cancellation request; an already-running external call may finish                                                               |
+| `POST /api/live/import-passengers`                                     | Validated manifest with evidence and group constraints                                                                                     |
+| `POST /api/live/generate-passengers`                                   | Explicit planning assumptions only; creates no transport or hotel inventory                                                                |
+| `POST /api/live/resources`                                             | Operator-documented dated service with evidence, price, capacity and validity                                                              |
+| `POST /api/real-data/search`                                           | Reference hotels/routes and supplier hotel offers; no operational import or booking                                                        |
+| `POST /api/live/hotel-quotes`                                          | Group-specific complete hotel quotes at actual property nodes; sourced stay-policy validation or separately declared property-agreed times |
+| `POST /api/live/travel/search`, `POST /api/live/travel/import`         | Separate dated supplier search and server-held quote import                                                                                |
+| `GET /api/transfers/status`, `POST /api/transfers/quote`               | APL UK price snapshots in GBP per vehicle; no import, booking, duration guarantee or EUR budget conversion                                 |
+| `POST /api/live/offers/{id}/confirm`                                   | Explicit operator booking references for every segment of a real passenger group's proposal                                                |
+| `GET /api/passenger/{token}`                                           | Only the authorized group's data and itinerary                                                                                             |
+| `POST /api/offers/{id}/accept`                                         | Record live passenger preference; no supplier booking                                                                                      |
+| `POST /api/offers/{id}/decline`                                        | Decline an eligible proposed/accepted offer and release its local segment records atomically                                               |
+| `POST /api/passenger/{token}/constraints`                              | Update supported group constraints and invalidate the impacted proposal                                                                    |
+| `POST /api/commands`                                                   | Validated commands; explicit existing-case recovery intent can queue a scoped durable job and return its receipt                           |
+| `POST /api/replan`                                                     | Validated AI/solver operation over sourced inventory; not an unrestricted supplier search                                                  |
+| `POST /api/voice/session`                                              | Server-mediated GPT-Live session and bounded lifecycle                                                                                     |
+| `POST /api/traffic/start`, `POST /api/traffic/stop`                    | Explicit shared FR24 collection with persistent request/credit budget                                                                      |
 
 Legacy scenario events and `/api/reset` remain implementation support for the internal simulation mode. Synthetic reset is rejected in live; it is not an operator step in the live recovery workflow.
 
@@ -65,7 +65,7 @@ The hotel-import request shape is unchanged. With `stay_times_confirmed=false`, 
 
 Missing, unsupported or conflicting policy times, special check-in instructions, source/property identity or freshness mismatches, and ambiguous/nonexistent daylight-saving boundaries exclude the property with a reason. Successful provenance contains `stay_times_source='supplier_policy'`, `stay_times_confirmed=false` and `stay_policy_validation` with source, property ID, time zone and dated bounds. `stay_times_confirmed=true` remains a separate `operator_confirmed` declaration that the stay times were agreed with the property; it is not a supplier booking.
 
-The response preserves `skipped_incomplete_pricing` and adds `skipped_stay_policy` and `hotel_exclusions[{hotel_id,code,message}]`. If every option is excluded, HTTP422 leaves the operation unchanged. No policy result implies a shuttle, physical transfer or reserved room. This automatic policy path is implemented; live operational import and a complete hotel-plus-transfer itinerary remain separate verification gates.
+The response preserves `skipped_incomplete_pricing` and adds `skipped_stay_policy` and `hotel_exclusions[{hotel_id,code,message}]`. If every option is excluded, HTTP422 leaves the operation unchanged. No policy result implies a shuttle, physical transfer or reserved room. Live UI import verified nine eligible property/quote pairs with the operator override false and one policy exclusion; a complete hotel-plus-transfer itinerary remains a separate verification gate.
 
 ## Mutation, retry and budget boundaries
 
@@ -91,7 +91,7 @@ The scoped voice/text-to-job bridge is implemented. The current request must nam
 
 The default command allowance is eight calls total: one interpretation plus at most seven job calls. A stated limit of four permits one interpretation plus three job calls; a limit of three or less returns clarification without a job. The manual form's default allowance remains eight job calls. Parsed intent is cached, job creation and the command receipt are atomic, and unknown/crashed interpretation is never automatically reissued. A voice acknowledgement confirms only the recorded request, not a completed plan or booking.
 
-The real Responses → supplier searches → Decisions case-form workflow has live evidence. The scoped command bridge has offline coverage; its live runtime check is still pending. Existing voice transport/lifecycle has a separate bounded provider check using synthetic silence.
+The case-form workflow and scoped text-command entry both have live evidence. The text check recorded one interpretation plus three job calls within an explicit total allowance of four, produced a validated two-passenger proposal and preserved the out-of-scope group. Existing voice transport/lifecycle has a separate bounded provider check using synthetic silence; this does not verify a real microphone conversation.
 
 Model/provider errors remain explicit. The app does not execute arbitrary model code, invent supplier stock or substitute a scripted AI result. Full microphone, delegation, playback and interruption testing remains a separate acceptance gate.
 

@@ -10,7 +10,7 @@ Problema inițială și cerințele pasagerilor pot fi ipoteze introduse de echip
 2. Înregistrează incidentul și leagă grupurile afectate. Datele inițiale pot proveni dintr-un manifest sau din cerințe de planificare introduse explicit. Grupurile trebuie să indice același zbor original; operațiunile existente sunt păstrate.
 3. Din caz, pornește căutarea pentru grupurile selectate și stabilește limita de apeluri. Sol Ultrafast alege căutări eligibile, sunt cerute cotații reale de zbor, iar Decisions selectează dintre planurile validate. Alocările celorlalte grupuri sunt păstrate.
 4. Verifică sursele, propunerile și cerințele rămase fără soluție. Cazarea și legăturile terestre pot fi căutate separat și completate prin cotații importate sau servicii documentate de operator.
-5. Folosește comenzile pentru condițiile suportate sau pentru a porni o căutare durabilă. În cererea curentă, identifică explicit un caz existent prin ID sau printr-un zbor fără ambiguitate. Legătura voce/text este implementată și testată offline; verificarea ei live rămâne separată. Formularul cazului are deja o probă reală completă.
+5. Folosește comenzile pentru condițiile suportate sau pentru a porni o căutare durabilă. În cererea curentă, identifică explicit un caz existent prin ID sau printr-un zbor fără ambiguitate. Formularul cazului și comanda text au probe reale complete; sesiunea vocală cu microfon rămâne o verificare separată.
 6. Pasagerul acceptă sau refuză o propunere. Acceptarea înregistrează preferința. Confirmarea rezervării necesită referințele externe pentru fiecare segment.
 
 Căutările pe incident păstrează progresul și fiecare apel într-un registru persistent. Repetarea aceleiași cereri nu retrimite apelurile. Un rezultat necunoscut după întrerupere necesită o încercare nouă, explicită; nu este reluat automat. Căutarea automată acoperă momentan zborurile și inventarul deja documentat. Lipsa legăturilor până la hotel sau stație rămâne vizibilă. Cotațiile pot expira și nu rezervă locuri.
@@ -21,7 +21,7 @@ Costul cazării păstrează separat cotația furnizorului și taxele obligatorii
 
 Hotelurile au pozițiile reale ale proprietăților și fusurile orare calculate din acele coordonate. O noapte de cazare nu implică un transfer gratuit până la aeroport. Timpul de așteptare este afișat separat; trecerea peste miezul nopții nu inventează automat o cerință de cazare în modul live.
 
-Importul hotelier poate verifica orele șederii față de politica proprietății. O politică lipsă sau ambiguă și sosirea în afara intervalului publicat sunt motive explicite de excludere. Fără o limită de check-in publicată, numai ora exactă de început este acceptată automat. Confirmarea că operatorul a convenit alte ore cu proprietatea rămâne o declarație separată, nu o rezervare. Acest traseu automat de validare este implementat; verificarea importului live rămâne în așteptare.
+Importul hotelier verifică orele șederii față de politica proprietății. O politică lipsă sau ambiguă și sosirea în afara intervalului publicat sunt motive explicite de excludere. Fără o limită de check-in publicată, numai ora exactă de început este acceptată automat. Confirmarea că operatorul a convenit alte ore cu proprietatea rămâne o declarație separată, nu o rezervare. Importul live pe baza politicii furnizorului a fost verificat prin interfață, fără această confirmare suplimentară a operatorului.
 
 ## Rulare locală: o singură aplicație
 
@@ -40,19 +40,19 @@ Pentru dezvoltare și verificări locale sunt necesare Python 3.12 și Node.js 2
 
 ## Integrări
 
-| Configurație | Funcție |
-|---|---|
-| `OPENAI_API_KEY` | Interpretare Sol Ultrafast, selecție Decisions și voce GPT-Live |
-| `OPENAI_MODEL`, `OPENAI_SERVICE_TIER` | Implicit `gpt-6.1-sol`, `ultrafast`; fără schimbare automată de model sau tier |
-| `OPENAI_DECISION_MODEL`, `OPENAI_VOICE_MODEL` | Implicit `gpt-6-luna`, respectiv `gpt-live-1` |
-| `FR24_API_KEY` | Observații Flightradar24; necesită abonament API |
-| `GOOGLE_MAPS_API_KEY` | Cheie publică de browser, restricționată la origini și Maps JavaScript API |
-| `GOOGLE_MAPS_SERVER_API_KEY` | Google Places și Routes, numai pe server |
-| `LITEAPI_API_KEY`, `LITEAPI_ENVIRONMENT=live` | Cotații Nuitee pentru cazare și zboruri, conform accesului contului |
-| `DUFFEL_ACCESS_TOKEN`, `DUFFEL_ENVIRONMENT=live` | Furnizor alternativ pentru zboruri |
-| `DISTRIBUSION_API_KEY`, `DISTRIBUSION_ENVIRONMENT=live` | Autocare; necesită și activarea fluxului Offers |
-| `APL_API_KEY` | Cotații Airport Pickups London pentru transferuri în UK, în GBP per vehicul; fără comandă sau rezervare |
-| `PUBLIC_BASE_URL`, `OPERATOR_TOKEN` | URL accesibil pasagerilor și autentificarea operatorilor |
+| Configurație                                            | Funcție                                                                                                 |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                                        | Interpretare Sol Ultrafast, selecție Decisions și voce GPT-Live                                         |
+| `OPENAI_MODEL`, `OPENAI_SERVICE_TIER`                   | Implicit `gpt-6.1-sol`, `ultrafast`; fără schimbare automată de model sau tier                          |
+| `OPENAI_DECISION_MODEL`, `OPENAI_VOICE_MODEL`           | Implicit `gpt-6-luna`, respectiv `gpt-live-1`                                                           |
+| `FR24_API_KEY`                                          | Observații Flightradar24; necesită abonament API                                                        |
+| `GOOGLE_MAPS_API_KEY`                                   | Cheie publică de browser, restricționată la origini și Maps JavaScript API                              |
+| `GOOGLE_MAPS_SERVER_API_KEY`                            | Google Places și Routes, numai pe server                                                                |
+| `LITEAPI_API_KEY`, `LITEAPI_ENVIRONMENT=live`           | Cotații Nuitee pentru cazare și zboruri, conform accesului contului                                     |
+| `DUFFEL_ACCESS_TOKEN`, `DUFFEL_ENVIRONMENT=live`        | Furnizor alternativ pentru zboruri                                                                      |
+| `DISTRIBUSION_API_KEY`, `DISTRIBUSION_ENVIRONMENT=live` | Autocare; necesită și activarea fluxului Offers                                                         |
+| `APL_API_KEY`                                           | Cotații Airport Pickups London pentru transferuri în UK, în GBP per vehicul; fără comandă sau rezervare |
+| `PUBLIC_BASE_URL`, `OPERATOR_TOKEN`                     | URL accesibil pasagerilor și autentificarea operatorilor                                                |
 
 Prezența unei chei înseamnă configurare, nu acces verificat. Conturile sandbox nu furnizează inventar live. Căutările nu efectuează plăți sau rezervări. [Configurare și limite](docs/live-mode.md), [date geografice și hoteliere](docs/real-data.md), [cereri către furnizori](backend/app/providers/README.md).
 
@@ -101,7 +101,9 @@ Testele backend acoperă alocarea și concurența, versiuni depășite, familii,
 
 Verificarea vizuală urmărește fluxul complet în browser, la dimensiuni desktop și telefon. [Raportul de verificare](docs/verification/report.md) separă testele executate de integrările încă neverificate. Capturile efective sunt în [docs/verification](docs/verification); imaginile din `docs/mockups` sunt concepte, nu rezultate ale testelor.
 
-La 31 octombrie 2026, instanța principală a verificat și fluxul real **FR24 → caz → Responses Ultrafast → Nuitee → Decisions → propunere**: două căutări Nuitee au întors 20 de cotații, iar un plan valid a propus o soluție pentru doi adulți, fără excepții și fără modificarea grupului existent din afara selecției. O singură rulare a durat aproximativ 12,1 secunde; aceasta nu este o promisiune de performanță. Pasagerul a acceptat propunerea ca preferință, iar cotația a expirat ulterior în mod normal, fără rezervare la furnizor. Interfața APL a afișat șase cotații reale GBP, fără rezervare. Proba hotelieră LHR a întors zece cotații complete cu coordonate reale, iar interfața a afișat prețurile hoteliere; importul într-un itinerar complet cu transferuri nu este încă verificat.
+La 31 octombrie 2026, instanța principală a verificat fluxul real **FR24 → caz → Responses Ultrafast → Nuitee → Decisions → propunere**: două căutări Nuitee au întors 20 de cotații, iar un plan valid a propus o soluție pentru doi adulți, fără excepții și fără modificarea grupului existent din afara selecției. O singură rulare a durat aproximativ 12,1 secunde; aceasta nu este o promisiune de performanță. Pasagerul a acceptat propunerea ca preferință, iar cotația a expirat ulterior în mod normal, fără rezervare la furnizor. Interfața APL a afișat șase cotații reale GBP, fără rezervare.
+
+Versiunea `885b2ac`, livrată pe aceeași instanță, a trecut **761 de teste backend și 188 frontend**, buildul și verificarea formatării. Prin interfață au fost importate nouă cotații hoteliere EUR și cele nouă proprietăți reale din zona LHR, folosind politicile furnizorului; o proprietate a fost exclusă cu motiv explicit. O comandă text în română a pornit apoi căutarea pentru cazul numit, în limita de patru apeluri: o interpretare și trei apeluri ale căutării. Zece cotații Nuitee au produs o propunere pentru doi pasageri, fără excepții; căutarea a durat 7,21 secunde, fără timpul interpretării. Grupul inițial a fost păstrat și nu au fost create rezervări. Un itinerar complet cu hotel și transferuri fizice rămâne de verificat.
 
 Google a randat geografia reală, iar probele anterioare au verificat accesul OpenAI și transportul/închiderea unei sesiuni GPT-Live cu sunet sintetic. Acestea nu validează o conversație reală completă, toate modelele 3D sau exploatarea continuă a conturilor. Credențialele, payloadurile FR24, tokenurile pasagerilor și capturile consolelor private nu sunt publicate.
 
@@ -147,9 +149,8 @@ Feedul FR24 are un cache separat: `OBSERVATION_RETENTION_SECONDS=3600` implicit.
 ## Ce rămâne de verificat cu echipa
 
 - O sesiune reală GPT-Live cu microfon, delegare, redare, întrerupere și închidere confirmată.
-- Intrarea voce/text → căutare pe incident, implementată și testată offline, dar încă neverificată live.
 - Fluxul de poziții FR24 pe hartă, separat de lookup-ul de cursă deja verificat; limitele abonamentului echipei.
-- Importul hotelier prin interfață și un itinerar complet cu legături fizice verificate; existența unei cotații nu dovedește un transfer.
+- Un itinerar complet cu hotel și legături fizice verificate; importul hotelier prin interfață este verificat, dar nu dovedește existența unui transfer.
 - Verificările de facturare Google și restricțiile cheii; fotogrammetria detaliată a terminalului și randarea/alinierea modelelor GLB.
 - Profilul vizual pe ecranul/proiectorul evenimentului și fidelitatea față de mockupurile fotorealiste.
 

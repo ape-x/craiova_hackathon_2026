@@ -30,18 +30,18 @@ Contextul FR24 are retenție limitată. Reîmprospătarea unui caz trebuie să p
 
 ## 3. Ce reprezintă fiecare sursă
 
-| Date | Sursă și utilizare | Limită explicită |
-|---|---|---|
-| Cursa și observațiile aeronavei | Flightradar24, cu sursă și timp | Nu furnizează inventar de bilete; absența din rezultate nu dovedește anularea |
-| Incident și condiții | Raportul operatorului | Nu constituie o confirmare externă a închiderii aeroportului |
-| Grupuri de pasageri | Manifest importat sau ipoteze de planificare marcate | Grupurile generate nu pot primi confirmări reale de rezervare |
-| Cotații de zbor | Nuitee Flights; adaptor Duffel alternativ, dacă are acces autorizat | Disponibilitatea și prețul unei căutări nu sunt locuri reținute |
-| Cotații hoteliere | Nuitee / LiteAPI; adaptor Booking conform accesului contului | Date, ocupare și taxe obligatorii; niciun prebook sau plată |
-| Proprietăți hoteliere | Coordonate ale furnizorului, metadate și fus orar derivat | Hotelul nu este plasat la aeroport și nu implică un shuttle |
-| Transferuri private UK | Airport Pickups London, GBP per vehicul | Cotații separate; fără durată/sosire verificată, rezervare sau integrare în bugetul EUR |
-| Autocare programate | Adaptor Distribusion, cu acces de producție separat | Stații reale, vârste explicite și conexiuni până la stații; accesul nu este presupus |
-| Hartă și rute rutiere | Google Maps/Places/Routes; surse publice documentate când nu este configurat Google | O rută și o durată estimată nu sunt un vehicul disponibil |
-| Transport public și conversie FX | Adaptoare pure Google TRANSIT și ECB, cu teste offline | Nu sunt încă fluxuri conectate în produs și nu completează inventarul |
+| Date                             | Sursă și utilizare                                                                  | Limită explicită                                                                        |
+| -------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Cursa și observațiile aeronavei  | Flightradar24, cu sursă și timp                                                     | Nu furnizează inventar de bilete; absența din rezultate nu dovedește anularea           |
+| Incident și condiții             | Raportul operatorului                                                               | Nu constituie o confirmare externă a închiderii aeroportului                            |
+| Grupuri de pasageri              | Manifest importat sau ipoteze de planificare marcate                                | Grupurile generate nu pot primi confirmări reale de rezervare                           |
+| Cotații de zbor                  | Nuitee Flights; adaptor Duffel alternativ, dacă are acces autorizat                 | Disponibilitatea și prețul unei căutări nu sunt locuri reținute                         |
+| Cotații hoteliere                | Nuitee / LiteAPI; adaptor Booking conform accesului contului                        | Date, ocupare și taxe obligatorii; niciun prebook sau plată                             |
+| Proprietăți hoteliere            | Coordonate ale furnizorului, metadate și fus orar derivat                           | Hotelul nu este plasat la aeroport și nu implică un shuttle                             |
+| Transferuri private UK           | Airport Pickups London, GBP per vehicul                                             | Cotații separate; fără durată/sosire verificată, rezervare sau integrare în bugetul EUR |
+| Autocare programate              | Adaptor Distribusion, cu acces de producție separat                                 | Stații reale, vârste explicite și conexiuni până la stații; accesul nu este presupus    |
+| Hartă și rute rutiere            | Google Maps/Places/Routes; surse publice documentate când nu este configurat Google | O rută și o durată estimată nu sunt un vehicul disponibil                               |
+| Transport public și conversie FX | Adaptoare pure Google TRANSIT și ECB, cu teste offline                              | Nu sunt încă fluxuri conectate în produs și nu completează inventarul                   |
 
 Eșecul unui furnizor configurat rămâne vizibil. Nu este înlocuit cu inventar sintetic sau cu un răspuns AI prestabilit. O cheie prezentă indică configurare; numai verificarea reală demonstrează accesul la operația testată.
 
@@ -95,11 +95,11 @@ Operațiile sunt idempotente și autorizate pentru grupul respectiv. Un rezultat
 
 Harta domină spațiul de lucru; lista de resurse, sumarul cazului, cronologia și inspectorul oferă context. Designul păstrează panouri clare, tipografie lizibilă, accente cyan/amber/mint și teme luminoasă/întunecată. Culorile sunt însoțite de text și simboluri.
 
-| Nivel | Scop |
-|---|---|
-| Regiune | Compararea aeroporturilor, stațiilor, proprietăților și serviciilor sursate |
-| Aeroport/proprietate | Localizarea punctelor relevante și a legăturilor lipsă |
-| Pasager | Grupul, constrângerile, propunerea și preferința sa |
+| Nivel                | Scop                                                                        |
+| -------------------- | --------------------------------------------------------------------------- |
+| Regiune              | Compararea aeroporturilor, stațiilor, proprietăților și serviciilor sursate |
+| Aeroport/proprietate | Localizarea punctelor relevante și a legăturilor lipsă                      |
+| Pasager              | Grupul, constrângerile, propunerea și preferința sa                         |
 
 Google Maps 3D a randat geografia reală. Acoperirea detaliată a clădirilor și fidelitatea față de concepte nu sunt garantate. Scena locală Three.js și modelele proprii sunt reprezentări arhitecturale, nu măsurători. În live nu animăm cotațiile, autobuzele sau grupurile ca și cum ar avea poziții GPS observate. Traficul observat își păstrează sursa și vechimea.
 
@@ -123,22 +123,22 @@ Context regional pentru recuperarea pasagerilor. Produsul nu emite instrucțiuni
 
 ## 8. Arhitectură și interacțiune AI
 
-| Componentă | Responsabilitate actuală |
-|---|---|
-| React/TypeScript | Spațiul operatorului, formularele de caz, progresul, harta și pagina pasagerului |
-| FastAPI | Autorizare, contracte validate, integrarea furnizorilor și orchestrare |
-| Sol Ultrafast | Interpretare structurată și selecția căutărilor eligibile |
-| Decisions | Alegerea dintre propuneri calculate și validate |
-| Solver Python | Fezabilitate, alocări, costuri și păstrarea ariei neafectate |
-| SQLite | Stare versionată, registrul căutărilor, idempotency și audit |
-| SSE | Actualizări ale stării comune către interfețe |
-| GPT-Live | Transport vocal și delegare; verificarea unei conversații reale complete rămâne separată |
+| Componentă       | Responsabilitate actuală                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| React/TypeScript | Spațiul operatorului, formularele de caz, progresul, harta și pagina pasagerului         |
+| FastAPI          | Autorizare, contracte validate, integrarea furnizorilor și orchestrare                   |
+| Sol Ultrafast    | Interpretare structurată și selecția căutărilor eligibile                                |
+| Decisions        | Alegerea dintre propuneri calculate și validate                                          |
+| Solver Python    | Fezabilitate, alocări, costuri și păstrarea ariei neafectate                             |
+| SQLite           | Stare versionată, registrul căutărilor, idempotency și audit                             |
+| SSE              | Actualizări ale stării comune către interfețe                                            |
+| GPT-Live         | Transport vocal și delegare; verificarea unei conversații reale complete rămâne separată |
 
 Modelele nu decid singure dacă o capacitate, un preț sau un transfer este valid. Backendul reverifică înainte de aplicare. Nicio decizie live nu este înlocuită cu un răspuns prestabilit când API-ul eșuează.
 
 Comenzile vocale/text pot porni o căutare durabilă pentru un caz existent, identificat explicit prin ID sau printr-un zbor fără ambiguitate în cererea curentă. Sunt admise numai grupurile deja legate de acel caz; rezervările confirmate și alocările din afara selecției sunt protejate. Confirmarea vocală de pornire descrie cererea înregistrată, nu un itinerar final sau o rezervare.
 
-Limita comenzii include apelul de interpretare: implicit opt apeluri în total, dintre care cel mult șapte pentru căutarea durabilă. Formularul cazului are separat limita apelurilor propriei căutări. O interpretare cu rezultat necunoscut nu este retrimisă automat. Implementarea are teste offline; verificarea live a acestei intrări vocale/text este încă în așteptare. Formularul cazului are deja proba reală descrisă mai jos. O sesiune WebRTC reușită cu sunet sintetic nu validează microfonul, delegarea, redarea și întreruperea într-o conversație reală.
+Limita comenzii include apelul de interpretare: implicit opt apeluri în total, dintre care cel mult șapte pentru căutarea durabilă. Formularul cazului are separat limita apelurilor propriei căutări. O interpretare cu rezultat necunoscut nu este retrimisă automat. Formularul cazului și intrarea prin comandă text au probe reale descrise mai jos. Conversația cu microfon rămâne de verificat: o sesiune WebRTC reușită cu sunet sintetic nu validează microfonul, delegarea, redarea și întreruperea într-o conversație reală.
 
 Cheile private rămân pe server. Cheia publică Maps pentru browser necesită restricțiile aplicației. Contextul temporar FR24 nu este copiat în exporturile portabile sau backupurile operaționale; retenția și drepturile furnizorilor rămân explicite.
 
@@ -150,12 +150,11 @@ La 31 octombrie 2026 au fost observate următoarele rezultate pe instanța princ
 - O căutare durabilă a folosit patru apeluri: Responses, două căutări Nuitee paralele și Decisions. Au fost întoarse 20 de cotații și înregistrată o propunere validă pentru doi pasageri, fără excepții; grupul existent din afara selecției a rămas neatins.
 - Circuitul căutării a durat aproximativ 12,1 secunde într-o singură rulare. Nu este o promisiune de latență sau o medie/p95.
 - Interfața APL a afișat șase cotații reale în GBP per vehicul pentru o călătorie UK, fără rezervare sau reținere.
-- O probă Nuitee a întors zece cotații hoteliere complete pentru LHR, cu coordonate reale și fusul Europe/London. Prețurile hoteliere au fost afișate și prin interfață; importul lor într-un itinerar complet cu transferuri nu este încă verificat.
+- Importul hotelier prin interfață a adăugat nouă cotații EUR și nouă proprietăți reale din zona LHR, după verificarea automată a politicilor de ședere, fără confirmare suplimentară a operatorului. O proprietate a fost exclusă cu motiv sursat. Un itinerar complet cu hotel și transferuri rămâne de verificat.
+- O comandă text în română a respectat limita de patru apeluri: o interpretare și trei apeluri ale căutării. Zece cotații Nuitee au produs o propunere pentru doi pasageri, fără excepții, păstrând grupul din afara cazului. Căutarea a durat 7,21 secunde fără interpretare, într-o singură observație.
 - Pasagerul a acceptat o propunere reală ca preferință, după care cotația a expirat în mod normal. Nu a fost creată o rezervare la furnizor.
 
 Probele nu demonstrează acoperire universală, disponibilitate viitoare, rezervări reale sau recuperare automată completă cu hotel și transfer. [Raportul detaliat](verification/report.md) menține această separare și rezultatele testelor.
-
-Validarea automată a orelor șederii pe baza politicii proprietății este implementată separat; nu este inclusă în probele reale de mai sus.
 
 ## 10. Criterii de acceptare ale fluxului live asistat
 

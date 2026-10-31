@@ -4,9 +4,9 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 31 October 2026
 
-Release `7afa194` was deployed to the sole active application at `http://localhost:8080`, preserving the existing operation. The subsequent source-exclusion display fix was committed as `1412aff`; it distinguishes rejected alternatives from unresolved requirements without discarding recorded reasons.
+Release `885b2ac` was deployed to the sole active application at `http://localhost:8080`, preserving the existing operation. It includes the earlier source-exclusion display fix (`1412aff`), reconciled supplier schedules (`769e416`), scoped command bridge (`3ebf215`) and sourced hotel-policy validation.
 
-The last full backend run passed **689 tests**. Subsequent focused runs included **29 tests** for the preceding slice, **88 tests** for the scoped command bridge and **30 tests** at its publication boundary. The latest full frontend run passed **188 tests**. The supplier-segment presentation changes in `769e416` also passed **seven focused tests** and strict TypeScript, covering impossible calendar dates, source/itinerary schedule reconciliation, connection waits and explicit clock fallbacks. Focused counts overlap the full suites and are not added together as a new full-suite total. Existing build notices are recorded below.
+The latest full suites passed **761 backend tests and 188 frontend tests**. The production build and formatting check also passed, as did both GitHub Actions runs for the release on `main` and `codex/airport-recovery-live`. The supplier-segment presentation changes in `769e416` separately passed **seven focused tests** covering impossible calendar dates, source/itinerary schedule reconciliation, connection waits and explicit clock fallbacks. Focused counts overlap the full suites and are not added to them. Existing build notices are recorded below.
 
 ### Real flight case and sourced recovery
 
@@ -24,17 +24,25 @@ The configured Airport Pickups London account returned six live vehicle quotes i
 
 No booking, driver dispatch or supplier hold occurred. Supplier expiry, structured journey duration and arrival time were not provided, and EUR settlement was not verified. Consequently these quotes remain a separate price-search workflow, not allocatable EUR transport resources.
 
-### Real hotel metadata and remaining integration boundary
+### Real hotel metadata and policy-validated UI import
 
-A live Nuitee rate probe for LHR returned **ten complete hotel quotes** with real property coordinates and the coordinate-derived **Europe/London** time zone. Hotel prices were also displayed through the actual UI. The hotel is represented at its own physical node, not at the airport. These checks verify supplier prices, their display and the location/time-zone path; **operational import and a complete hotel-plus-transfer itinerary have not yet been verified**.
+A live Nuitee rate probe for LHR returned **ten complete hotel quotes** with real property coordinates and the coordinate-derived **Europe/London** time zone. The subsequent actual UI import requested **1–2 November 2026, two adults, one room, check-in 15:00 UTC and checkout 11:00 UTC**. It imported **nine eligible EUR quotes and nine distinct property nodes**. Each imported resource recorded `stay_times_source='supplier_policy'` and `stay_times_confirmed=false`; the operator override was not used.
 
-Automatic property-policy validation is implemented for manual imports with `stay_times_confirmed=false`. It reads the exact property's sourced check-in/checkout rules in the property-local time zone and reports excluded options, rather than assuming late check-in. The separate operator-agreed override remains explicit. No live import result for this new policy path is included in the rate/display checks above.
+One property was excluded with a displayed source-policy reason referring to its published **14:00 check-in**. This verifies the automatic property-local policy path, its exclusion display and operational import. It does not establish a room reservation or a transfer to the hotel. **A complete sourced hotel-plus-transfer itinerary remains unverified.**
+
+Selecting Park Plaza London, Park Royal from the network also moved the Google geographic 3D view to the property's sourced coordinates. The property panel identified it as a reference location and kept room availability and transport verification separate.
 
 Google TRANSIT and ECB reference FX adapters have offline tests but no connected product endpoint/UI or solver integration. Transit schedules do not establish seat availability; absent fares remain unknown. An ECB estimate or explicit operator allowance is not a supplier EUR charge or guaranteed settlement.
 
-### Voice and public evidence
+### Real scoped text command and passenger itinerary
 
-The scoped voice/text-to-recovery-job bridge is implemented and committed as `3ebf215`, with offline backend/frontend coverage. It resolves an explicitly named existing case or unambiguous flight, preserves linked-group scope, counts interpretation within the command allowance and persists a queued-job receipt without reissuing unknown interpretation. Its live runtime check is still pending and is not included in the verified case-form result above. The earlier real GPT-Live check used synthetic silence and verified transport/closure only. A real microphone session with delegation, playback, interruption and final close remains a distinct acceptance gate.
+An actual Romanian text command named **EK5, its date, all linked groups and a maximum of four API calls**. The real receipt/ledger recorded **one interpretation plus three of three allowed job calls**, **ten Nuitee quotes**, and **two passengers proposed, zero unresolved**. The durable job ran for **7.21 seconds, excluding interpretation**; this is one observation, not an end-to-end latency guarantee. The world reached version 43, the original out-of-scope group was preserved, and supplier bookings remained zero.
+
+The passenger UI displayed the sourced itinerary as **Swiss 317: LHR 09:00 local → ZRH 11:55 local**, a **ten-hour connection**, then **Swiss 1886: ZRH 21:55 local → OTP 01:15 local the next day**. Each clock displayed its explicit UTC offset. Source segment times reconciled with the validated plan, and the arrival summary matched the final segment.
+
+This verifies the live text entry through the scoped command bridge, supplier searches and passenger presentation. It does not verify spoken input. The earlier real GPT-Live check used synthetic silence and verified transport/closure only. A real microphone session with delegation, playback, interruption and final close remains a distinct acceptance gate.
+
+At the end of these checks, expired FR24 context was honestly labeled as expired. The shared feed was paused at **81 of 84 permitted requests**, with **3,215 credits reserved**; these are recorded budget counters, not a claim of continuously fresh traffic or final billed usage.
 
 This record deliberately publishes no raw FR24 payload, private case/job/group identifier, passenger token, account contact, credential or private account screenshot. The public flight number, route, aggregate counts, times and quote snapshot above are the bounded verification evidence.
 
@@ -191,19 +199,17 @@ The local Three.js scene is an interactive architectural illustration with origi
 
 - Real GPT-Live microphone session, delegation, playback, interruption and final session close/usage.
 - Continuous FR24 position display with original timestamps and agreed account usage/retention; the authorized flight lookup/case flow is already verified above.
-- Hotel quote import through the UI and a complete sourced itinerary including independently verified property transfers.
-- Live scoped voice/text-to-job end-to-end checks; implementation and offline coverage are complete, and case-form sourcing is already verified.
+- A complete sourced hotel itinerary including independently verified property transfers; policy-validated hotel import through the UI is verified above.
 - Determine the cause of Google's billing warning and confirm billing health; configure appropriate key restrictions.
 - Verify surveyed terminal photogrammetry and precise alignment against current airport data; authored GLB rendering/orientation now has browser evidence.
 - Review visual fidelity on the event display.
 - Production host/domain, account budgets and external deployment, if the team chooses to publish.
 
-The real FR24 lookup, Nuitee flight recovery, APL quote search and hotel metadata checks close only their stated access/flow gates. A configured voice credential and transport check still require an actual microphone session. Google geographic rendering has evidence, while account administration, detailed geometry and photographic fidelity remain separate. Historical unit tests use explicitly mocked provider transports and do not substitute for remaining real checks.
+The real FR24 lookup, Nuitee case-form and text-command recovery, APL quote search, and policy-validated hotel import close only their stated access/flow gates. A configured voice credential and transport check still require an actual microphone session. Google geographic rendering has evidence, while account administration, detailed geometry and photographic fidelity remain separate. Historical unit tests use explicitly mocked provider transports and do not substitute for remaining real checks.
 
 ## Non-failing tool notices
 
 The backend test client emits an upstream Starlette deprecation notice for httpx. The lazy Three.js scene chunk exceeds Vite's configured 900 KB raw threshold (about 265 KB gzip); the passenger screen does not load the 3D scene. These notices did not fail the build. Long-term deployment limits, including heuristic optimality, single-role authentication and audit-storage growth, are recorded in `../backend.md`.
-
 
 ## Integration of live inventory and simulator — 31 October 2026
 
