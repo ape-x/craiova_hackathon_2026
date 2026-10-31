@@ -32,6 +32,7 @@ import ResourceRail from './ResourceRail';
 import Inspector from './Inspector';
 import Timeline from './Timeline';
 import ScenarioDialog from './ScenarioDialog';
+import { WeatherNetworkOverlay } from './WeatherStatus';
 import { Brand, Dot, Modal, Tag } from './ui';
 import { LiveVoiceClient } from './liveVoice';
 import {
@@ -144,14 +145,22 @@ function Operations() {
   } | null>(null);
   const [command, setCommand] = useState('');
   const [lastCommand, setLastCommand] = useState('');
-  const [lastReply, setLastReply] = useState('');
+  const [commandReply, setCommandReply] = useState<{
+    scenarioId: string;
+    text: string;
+  } | null>(null);
+  const lastReply =
+    commandReply?.scenarioId === world?.scenario_id ? (commandReply?.text ?? '') : '';
   const [voiceState, setVoiceState] = useState<string>('idle');
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(false);
   const waveform = useRef<HTMLDivElement>(null);
   const voice = useRef<LiveVoiceClient | null>(null);
-  const commandHistory = useRef<{ scenarioId: string; exchanges: CommandExchange[] }>({
+  const commandHistory = useRef<{
+    scenarioId: string;
+    exchanges: CommandExchange[];
+  }>({
     scenarioId: '',
     exchanges: [],
   });
@@ -167,8 +176,10 @@ function Operations() {
   const showScenario = useCallback(() => setModal('scenario'), []);
   const applyResult = useCallback(
     (result: MutationResult) => {
+      const replaced = worldRef.current?.scenario_id !== result.world.scenario_id;
       receive(result.world);
       const focus = result.focus_id ?? result.decision?.focus_id;
+      if (replaced && !focus) setSelectedId(null);
       if (focus) {
         setSelectedId(focus);
         if (result.world.airports.some((airport) => airport.id === focus)) setMode('region');
@@ -176,7 +187,7 @@ function Operations() {
       }
       return result;
     },
-    [receive],
+    [receive, worldRef],
   );
   const execute = useCallback(
     async (label: string, action: () => Promise<MutationResult>) => {
@@ -265,12 +276,18 @@ function Operations() {
         // execute owns the existing error notice and exact-payload retry.
         throw cause;
       }
-      if (worldRef.current?.scenario_id === scenarioId) {
-        setLastReply(verifiedCommandResult(result));
+      if (worldRef.current?.scenario_id === result.world.scenario_id) {
+        const reply = verifiedCommandResult(result);
+        setCommandReply({ scenarioId: result.world.scenario_id, text: reply });
+        if (commandHistory.current.scenarioId !== result.world.scenario_id)
+          commandHistory.current = {
+            scenarioId: result.world.scenario_id,
+            exchanges: [],
+          };
         commandHistory.current.exchanges = rememberCommand(
           commandHistory.current.exchanges,
           text,
-          verifiedCommandResult(result),
+          reply,
         );
       }
       if (commandNeedsRegionalView(previousWorld, result)) setMode('region');
@@ -367,7 +384,6 @@ function Operations() {
     const timer = setTimeout(() => setNotice(null), 6000);
     return () => clearTimeout(timer);
   }, [notice]);
-  useEffect(() => setLastReply(''), [world?.scenario_id]);
   if (authRequired) return <Login onSuccess={reconnect} />;
   if (!world)
     return error ? (
@@ -384,6 +400,8 @@ function Operations() {
     ) : (
       <LoadingPage />
     );
+  const homeAirport =
+    world.airports.find((airport) => airport.id === selectedId) ?? world.airports[0];
   const lastDecision = world.decisions.at(-1);
   const isVoiceActive = !['idle', 'closed', 'error', 'disconnected'].includes(voiceState);
   return (
@@ -391,8 +409,10 @@ function Operations() {
       <header className="app-header">
         <Brand />
         <div className="operation-location">
-          <span>Craiova operations</span>
-          <Tag>CRA</Tag>
+          <span>
+            {homeAirport ? `${homeAirport.code} recovery operations` : 'Simulation workspace'}
+          </span>
+          <Tag>{homeAirport?.code ?? 'NETWORK'}</Tag>
         </div>
         <div className="header-center">
           <Dot tone={connection === 'connected' ? 'mint' : 'amber'} />
@@ -483,7 +503,24 @@ function Operations() {
                 </div>
               }
             >
-              {mapStyle === 'geographic' ? (
+              {world.airports.length === 0 ? (
+                <div className="scenario-empty-map">
+                  <div>
+                    <Tag tone="cyan">NEW SIMULATION</Tag>
+                    <h2>Your next scenario starts here</h2>
+                    <p>
+                      Describe an airport, flight and disruption by voice or text. The agent will
+                      create the simulation and compare recovery options.
+                    </p>
+                    <button
+                      className="primary-button"
+                      onClick={() => commandInput.current?.focus()}
+                    >
+                      Describe a scenario <ArrowRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              ) : mapStyle === 'geographic' ? (
                 <GoogleMaps3D
                   world={world}
                   mode={mode}
@@ -545,6 +582,7 @@ function Operations() {
                 <Dot tone={chosenMode === 'ai' ? 'cyan' : 'slate'} />
               </div>
             </div>
+            {!busy && <WeatherNetworkOverlay world={world} onSelect={select} />}
             {busy && (
               <div className="calculation-overlay" role="status">
                 <Loader2 size={17} className="spin" />
@@ -566,10 +604,14 @@ function Operations() {
               <div className="map-coordinate">
                 <span className="crosshair-mark">+</span>
                 <span>
-                  {mode === 'region' ? '44.95° N  ·  24.80° E' : '44.318° N  ·  23.889° E'}
+                  {mapStyle !== 'geographic' && mode === 'region'
+                    ? 'SCHEMATIC NETWORK'
+                    : homeAirport
+                      ? `${Math.abs(homeAirport.lat).toFixed(3)}° ${homeAirport.lat >= 0 ? 'N' : 'S'} · ${Math.abs(homeAirport.lon).toFixed(3)}° ${homeAirport.lon >= 0 ? 'E' : 'W'}`
+                      : 'No airport selected'}
                 </span>
                 <span className="map-site-code">
-                  {mode === 'region' ? 'RO / NETWORK' : 'CRA / LRCV'}
+                  {mode === 'region' ? 'NETWORK' : (homeAirport?.code ?? 'NETWORK')}
                 </span>
               </div>
               <div className="map-legend">
@@ -608,8 +650,8 @@ function Operations() {
                   void replan();
                 }}
               >
-                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}Replan{' '}
-                <span>{chosenMode === 'ai' ? 'AI' : 'SOLVER'}</span>
+                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+                Replan <span>{chosenMode === 'ai' ? 'AI' : 'SOLVER'}</span>
               </button>
             </div>
           </div>
@@ -802,7 +844,11 @@ function Operations() {
                 );
               } catch (cause) {
                 const message = `Condition saved at v${result.world.version}. Replanning was not confirmed: ${cause instanceof Error ? cause.message : 'Check the current state.'}`;
-                setNotice((previous) => ({ text: message, error: true, retry: previous?.retry }));
+                setNotice((previous) => ({
+                  text: message,
+                  error: true,
+                  retry: previous?.retry,
+                }));
                 throw new Error(message);
               }
             }
@@ -930,8 +976,16 @@ function SearchDialog({
 }) {
   const [query, setQuery] = useState('');
   const entities = [
-    ...world.airports.map((item) => ({ id: item.id, name: item.name, type: 'Airport' })),
-    ...world.resources.map((item) => ({ id: item.id, name: item.name, type: item.kind })),
+    ...world.airports.map((item) => ({
+      id: item.id,
+      name: item.name,
+      type: 'Airport',
+    })),
+    ...world.resources.map((item) => ({
+      id: item.id,
+      name: item.name,
+      type: item.kind,
+    })),
     ...world.groups.map((item) => ({
       id: item.id,
       name: item.name,

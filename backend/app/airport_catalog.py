@@ -8,6 +8,7 @@ than guessing which airport the speaker meant.
 from __future__ import annotations
 
 import json
+import math
 import re
 import unicodedata
 from functools import lru_cache
@@ -94,6 +95,31 @@ def lookup_airport(code: str) -> dict[str, Any] | None:
     _, records, codes = _catalog()
     index = codes.get(code.strip().upper())
     return _public_record(records[index]) if index is not None else None
+
+
+def nearby_airports(code: str, limit: int = 3, radius_km: float = 1500) -> list[dict[str, Any]]:
+    """Ground possible demo alternates in nearby major-airport geography.
+
+    Great-circle distance is only a retrieval aid, never aircraft range, runway
+    suitability, weather, permission to land or actual operating availability.
+    The decision layer must evaluate the authored operational constraints.
+    """
+    origin = lookup_airport(code)
+    if origin is None or limit <= 0 or not math.isfinite(radius_km) or radius_km <= 0:
+        return []
+    lat, lon = math.radians(origin["lat"]), math.radians(origin["lon"])
+    _, records, _ = _catalog()
+    matches = []
+    for record in records:
+        if record["id"] == origin["id"] or record["type"] != "large_airport" or not record["scheduled_service"]:
+            continue
+        other_lat, other_lon = math.radians(record["lat"]), math.radians(record["lon"])
+        haversine = math.sin((other_lat-lat)/2)**2 + math.cos(lat)*math.cos(other_lat)*math.sin((other_lon-lon)/2)**2
+        distance = 6371 * 2 * math.asin(math.sqrt(min(1, max(0, haversine))))
+        if distance <= radius_km:
+            matches.append((distance, record))
+    matches.sort(key=lambda item: (item[0], item[1]["id"]))
+    return [{**_public_record(record), "distance_km": round(distance, 1)} for distance, record in matches[:min(limit, 6)]]
 
 
 @lru_cache(maxsize=1)

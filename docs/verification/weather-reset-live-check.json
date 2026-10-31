@@ -1,0 +1,225 @@
+{
+  "request": "Resetează complet simularea și creează de la zero un scenariu nou: furtună la Lisabona, aeroportul nu permite aterizări, iar un avion este deja în aer spre Lisabona cu pasageri la bord. Alege tu cea mai bună deviere și organizează transportul pasagerilor până la destinație.",
+  "applied": true,
+  "elapsed_ms": 7254.32,
+  "before_version": 1,
+  "after_version": 2,
+  "scenario_changed": true,
+  "explanation": "Scenariul de la zero include furtună la Lisabona cu aterizări interzise în simulare, plecări permise și un zbor Sevilla–Lisabona deja în aer la ora 10:00, cu sosire inițială la 10:45. Ipotezele sunt 60 de pasageri individuali cu prioritate standard, fără cerințe de accesibilitate, termen de sosire 20:00 și buget de 150 EUR/persoană, respectiv 9.000 EUR total; serviciile sunt sintetice, disponibile și fără dotări speciale de accesibilitate. Solverul compară inclusiv Faro și Porto, cu autocare de câte 60 de locuri spre Lisabona la 12:15: din Faro sosire 15:45 la 35 EUR/persoană, din Porto sosire 16:15 la 45 EUR/persoană, fără o deviere prestabilită.\n\nDecisions a selectat plan-balanced-FAO-3: 60 pasageri cu itinerar fezabil, cost 2100.00 EUR, 0 grupuri fără soluție. Aceste valori provin din solver; ofertele necesită acceptarea pasagerilor.",
+  "provider": "OpenAI Decisions / gpt-6-luna",
+  "timings_ms": {
+    "interpretation_ms": 6727.3,
+    "solver_ms": 46.72,
+    "decisions_ms": 381.64,
+    "apply_ms": 41.42,
+    "transaction_ms": 66.93,
+    "server_total_ms": 7228.06
+  },
+  "candidate_counts": {
+    "computed": 9,
+    "validated": 6,
+    "shortlisted": 6,
+    "submitted": 6
+  },
+  "airports": [
+    {
+      "id": "LIS",
+      "weather": {
+        "condition": "storm",
+        "visibility_m": null,
+        "wind_kts": null,
+        "landing_allowed": false,
+        "departure_allowed": true
+      }
+    },
+    {
+      "id": "SVQ",
+      "weather": null
+    },
+    {
+      "id": "FAO",
+      "weather": null
+    },
+    {
+      "id": "OPO",
+      "weather": null
+    }
+  ],
+  "flights": [
+    {
+      "id": "FLIS",
+      "route": [
+        "SVQ",
+        "FAO"
+      ],
+      "status": "diverted"
+    }
+  ],
+  "passengers": 60,
+  "offers": 60,
+  "events": [
+    {
+      "type": "scenario_reset",
+      "target_id": null,
+      "value": "empty"
+    },
+    {
+      "type": "airport_added",
+      "target_id": "LIS",
+      "value": null
+    },
+    {
+      "type": "airport_added",
+      "target_id": "SVQ",
+      "value": null
+    },
+    {
+      "type": "airport_added",
+      "target_id": "FAO",
+      "value": null
+    },
+    {
+      "type": "airport_added",
+      "target_id": "OPO",
+      "value": null
+    },
+    {
+      "type": "resource_added",
+      "target_id": "FLIS",
+      "value": {
+        "kind": "flight",
+        "name": "Zbor simulat Sevilla–Lisabona, deja în aer",
+        "origin": "SVQ",
+        "destination": "LIS",
+        "departure": 570,
+        "arrival": 645,
+        "capacity": 60,
+        "accessible": false,
+        "cost_per_person": 0.0,
+        "room_capacity": 1,
+        "vehicle_id": null,
+        "available": true
+      }
+    },
+    {
+      "type": "resource_added",
+      "target_id": "BFAOLIS",
+      "value": {
+        "kind": "bus",
+        "name": "Autocar Faro–Lisabona",
+        "origin": "FAO",
+        "destination": "LIS",
+        "departure": 735,
+        "arrival": 945,
+        "capacity": 60,
+        "accessible": false,
+        "cost_per_person": 35.0,
+        "room_capacity": 1,
+        "vehicle_id": null,
+        "available": true
+      }
+    },
+    {
+      "type": "resource_added",
+      "target_id": "BOPOLIS",
+      "value": {
+        "kind": "bus",
+        "name": "Autocar Porto–Lisabona",
+        "origin": "OPO",
+        "destination": "LIS",
+        "departure": 735,
+        "arrival": 975,
+        "capacity": 60,
+        "accessible": false,
+        "cost_per_person": 45.0,
+        "room_capacity": 1,
+        "vehicle_id": null,
+        "available": true
+      }
+    },
+    {
+      "type": "passengers_added",
+      "target_id": null,
+      "value": {
+        "name": "Pasageri spre Lisabona",
+        "passenger_count": 60,
+        "group_size": 1,
+        "origin": "LIS",
+        "destination": "LIS",
+        "ready_at": 675,
+        "deadline": 1200,
+        "accessible": false,
+        "budget_per_person": 150.0,
+        "original_flight_id": "FLIS",
+        "priority": 1
+      }
+    },
+    {
+      "type": "budget_changed",
+      "target_id": null,
+      "value": 9000
+    },
+    {
+      "type": "airport_weather",
+      "target_id": "LIS",
+      "value": {
+        "condition": "storm",
+        "visibility_m": null,
+        "wind_kts": null,
+        "landing_allowed": false,
+        "departure_allowed": true
+      }
+    },
+    {
+      "type": "flight_diverted",
+      "target_id": "FLIS",
+      "value": "FAO"
+    },
+    {
+      "type": "plan_applied",
+      "target_id": "plan-balanced-FAO-3",
+      "value": null
+    }
+  ],
+  "environment": "Isolated local SQLite simulation; real OpenAI Responses and Decisions",
+  "microphone_tested": false,
+  "followup": {
+    "request": "Acum apare ceață densă și la Faro: nu se mai poate ateriza. Alege alt aeroport pentru avionul aflat încă în aer și recalculează transportul pasagerilor.",
+    "provider": "OpenAI Decisions / gpt-6-luna",
+    "explanation": "Ceața densă interzice aterizările la Faro în simulare; permisiunea de decolare rămâne neschimbată. Recalcularea compară celelalte aeroporturi eligibile pentru avionul încă în aer și transportul celor 60 de pasageri spre Lisabona, folosind serviciile existente. Lisabona rămâne indisponibilă pentru aterizare din cauza furtunii.\n\nDecisions a selectat plan-balanced-OPO-3: 60 pasageri cu itinerar fezabil, cost 2700.00 EUR, 0 grupuri fără soluție. Aceste valori provin din solver; ofertele necesită acceptarea pasagerilor.",
+    "timings_ms": {
+      "interpretation_ms": 2182.75,
+      "solver_ms": 199.31,
+      "decisions_ms": 497.05,
+      "apply_ms": 1.53,
+      "transaction_ms": 11.39,
+      "server_total_ms": 2903.65
+    },
+    "candidate_counts": {
+      "computed": 6,
+      "validated": 3,
+      "shortlisted": 3,
+      "submitted": 3
+    },
+    "aircraft_destination": "OPO",
+    "world_version": 3,
+    "selected_plan": {
+      "recovered_passengers": 60,
+      "total_cost": 2700.0
+    }
+  },
+  "empty_reset_browser": {
+    "version": 4,
+    "airports": 0,
+    "resources": 0,
+    "groups": 0,
+    "decisions": 0,
+    "verified_reply_visible": true
+  },
+  "release_validation": {
+    "backend_tests": 241,
+    "frontend_tests": 105,
+    "frontend_build": "passed",
+    "integrated_base": "ae516c4"
+  }
+}

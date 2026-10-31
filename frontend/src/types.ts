@@ -1,4 +1,11 @@
 export type ResourceKind = 'bus' | 'flight' | 'hotel';
+export interface AirportWeather {
+  condition: 'clear' | 'fog' | 'storm' | 'snow' | 'wind' | 'rain';
+  visibility_m: number | null;
+  wind_kts: number | null;
+  landing_allowed: boolean;
+  departure_allowed: boolean;
+}
 export interface Airport {
   id: string;
   code: string;
@@ -7,6 +14,7 @@ export interface Airport {
   lon: number;
   available: boolean;
   diversion_eligible: boolean;
+  weather?: AirportWeather | null;
 }
 export interface Resource {
   id: string;

@@ -104,11 +104,21 @@ export function keepCommandReplyVisible(result: MutationResult): boolean {
 }
 
 export function commandNeedsRegionalView(before: World, result: MutationResult): boolean {
-  if (result.applied === false || before.scenario_id !== result.world.scenario_id) return false;
+  if (result.applied === false) return false;
+  if (
+    before.scenario_id !== result.world.scenario_id &&
+    !result.world.events.some((event) => event.type === 'scenario_reset')
+  )
+    return false;
   const previousEvents = new Set(before.events.map((event) => event.id));
   return result.world.events.some((event) => {
     if (previousEvents.has(event.id)) return false;
-    if (event.type === 'airport_closed' || event.type === 'flight_diverted') return true;
+    if (
+      event.type === 'airport_closed' ||
+      event.type === 'flight_diverted' ||
+      event.type === 'airport_weather'
+    )
+      return true;
     if (event.type === 'airport_added')
       return result.world.airports.some(
         (airport) => airport.id === event.target_id && airport.id !== 'CRA',

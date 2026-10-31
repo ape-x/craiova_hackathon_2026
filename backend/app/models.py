@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from .scenario_schema import STRUCTURED_PAYLOADS
+from .scenario_schema import STRUCTURED_PAYLOADS, WeatherDefinition
 
 
 def canonical_id(value: str | None) -> str | None:
@@ -28,6 +28,7 @@ class Airport(Model):
     lon: float
     available: bool = True
     diversion_eligible: bool = True
+    weather: WeatherDefinition | None = None
 
 
 class Resource(Model):
@@ -187,7 +188,7 @@ class Mutation(Model):
     idempotency_key: str = Field(min_length=8, max_length=120)
 
 
-EventType = Literal["resource_unavailable", "flight_cancelled", "airport_closed", "resource_capacity", "budget_changed", "group_deadline", "group_accessibility", "resource_accessibility", "flight_diverted", "group_budget", "resource_restored", "airport_added", "resource_added", "passengers_added", "resource_schedule", "resource_route", "resource_cost", "airport_restored", "airport_diversion_eligibility", "group_destination", "group_priority"]
+EventType = Literal["resource_unavailable", "flight_cancelled", "airport_closed", "resource_capacity", "budget_changed", "group_deadline", "group_accessibility", "resource_accessibility", "flight_diverted", "group_budget", "resource_restored", "airport_added", "resource_added", "passengers_added", "resource_schedule", "resource_route", "resource_cost", "airport_restored", "airport_diversion_eligibility", "group_destination", "group_priority", "airport_weather", "scenario_reset"]
 
 
 class ScenarioChange(Model):
@@ -202,6 +203,9 @@ class ScenarioChange(Model):
 
     @model_validator(mode="after")
     def validate_authoring_payload(self):
+        if self.type=="scenario_reset":
+            if self.target_id is not None or self.value not in ("empty","seed"):
+                raise ValueError("scenario_reset requires target_id null and value empty or seed")
         payload_type=STRUCTURED_PAYLOADS.get(self.type)
         if payload_type and not (self.type=="airport_added" and self.value is None):
             # Keep JSON-native values for audit records and idempotency hashes.
