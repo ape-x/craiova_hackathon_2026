@@ -57,11 +57,23 @@ An actual Romanian text command named **EK5, its date, all linked groups and a m
 
 The passenger UI displayed the sourced itinerary as **Swiss 317: LHR 09:00 local → ZRH 11:55 local**, a **ten-hour connection**, then **Swiss 1886: ZRH 21:55 local → OTP 01:15 local the next day**. Each clock displayed its explicit UTC offset. Source segment times reconciled with the validated plan, and the arrival summary matched the final segment.
 
-This verifies the live text entry through the scoped command bridge, supplier searches and passenger presentation. It does not verify spoken input. The earlier real GPT-Live check used synthetic silence and verified transport/closure only. A real microphone session with delegation, playback, interruption and final close remains a distinct acceptance gate.
+This verifies the live text entry through the scoped command bridge, supplier searches and passenger presentation. Spoken-input evidence is recorded separately below; the successful text outcome must not be attributed to that later probe.
 
 At the end of these checks, expired FR24 context was honestly labeled as expired. The shared feed was paused at **81 of 84 permitted requests**, with **3,215 credits reserved**; these are recorded budget counters, not a claim of continuously fresh traffic or final billed usage.
 
 This record deliberately publishes no raw FR24 payload, private case/job/group identifier, passenger token, account contact, credential or private account screenshot. The public flight number, route, aggregate counts, times and quote snapshot above are the bounded verification evidence.
+
+### Synthesized spoken request — partial verification
+
+One bounded GPT-Live session on `fe47825` sent locally synthesized Romanian speech through a standalone aiortc 1.15.0 client to the existing application on port 8080. It exercised **audio → real delegation → one backend command → scoped queued receipt → spoken acknowledgement → confirmed closure**. The receipt matched the existing EK5 case and one linked group. Post-receipt output contained nonzero decoded audio and a transcript accurately acknowledging the recorded request and four-call allowance, without claiming an itinerary or booking. The data channel and server watchdog both confirmed final usage of **33 seconds**. No microphone, speakers, new application server, automatic retry or transcript substitution was used; voice usage is separate from the backend-call allowance.
+
+**Exact date fidelity failed.** The intended “31 October 2026” became “30–31 October 2026”. The private probe's guard accepted the `31` substring, and the deployed backend ignored the named date while resolving the unique flight. Matching the intended existing case therefore does not establish correct recognition of the date. The final word “total” also arrived outside the delegated transcript window, although the explicit maximum of four calls was retained.
+
+**Recovery did not complete.** The ledger recorded exactly four backend calls: one command interpretation, one query-planning call, one Nuitee search returning ten quotes, and one Decisions call. The job ended `failed` with the application classification `not_approved`; no plan was applied and the world remained version 44. The public job and step exposed the no-approval message. The executed adapter grouped explicit false, missing and malformed choices together, so this record cannot establish which occurred or invent a model rationale. Its separate `quote_not_usable` route/timing exclusion is solver evidence, not a Decisions explanation.
+
+Subsequent safeguards are **committed but not deployed in this runtime snapshot**: `260dca6` rejects ambiguous, conflicting or invalid dates attached to the case/flight reference, while preserving unique flight-only references and a separate alternative-travel date; `7b5a457` distinguishes explicit Decisions rejection, refusal and malformed answers. Focused offline suites passed **67 command/date tests and 62 provider tests covering Decisions classification**. The private guard correction passed 15 offline tests and preserved the executed probe source. These checks made no provider calls; there was **no paid rerun** after either fix.
+
+This verifies transport, delegation, acknowledgement and closure, not a passed full recovery or exact-date acceptance test. Physical microphone capture, room acoustics, browser `LiveVoiceClient`, audible playback quality and interruption remain unverified by this Python probe. Raw transcripts, audio and operational identifiers remain private.
 
 ## Historical verification records
 

@@ -10,7 +10,7 @@ Problema inițială și cerințele pasagerilor pot fi ipoteze introduse de echip
 2. Înregistrează incidentul și leagă grupurile afectate. Datele inițiale pot proveni dintr-un manifest sau din cerințe de planificare introduse explicit. Grupurile trebuie să indice același zbor original; operațiunile existente sunt păstrate.
 3. Din caz, pornește căutarea pentru grupurile selectate și stabilește limita de apeluri. Sol Ultrafast alege căutări eligibile, sunt cerute cotații reale de zbor, iar Decisions selectează dintre planurile validate. Alocările celorlalte grupuri sunt păstrate.
 4. Verifică sursele, propunerile și cerințele rămase fără soluție. Cazarea și legăturile terestre pot fi căutate separat și completate prin cotații importate sau servicii documentate de operator.
-5. Folosește comenzile pentru condițiile suportate sau pentru a porni o căutare durabilă. În cererea curentă, identifică explicit un caz existent prin ID sau printr-un zbor fără ambiguitate. Formularul cazului și comanda text au probe reale complete; sesiunea vocală cu microfon rămâne o verificare separată.
+5. Folosește comenzile pentru condițiile suportate sau pentru a porni o căutare durabilă. În cererea curentă, identifică explicit un caz existent prin ID sau printr-un zbor fără ambiguitate. Formularul cazului și comanda text au produs propuneri reale; acceptanța completă a vocii rămâne deschisă.
 6. Pasagerul acceptă sau refuză o propunere. Acceptarea înregistrează preferința. Confirmarea rezervării necesită referințele externe pentru fiecare segment.
 
 Căutările pe incident păstrează progresul și fiecare apel într-un registru persistent. Repetarea aceleiași cereri nu retrimite apelurile. Un rezultat necunoscut după întrerupere necesită o încercare nouă, explicită; nu este reluat automat. Căutarea automată acoperă momentan zborurile și inventarul deja documentat. Lipsa legăturilor până la hotel sau stație rămâne vizibilă. Cotațiile pot expira și nu rezervă locuri.
@@ -111,7 +111,9 @@ Prin interfață au fost importate nouă cotații hoteliere EUR și cele nouă p
 
 Versiunea `fe47825`, livrată pe aceeași instanță, a trecut **775 de teste backend și 203 frontend**, buildul și verificarea formatării; ambele rulări CI au trecut. Interfața reală a afișat cele șase prețuri APL originale împreună cu estimările ECB din 30 octombrie 2026; de exemplu, GBP 76 a apărut alături de aproximativ EUR 91,15, la cursul 1 EUR = 0,83380 GBP. Au fost verificate și etichetele `Validity expired` și `Quote stale`, cu fereastra de 120 de secunde în UTC. Starea existentă a fost păstrată. Importul APL într-un itinerar rămâne nefinalizat, iar un traseu complet cu hotel și transferuri fizice rămâne de verificat.
 
-Google a randat geografia reală, iar probele anterioare au verificat accesul OpenAI și transportul/închiderea unei sesiuni GPT-Live cu sunet sintetic. Acestea nu validează o conversație reală completă, toate modelele 3D sau exploatarea continuă a conturilor. Credențialele, payloadurile FR24, tokenurile pasagerilor și capturile consolelor private nu sunt publicate.
+O probă separată pe `fe47825`, cu vorbire sintetizată și client Python, a verificat delegarea reală, înregistrarea cererii, răspunsul vocal și închiderea GPT-Live, cu utilizare finală de 33 de secunde. A consumat exact patru apeluri backend și a primit zece cotații Nuitee, dar pasul Decisions nu a aprobat un plan; nimic nu a fost aplicat. Recunoașterea datei a greșit „31 octombrie” ca „30–31 octombrie”, iar verificarea inițială a acceptat eronat subșirul `31`. Proba nu validează recuperarea completă sau fidelitatea datei. Nu a fost repetată contra cost.
+
+Protecția pentru data asociată cazului și clasificarea distinctă a răspunsurilor Decisions au fost corectate și testate offline după probă, dar nu sunt încă livrate pe instanța `fe47825` descrisă aici. [Raportul](docs/verification/report.md#synthesized-spoken-request--partial-verification) separă dovezile de aceste corecții. Microfonul fizic, clientul vocal din browser, redarea audibilă și întreruperea rămân de verificat. Google a randat geografia reală; aceasta nu validează toate modelele 3D sau exploatarea continuă a conturilor. Credențialele, payloadurile FR24, tokenurile pasagerilor, audio și capturile consolelor private nu sunt publicate.
 
 [Ghidul backend](docs/backend.md) descrie invariantele și limitele. [Măsurătorile locale](docs/benchmark-results.json) includ 180–300 de pasageri, mediană/p95 și mediul CPU; măsoară solverul și SQLite, fără a pretinde latență AI. Poți repeta măsurarea:
 
@@ -154,7 +156,7 @@ Feedul FR24 are un cache separat: `OBSERVATION_RETENTION_SECONDS=3600` implicit.
 
 ## Ce rămâne de verificat cu echipa
 
-- O sesiune reală GPT-Live cu microfon, delegare, redare, întrerupere și închidere confirmată.
+- O sesiune GPT-Live în browser cu microfon fizic, recunoaștere corectă a cererii, recuperare validată, redare și întrerupere; proba Python cu vorbire sintetizată a verificat doar etapele descrise mai sus.
 - Fluxul de poziții FR24 pe hartă, separat de lookup-ul de cursă deja verificat; limitele abonamentului echipei.
 - Un itinerar complet cu hotel și legături fizice verificate; importul hotelier prin interfață este verificat, dar nu dovedește existența unui transfer.
 - Finalizarea și verificarea traseelor rutiere datate și a importului APL în itinerarii; afișarea cotațiilor GBP și a estimărilor ECB este deja verificată.
