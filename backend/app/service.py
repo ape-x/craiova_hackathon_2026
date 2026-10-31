@@ -11,6 +11,7 @@ from .config import Settings
 from .models import Allocation, Decision, Offer, Reservation, ScenarioChange, Strategy, World, canonical_id
 from .scenario_authoring import add_airport, add_passengers, add_resource, airport_reference, validate_route, validate_schedule
 from .scenario_schema import MAX_COMMAND_EVENTS, WeatherDefinition
+from .planning_window import planning_horizon_end
 from .weather import apply_weather_to_flight, departure_allowed, landing_allowed
 from .scenario_reset import reset_scenario
 from .solver import active_offers, build_candidate, default_strategies, units, validate_allocations, validate_plan
@@ -269,7 +270,7 @@ def apply_change(world: World,event: ScenarioChange):
         group=lookup(world.groups,target,"group")
         impacted_groups.add(group.id)
         if kind=="group_deadline":
-            group.deadline=strict_number(value,world.sim_time,10080,True)
+            group.deadline=strict_number(value,world.sim_time,planning_horizon_end(world),True)
         elif kind=="group_budget":
             group.budget=strict_number(value,0,100000)
         elif kind=="group_destination":

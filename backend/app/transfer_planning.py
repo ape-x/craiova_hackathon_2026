@@ -26,6 +26,7 @@ from .pricing import AplQuoteFreshness, build_apl_price_evidence, aware_timestam
 from .providers.apl import APLQuoteRequest, LONDON
 from .providers.base import ProviderError
 from .scenario_schema import HORIZON_MINUTES, MAX_AIRPORTS, MAX_RESOURCES
+from .planning_window import planning_horizon_end
 from .store import DomainError, Store, audit, utcnow
 
 
@@ -190,7 +191,7 @@ def transfer_context(world, request, *, now):
     if len(ids) != 1:
         raise DomainError(409, "The hotel node lacks one consistent sourced property identity")
     departure = (request.pickup_at-datetime.fromisoformat(world.epoch)).total_seconds()/60
-    if request.pickup_at <= now or departure != int(departure) or departure < max(world.sim_time, group.ready_at) or departure > min(group.deadline,HORIZON_MINUTES):
+    if request.pickup_at <= now or departure != int(departure) or departure < max(world.sim_time, group.ready_at) or departure > min(group.deadline,planning_horizon_end(world)):
         raise DomainError(422, "Pickup must be future, after the group's reported readiness and within its deadline")
     if flight is not None and (airport.id != airport.code or airport.operational_status == "closed" or not departure_allowed(airport) or int(departure)+request.airport_processing_minutes >= flight.departure):
         raise DomainError(422, "The airport must permit departure and pickup must leave time for the declared airport processing before the exact onward flight")
@@ -214,7 +215,7 @@ def transfer_context(world, request, *, now):
         "hotel_node_id":hotel.id,"hotel_id":next(iter(ids)),"hotel_name":hotel.name,
         "hotel_coordinates":{"latitude":hotel.lat,"longitude":hotel.lon},"airport_code":airport.code,
         "airport_reference_distance_m":round(point_distance,2),
-        "airport_name":airport.name,"departure":int(departure),"deadline":group.deadline,
+        "airport_name":airport.name,"departure":int(departure),"deadline":group.deadline,"planning_horizon_end":planning_horizon_end(world),
         "assumption":assumption.model_dump(mode="json"),"request":request.receipt_payload()}
 
 
@@ -440,7 +441,7 @@ def assess_transfer_sources(context, response, *, hotel_metadata=None, apl_quote
         arrival = context["departure"]+int((Decimal(route["duration_seconds"])/60).to_integral_value(rounding=ROUND_CEILING))
         if is_return and arrival+context["assumption"]["processing_minutes"] > context["onward_flight"]["departure"]:
             response["blockers"].append(blocker("airport_processing_time", "The driving estimate plus the operator-declared airport processing time misses the exact onward flight"))
-        if arrival > min(context["deadline"],HORIZON_MINUTES):
+        if arrival > min(context["deadline"],context.get("planning_horizon_end",HORIZON_MINUTES)):
             response["blockers"].append(blocker("arrival_deadline", "Even the sourced driving estimate arrives after the group's deadline"))
     response["usable_until"] = min(limits).isoformat()
     if min(limits) <= now:

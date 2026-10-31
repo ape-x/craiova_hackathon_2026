@@ -61,12 +61,12 @@ def evidence():
     return {"source_name": "Operator statement", "source_reference": "dispatch-123", "confirmed_by": "Duty operator", "observed_at": now()}
 
 
-def manifest_request(ops, **changes):
+def manifest_request(ops, *, group_id="REAL-GROUP", passenger_prefix="ACTUAL", **changes):
     text = io.StringIO(newline="")
     writer = csv.DictWriter(text, fieldnames=MANIFEST_COLUMNS)
     writer.writeheader()
     for i in range(2):
-        writer.writerow({"passenger_id": f"ACTUAL-{i}", "group_id": "REAL-GROUP", "name": f"Imported person {i}",
+        writer.writerow({"passenger_id": f"{passenger_prefix}-{i}", "group_id": group_id, "name": f"Imported person {i}",
             "origin": "CRA", "destination": "OTP", "original_flight_id": "ACTUAL-FLIGHT",
             "ready_at": (now()+timedelta(minutes=30)).isoformat(), "deadline": (now()+timedelta(days=3)).isoformat(),
             "group_budget_eur": "500.00", "accessible": "false", "priority": "2", "is_adult": "true"})
@@ -502,18 +502,78 @@ def test_wrong_external_reference_and_test_passenger_confirmation_roll_back(ops)
     assert ops.store.read().version == before
 
 
-@pytest.mark.parametrize("confirmed", [False, True])
-def test_inventory_update_invalidates_only_unbooked_proposals(ops, confirmed):
+def additional_import(ops, kind):
+    if kind == "manifest":
+        return ops.manifest, manifest_request(ops, group_id="ADDITIONAL-GROUP", passenger_prefix="ADDITIONAL",
+            idempotency_key="additional-manifest")
+    if kind == "resource":
+        return ops.resource, resource_request(ops, id="ADDITIONAL-FLIGHT", idempotency_key="additional-resource")
+    return ops.generate, PassengerGenerationInput(expected_version=ops.store.read().version,
+        idempotency_key="additional-planning-group", passengers=2, group_size=2,
+        origin="CRA", destination="OTP", original_flight_id="OTHER-FLIGHT",
+        ready_at=now()+timedelta(minutes=30), deadline=now()+timedelta(days=1),
+        group_budget_eur="100", accessible=False, priority=1, is_adult=True)
+
+
+@pytest.mark.parametrize("kind", ["manifest", "resource", "generated_group"])
+@pytest.mark.parametrize("status", ["proposed", "accepted", "confirmed"])
+def test_additive_import_preserves_existing_journey_and_replays_without_changes(ops, kind, status):
     ops.manifest(manifest_request(ops))
     ops.resource(resource_request(ops))
     attach_proposal(ops)
-    if confirmed:
+    if status == "accepted":
+        ops.recovery.accept("PROPOSAL-1", AcceptRequest(token=ops.store.read().groups[0].token,
+            idempotency_key="accept-before-unrelated-import"))
+    elif status == "confirmed":
         ops.confirm("PROPOSAL-1", confirmation(ops))
-    result = ops.resource(resource_request(ops, id="SECOND-FLIGHT", idempotency_key="another-real-resource"))
-    assert result["world"]["offers"][0]["status"] == ("confirmed" if confirmed else "invalidated")
-    assert result["world"]["reservations"][0]["status"] == ("confirmed" if confirmed else "released")
-    if confirmed:
-        assert result["world"]["offers"][0]["external_bookings"][0]["confirmation_reference"] == "TICKET-PNR-123"
+    before = ops.store.read()
+    perform, request = additional_import(ops, kind)
+    result = perform(request)
+    after = ops.store.read()
+    assert result["applied"] is True and after.version == before.version + 1
+    assert after.offers == before.offers and after.reservations == before.reservations
+    assert after.offers[0].status == status
+    for name in ("groups", "resources", "airports"):
+        original = {item.id: item.model_dump_json() for item in getattr(before, name)}
+        assert original == {item.id: item.model_dump_json() for item in getattr(after, name) if item.id in original}
+    assert len(after.resources) == len(before.resources) + (kind == "resource")
+    assert len(after.groups) == len(before.groups) + (kind != "resource")
+    expected_budget_increase = 0 if kind == "resource" else 500 if kind == "manifest" else 100
+    assert after.budget == before.budget + expected_budget_increase
+    if status != "confirmed":
+        assert validate_allocations(after, [Allocation(group_id=after.offers[0].group_id,
+            itinerary=after.offers[0].itinerary)])["valid"]
+    assert perform(request)["replayed"] is True
+    assert ops.store.read().model_dump_json() == after.model_dump_json()
+    assert ops.real_data.provider.calls == 0
+
+
+@pytest.mark.parametrize("kind", ["manifest", "resource", "generated_group"])
+def test_additive_import_requires_current_version_and_does_not_reuse_occupied_identity(ops, kind):
+    ops.manifest(manifest_request(ops))
+    ops.resource(resource_request(ops))
+    attach_proposal(ops)
+    perform, stale_request = additional_import(ops, kind)
+    token = ops.store.read().groups[0].token
+    ops.recovery.accept("PROPOSAL-1", AcceptRequest(token=token,
+        idempotency_key="preference-after-import-prepared"))
+    before = ops.store.read()
+    with pytest.raises(DomainError) as conflict:
+        perform(stale_request)
+    assert conflict.value.status == 409
+    assert ops.store.read().model_dump_json() == before.model_dump_json()
+    request = stale_request.model_copy(update={"expected_version": before.version,
+        "idempotency_key": stale_request.idempotency_key + "-current"})
+    perform(request)
+    after = ops.store.read()
+    assert after.offers == before.offers and after.reservations == before.reservations
+    if kind != "generated_group":
+        duplicate = request.model_copy(update={"expected_version": after.version,
+            "idempotency_key": request.idempotency_key + "-duplicate"})
+        with pytest.raises(DomainError) as collision:
+            perform(duplicate)
+        assert collision.value.status == (422 if kind == "manifest" else 409)
+        assert ops.store.read().model_dump_json() == after.model_dump_json()
 
 
 def test_operator_flight_confirmation_does_not_override_known_airport_closure(ops):

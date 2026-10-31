@@ -2,7 +2,7 @@
 
 Run commands from the repository root. Keep `.env`, `.env.production`, databases and backups private. Commands below validate configuration without printing resolved secrets.
 
-This repository includes no provider credentials. Bounded Sol Ultrafast/Decisions calls and a first Google geographic render passed on the development team's accounts; see the [verification report](verification/report.md). A new deployment must verify its own access. Microphone sessions, FR24 observations, detailed airport photogrammetry and GLB alignment remain acceptance checks.
+This repository includes no provider credentials. Bounded real checks cover exact FR24 lookup, flight/hotel quotes, both UK APL transfer directions, Google geography/dated routes, ECB estimates and a complete ten-call hotel proposal; see the [verification report](verification/report.md). No supplier booking occurred. A new deployment must verify its own account access and coverage. Complete spoken recovery, physical browser microphone/playback, FR24 observation coverage and detailed airport geography remain separate acceptance checks.
 
 ## Local build, this computer only
 
@@ -12,7 +12,7 @@ docker compose up -d --build
 curl --fail --show-error http://127.0.0.1:8080/api/ready
 ```
 
-Open `http://localhost:8080`. The web port is bound to loopback; the API has no published port. The development script similarly binds `127.0.0.1:5173`. A phone cannot reach these localhost addresses, and a QR pointing to localhost refers to the phone itself. Use the HTTPS deployment below for a phone demonstration.
+Open `http://localhost:8080`. The web port is bound to loopback; the API has no published port. The development script similarly binds `127.0.0.1:5173`. A phone cannot reach these localhost addresses, and a QR pointing to localhost refers to the phone itself. Use the HTTPS deployment below for passenger access from another device.
 
 ## Phone-accessible HTTPS deployment
 
@@ -24,7 +24,7 @@ test -f .env.production || cp .env.production.example .env.production
 chmod 600 .env.production
 ```
 
-3. Edit `APP_DOMAIN` to the real hostname, without a scheme or path. Set a random `OPERATOR_TOKEN` of at least 32 characters. Add authorized provider keys privately. The public URL, allowed hosts and CORS origin derive from this hostname. Restrict the browser Maps key to the intended HTTPS referrers and required Maps JavaScript API; confirm API enablement and billing in the owning account. Blank provider keys are valid for an explicitly deterministic demonstration. Configure account budgets and alerts as appropriate; application timeouts and request limits are not an automatic account spending cap.
+3. Edit `APP_DOMAIN` to the real hostname, without a scheme or path. Set a random `OPERATOR_TOKEN` of at least 32 characters. Add authorized provider keys privately. The public URL, allowed hosts and CORS origin derive from this hostname. Restrict the browser Maps key to the intended HTTPS referrers and required Maps JavaScript API; confirm API enablement and billing in the owning account. Blank provider keys leave the corresponding live functions unavailable; they do not populate supply or substitute AI. Configure account budgets and alerts as appropriate; application timeouts and request limits are not an automatic account spending cap.
 4. Validate and start:
 
 ```sh
@@ -41,8 +41,8 @@ curl --fail --show-error "https://${recovery_domain}/api/ready"
 curl --silent --output /dev/null --write-out '%{http_code}\n' "https://${recovery_domain}/api/world"
 ```
 
-6. Open HTTPS on the operator computer, log in, create a solver plan and scan one passenger QR using the phone. Accept the complete itinerary and check that both screens show confirmation. The operator microphone requires a secure origin and permission; localhost is the only local HTTP exception.
-7. Check provider connections individually. Start FR24 only when ready to consume its budget; stopping and restarting the application does not replenish that budget. Confirm actual model/voice calls, final voice-session closure, and Google terrain and GLB rendering using the deployment's accounts. Check account warnings, quotas and detailed airport coverage separately. Configured keys and mock tests do not prove account access.
+6. Open HTTPS on the operator computer, log in and create a source-backed proposal for an explicitly selected group. Scan its QR on the phone while the proposal is current. Accept or decline it and check that both screens show the same preference state. Acceptance must not show an external booking confirmation. Only separately recorded supplier references for every segment can confirm bookings for an actual manifest group; generated planning assumptions cannot receive such confirmations. The operator microphone requires a secure origin and permission; localhost is the only local HTTP exception.
+7. Check only authorized provider operations within explicit call allowances. Start FR24 observations only when ready to consume the persistent budget; stopping and restarting the application does not replenish it. The optional hotel package requires ten job calls and saved-profile voice reuse eleven total calls; default eight stays unchanged. Verify final voice-session closure independently of successful recognition or planning. Confirm Google geography and source-labelled routes using the deployment's accounts; do not expect live quotes to appear as tracked vehicles or passengers. Check account warnings, quotas and coverage separately. Configured keys and mock tests do not prove access or worldwide coach/transfer availability.
 
 Keep the API private: Uvicorn trusts forwarded headers from its internal proxy network. Publishing port 8000 would invalidate that trust assumption. Increase the proxy's 120-second response-header timeout if raising the default two sequential 45-second provider-call limits. On an uncertain request result, fetch current state and retry the same idempotency key.
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Accessibility,
@@ -20,7 +21,15 @@ import {
   X,
 } from 'lucide-react';
 import { activeOffer, availableUnits, formatCost, formatTime, formatWorldTime } from './api';
-import type { AppConfig, Decision, Offer, PassengerGroup, Resource, World } from './types';
+import type {
+  AppConfig,
+  Decision,
+  MutationResult,
+  Offer,
+  PassengerGroup,
+  Resource,
+  World,
+} from './types';
 import { Dot, Tag } from './ui';
 import { observationInfo } from './observation';
 import { AirportWeatherStatus } from './WeatherStatus';
@@ -30,6 +39,8 @@ import { isAirportNode, locationKindLabel } from './locationNodes';
 import { flightSegments, waitingTime } from './journeyPresentation';
 import { locationName, resourceTitle } from './resourceLabels';
 import { airportArrivalEvidence, resourceMeetingEvidence } from './airportArrival';
+import { OperatorReportNote, ResourceUnavailabilityDialog } from './OperationalReportForms';
+import { unavailabilityIssue } from './operationalReports';
 import { AirportArrivalDetails, SupplierMeetingInstructions } from './TransferEvidence';
 import {
   costPresentation,
@@ -221,11 +232,30 @@ export function deriveResourceImpact(world: World, resource: Resource) {
           'flight_cancelled',
           'resource_capacity',
           'resource_accessibility',
+          'operator_resource_unavailability',
         ].includes(event.type),
     );
   if (!incident) return null;
   const oldOffers = new Map(world.offers.map((offer) => [offer.id, offer]));
   const affectedIds = new Set<string>();
+  if (
+    incident.type === 'operator_resource_unavailability' &&
+    Array.isArray(incident.data.affected_offer_ids)
+  ) {
+    const reportedGroups = new Set(
+      Array.isArray(incident.data.affected_group_ids) ? incident.data.affected_group_ids : [],
+    );
+    for (const id of incident.data.affected_offer_ids) {
+      if (typeof id !== 'string') continue;
+      const offer = oldOffers.get(id);
+      if (
+        offer &&
+        reportedGroups.has(offer.group_id) &&
+        offer.itinerary.legs.some((leg) => leg.resource_id === resource.id)
+      )
+        affectedIds.add(offer.group_id);
+    }
+  }
   for (const event of world.events) {
     if (
       event.version !== incident.version ||
@@ -773,6 +803,8 @@ export default function Inspector({
   onClose,
   onReplan,
   onScenario,
+  onApplied,
+  onRefresh,
   busy,
   config,
   showLog,
@@ -783,10 +815,13 @@ export default function Inspector({
   onClose: () => void;
   onReplan: () => void;
   onScenario: () => void;
+  onApplied?: (result: MutationResult) => void;
+  onRefresh?: () => Promise<unknown>;
   busy: boolean;
   config: AppConfig;
   showLog: boolean;
 }) {
+  const [reportResourceId, setReportResourceId] = useState<string | null>(null);
   const now = useFreshnessClock(world.mode === 'live');
   const group = world.groups.find((item) => item.id === selectedId);
   const resource = world.resources.find((item) => item.id === selectedId);
@@ -979,6 +1014,28 @@ export default function Inspector({
                 <span>{privateTransfer(resource) ? resource.source : resource.name}</span>
               </div>
             </div>
+            {world.mode === 'live' && (
+              <>
+                <OperatorReportNote
+                  provenance={resource.provenance}
+                  field="unavailability_reports"
+                />
+                {onApplied && onRefresh && (
+                  <div className="inspector-section">
+                    <button
+                      className="secondary-button full"
+                      disabled={busy || Boolean(unavailabilityIssue(world, resource))}
+                      onClick={() => setReportResourceId(resource.id)}
+                    >
+                      Report service unavailable
+                    </button>
+                    {unavailabilityIssue(world, resource) && (
+                      <p className="field-hint">{unavailabilityIssue(world, resource)}</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
             {resourceImpact ? (
               <>
                 <ResourceImpactSummary impact={resourceImpact} onSelect={onSelect} />
@@ -1340,6 +1397,20 @@ export default function Inspector({
         <span>Versioned state</span>
         <code>v{world.version.toString().padStart(3, '0')}</code>
       </div>
+      {reportResourceId &&
+        onApplied &&
+        onRefresh &&
+        createPortal(
+          <ResourceUnavailabilityDialog
+            key={reportResourceId}
+            world={world}
+            resourceId={reportResourceId}
+            onApplied={onApplied}
+            onRefresh={onRefresh}
+            onClose={() => setReportResourceId(null)}
+          />,
+          document.body,
+        )}
     </aside>
   );
 }

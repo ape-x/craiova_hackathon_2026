@@ -1,0 +1,76 @@
+.operational-report {
+  margin: 20px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  color: var(--text);
+}
+.operational-report > summary {
+  cursor: pointer;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.operational-report > summary svg {
+  vertical-align: middle;
+  margin-right: 6px;
+  color: var(--cyan);
+}
+.operational-report p,
+.report-scope p,
+.operator-report-note p {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.operational-report legend {
+  font-size: 12px;
+  font-weight: 600;
+}
+.report-group-list {
+  max-height: 270px;
+  overflow-y: auto;
+  margin: 10px 0 18px;
+}
+.report-group {
+  border-bottom: 1px solid var(--line);
+}
+.report-group .case-group {
+  margin: 6px 0;
+}
+.report-scope {
+  display: flex;
+  gap: 8px;
+  background: var(--surface);
+  padding: 12px;
+  border-radius: 8px;
+  margin: 14px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.report-scope svg {
+  flex-shrink: 0;
+  color: var(--amber);
+  margin-top: 3px;
+}
+.operator-report-note {
+  border-left: 2px solid var(--amber);
+  padding: 8px 12px;
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+.operator-report-note strong {
+  font-size: 10px;
+  color: var(--muted);
+}
+.operator-report-note p {
+  margin: 4px 0 0;
+}
+.report-success {
+  color: var(--mint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.report-service-reference {
+  overflow-wrap: anywhere;
+}

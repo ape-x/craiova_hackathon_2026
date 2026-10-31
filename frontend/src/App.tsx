@@ -688,6 +688,8 @@ function Operations() {
             void replan();
           }}
           onScenario={showScenario}
+          onApplied={applyResult}
+          onRefresh={refresh}
           busy={busy}
           config={config}
           showLog={showLog}

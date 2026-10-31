@@ -248,7 +248,7 @@ class LiveCommands:
         try:
             dated = [(case, reference_date(request.text, (case.id, case.requested_flight_number))) for case in matches]
         except ValueError:
-            return self._reply(request, world, "Data asociată cazului sau zborului este ambiguă ori invalidă. Precizează o singură dată exactă, de exemplu YYYY-MM-DD, lângă identificatorul zborului sau cazului. Nu am pornit căutarea. Interpretarea a folosit 1 apel.")
+            return self._reply(request, world, "Data asociată cazului sau zborului este ambiguă ori invalidă. Repetă comanda completă corectată: ID-ul exact al cazului/zborului, o singură dată YYYY-MM-DD, grupul/grupurile, serviciile cerute și limita totală explicită de apeluri pentru noua cerere. Nu am pornit căutarea. Interpretarea a folosit 1 apel.")
         matches = [case for case, explicit_date in dated if explicit_date is None or explicit_date == case.date_utc]
         if dated and not matches:
             return self._reply(request, world, "Data asociată cazului sau zborului nu corespunde unui caz existent. Verifică data și identificatorul; nu am pornit căutarea. Interpretarea a folosit 1 apel.")

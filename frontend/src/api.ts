@@ -11,6 +11,7 @@ import type {
   World,
 } from './types';
 import type { PlanningTransferInput, PlanningTransferQuote } from './planningTransferData';
+import type { ArrivalReportInput } from './operationalReports';
 
 export class ApiError extends Error {
   constructor(
@@ -138,6 +139,18 @@ export const api = {
     }),
   createIncident: (world: World, input: IncidentInput) =>
     request<IncidentResult>('/incidents', {
+      ...input,
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
+  reportArrival: (world: World, incidentId: string, input: ArrivalReportInput) =>
+    request<MutationResult>(`/incidents/${encodeURIComponent(incidentId)}/arrival-report`, {
+      ...input,
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
+  reportUnavailability: (world: World, resourceId: string, input: { description: string }) =>
+    request<MutationResult>(`/live/resources/${encodeURIComponent(resourceId)}/unavailability`, {
       ...input,
       expected_version: world.version,
       idempotency_key: key(),

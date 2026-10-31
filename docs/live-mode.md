@@ -1,19 +1,20 @@
-# Live resources with explicit test passengers
+# Live recovery inputs and source provenance
 
 `OPERATION_MODE=live` is the application default. A new operation contains the
 Craiova reference location, no passengers, no transport, and no hotel inventory.
 Switching an existing simulation to live mode archives its world in SQLite's
 `world_archives` table before replacing it. The archived scenario is not loaded
-into the live planner. `OPERATION_MODE=simulation` remains available for offline
-demonstration and regression tests.
+into the live planner. `OPERATION_MODE=simulation` remains an internal regression
+and development mode, never a fallback for missing live supply.
 
 ## Inputs and provenance
 
-Open **Live data inputs**. The operator can generate clearly marked test
-passengers, import a real passenger CSV, search provider offers, or enter an
-operator-confirmed service. Generating passengers never generates flights,
-vehicles, rooms, prices or schedules. Test passengers cannot receive real
-external booking confirmations.
+Open **Operation data**. The operator can enter explicitly labelled passenger
+planning assumptions, import a real passenger CSV, search provider offers, or
+enter a documented operator-verified service. Generated groups never create
+flights, vehicles, rooms, prices or schedules. They represent assumed passenger
+requirements, not verified identities, and cannot receive real external booking
+confirmations. These initial assumptions are separate from sourced supply.
 
 The CSV has one row per passenger and the following exact header:
 
@@ -36,7 +37,9 @@ can be used for confirmed first/last-mile services.
 | Nuitee Flights | Dated flight offers using the existing hotel key | Nuitee must enable production Flights separately; selected automatically when the production LiteAPI key is configured. |
 | Duffel | Alternative dated flight offers | `DUFFEL_ACCESS_TOKEN`, `DUFFEL_ENVIRONMENT=live`; production account activation required. |
 | Distribusion | Scheduled coach fares | `DISTRIBUSION_API_KEY`, `DISTRIBUSION_ENVIRONMENT=live`, `DISTRIBUSION_OFFERS_ENABLED=true`; partner approval, carrier coverage and Offers-flow activation required. |
-| Flightradar24 | Observed aircraft positions | Existing FR24 connection; start/stop remains explicit in Connections. This is not ticket inventory. |
+| Airport Pickups London | UK private-transfer quotes and source-backed airport–hotel planning legs in either direction | `APL_API_KEY`; exact LiteAPI property metadata, Google server Routes access and a usable ECB reference are required for planning import. No fleet stock or booking is inferred. |
+| Google Routes and ECB | Future driving predictions and dated EUR planning estimates for APL GBP prices | `GOOGLE_MAPS_SERVER_API_KEY` for Routes; official ECB reference fetched by the server. EUR settlement is not guaranteed. |
+| Flightradar24 | Exact flight lookup and observed aircraft positions | `FR24_API_KEY`; feed start/stop remains explicit in Connections. Neither lookup nor positions establish ticket inventory. |
 
 Secrets stay in the private backend environment. Missing access and sandbox
 responses never produce substitute transport. Search adapters call no order,
@@ -49,14 +52,41 @@ group and occupancy and retain provider IDs, terms and observation times.
 Supplier expiry is preserved when supplied. Search quotes can be imported for
 two minutes. The planner uses the supplier expiry when present; otherwise it
 requires a quote from the last two minutes. These checks are not supplier holds.
-Hotel arrival/departure times require an explicit operator confirmation.
+Hotel arrival/departure times are explicit inputs. The server validates them
+against the exact property's sourced check-in/checkout policy and local time
+zone, or the operator separately declares an agreement with the property.
+Missing/ambiguous policy is excluded; an absent check-in end permits only the
+exact published start. The operator override is not a booking or supplier fact.
 Current flight and hotel requests support all-adult groups. Coach searches
 require explicit ages for every traveller.
 
 Coach quotes use their actual departure and arrival stations. An airport-based
 group therefore also needs verified airport–station transport; no implicit
 first/last-mile transfer is invented. Aircraft observations alone are drawn on
-the live map; scheduled resources are not animated as tracked vehicles.
+the live map as tracked aircraft; sourced property/route overlays are separate,
+and scheduled resources are not animated as tracked vehicles.
+
+**Private transfers** supports an operator-declared initial airport point to a
+sourced UK hotel, or that property to a declared UK airport drop-off bound to an
+exact sourced onward flight. Coordinates and the airport-processing allowance
+are labelled planning inputs, not verified terminal assignments. Original GBP,
+ECB EUR estimates and future Google driving evidence remain attached to the
+resource and passenger proposal. The quoted capacity covers the requested party,
+not extra sellable seats. APL uses a 120-second app-receipt window; return legs
+also expire for new planning at Google receipt plus 120 seconds, whichever is
+earlier. Source expiry stays unknown when not supplied. See the
+[physical-source and freshness rules](real-data.md#manual-airporthotel-transfers).
+
+The case form also offers a bounded complete hotel package for one explicitly
+adult group: initial transfer, requested full hotel stay, return transfer and
+onward flight. All three modes and exact stay/point/luggage/processing inputs are
+required. It searches one complete-price property and one onward date, with at
+least ten counted job calls. Successful apply adds only the chosen chain and
+saves exact case/group-bound inputs; unrelated allocations remain unchanged.
+Voice/text can reuse a valid saved profile with at least eleven total calls
+including interpretation. The default eight-call allowance is never increased
+automatically. [The contract](implementation-contract.md#durable-recovery-jobs)
+describes the limits and atomic source revalidation.
 
 ## Planning and confirmation
 
@@ -75,10 +105,19 @@ All input routes are operator-authenticated, versioned and idempotent:
 
 ## Activation limits
 
-Nuitee hotel rates have been verified with the connected production account.
-Nuitee Flights, Duffel and Distribusion adapters are covered by offline contract tests; their
-production access is account-specific. Nuitee returned flight offers using the
-existing production key and its live response was verified. Distribusion still
-requires a production partner key and Offers-flow activation; no coach availability
-is fabricated while access is missing. Set `FLIGHT_OFFERS_PROVIDER=auto`, `nuitee`
-or `duffel` to choose explicitly; a provider failure never switches suppliers.
+Nuitee hotel and flight quotes, APL in both directions, Google dated routes and
+ECB estimates have bounded real evidence. One automatic ten-call hotel package
+produced a complete four-resource proposal for two adults, preserving the other
+group and creating no bookings. This does not establish universal supplier
+coverage or future availability. Spoken saved-profile recovery remains
+unverified: the last authorized probe stopped on corrupted transcription before
+any backend command. [Verification evidence](verification/report.md) separates
+these outcomes from offline tests.
+
+Duffel and Distribusion production access remains account-specific. Distribusion
+requires a production partner key and Offers-flow activation; no coach
+availability is fabricated while access is missing. The connected Booking.com
+account has not supplied the required partner access. Set
+`FLIGHT_OFFERS_PROVIDER=auto`, `nuitee` or `duffel` to choose explicitly; a provider
+failure never switches suppliers. Missing keys leave the affected functions
+unavailable rather than populating the operation with substitute services.

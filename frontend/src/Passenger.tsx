@@ -17,6 +17,11 @@ import { ItineraryView } from './Inspector';
 import ThemeToggle from './ThemeToggle';
 import { sourcedArrival } from './journeyPresentation';
 import { costPresentation, EstimatedCostNote } from './priceEvidence';
+import {
+  LIVE_PASSENGER_HORIZON_MINUTES,
+  parsePassengerDeadlineUtc,
+  passengerDeadlineUtcInput,
+} from './passengerDeadline';
 
 interface PassengerState {
   version: number;
@@ -66,6 +71,7 @@ function PassengerJourney({ token }: { token: string }) {
   const [uncertain, setUncertain] = useState<UncertainOfferAction | null>(null);
   const [editing, setEditing] = useState(false);
   const [deadline, setDeadline] = useState('22:00');
+  const [liveDeadline, setLiveDeadline] = useState('');
   const [accessible, setAccessible] = useState(false);
   const [deadlineDay, setDeadlineDay] = useState(0);
   const [now, setNow] = useState(Date.now());
@@ -410,8 +416,12 @@ function PassengerJourney({ token }: { token: string }) {
               onClick={() => {
                 setEditing((value) => !value);
                 setAccessible(state.group.accessible);
-                setDeadline(formatTime(state.group.deadline).slice(0, 5));
-                setDeadlineDay(Math.floor(state.group.deadline / 1440));
+                if (live) {
+                  setLiveDeadline(passengerDeadlineUtcInput(state.epoch, state.group.deadline));
+                } else {
+                  setDeadline(formatTime(state.group.deadline).slice(0, 5));
+                  setDeadlineDay(Math.floor(state.group.deadline / 1440));
+                }
               }}
             >
               <span>Something we should know?</span>
@@ -429,9 +439,12 @@ function PassengerJourney({ token }: { token: string }) {
                   setError('');
                   const [hours, minutes] = deadline.split(':').map(Number);
                   try {
+                    const updatedDeadline = live
+                      ? parsePassengerDeadlineUtc(liveDeadline, state.epoch, state.sim_time)
+                      : deadlineDay * 1440 + hours * 60 + minutes;
                     await request(`/passenger/${encodeURIComponent(token)}/constraints`, {
                       idempotency_key: key(),
-                      deadline: deadlineDay * 1440 + hours * 60 + minutes,
+                      deadline: updatedDeadline,
                       accessible,
                     });
                     await refresh();
@@ -445,35 +458,55 @@ function PassengerJourney({ token }: { token: string }) {
                   }
                 }}
               >
-                <label className="field">
-                  Arrival day
-                  <select
-                    value={deadlineDay}
-                    onChange={(event) => setDeadlineDay(Number(event.target.value))}
-                  >
-                    {Array.from({ length: Math.max(3, deadlineDay + 1) }, (_, day) => (
-                      <option key={day} value={day}>
-                        {day === 0
-                          ? live
-                            ? 'Operation day'
-                            : 'Scenario day'
-                          : day === 1
-                            ? 'Next day'
-                            : `Day ${day + 1}`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  Arrive by
-                  <input
-                    type="time"
-                    min={deadlineDay === 0 ? formatTime(state.sim_time).slice(0, 5) : undefined}
-                    value={deadline}
-                    onChange={(event) => setDeadline(event.target.value)}
-                    required
-                  />
-                </label>
+                {live ? (
+                  <>
+                    <label className="field">
+                      Arrive by (UTC)
+                      <input
+                        type="datetime-local"
+                        min={passengerDeadlineUtcInput(state.epoch, state.sim_time)}
+                        max={passengerDeadlineUtcInput(
+                          state.epoch,
+                          state.sim_time + LIVE_PASSENGER_HORIZON_MINUTES,
+                        )}
+                        step={60}
+                        value={liveDeadline}
+                        onChange={(event) => setLiveDeadline(event.target.value)}
+                        required
+                      />
+                    </label>
+                    <p className="field-hint">
+                      Enter UTC time, within seven days of the current server time. Your existing
+                      deadline is not moved automatically.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <label className="field">
+                      Arrival day
+                      <select
+                        value={deadlineDay}
+                        onChange={(event) => setDeadlineDay(Number(event.target.value))}
+                      >
+                        {Array.from({ length: Math.max(3, deadlineDay + 1) }, (_, day) => (
+                          <option key={day} value={day}>
+                            {day === 0 ? 'Scenario day' : day === 1 ? 'Next day' : `Day ${day + 1}`}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      Arrive by
+                      <input
+                        type="time"
+                        min={deadlineDay === 0 ? formatTime(state.sim_time).slice(0, 5) : undefined}
+                        value={deadline}
+                        onChange={(event) => setDeadline(event.target.value)}
+                        required
+                      />
+                    </label>
+                  </>
+                )}
                 <label className="check-field">
                   <input
                     type="checkbox"

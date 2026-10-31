@@ -216,6 +216,36 @@ made no supplier calls. This single run verifies the typed source assembly, not
 general availability, latency guarantees or a spoken/browser-voice hotel run.
 See the [verification report](verification/report.md) for the bounded evidence.
 
+## Romanian ground-transport coverage gap
+
+The connected APL flow covers supported UK airport–hotel transfers. It does not
+provide CRA/OTP/SBZ supply. A read-only review on 31 October 2026 found a relevant
+consumer booking route through [BILETERIA](https://www.bileteria.ro/): its public
+form accepts origin, destination, departure date and passenger count, and its
+[consumer terms](https://www.bileteria.ro/Termeni) describe passenger checkout and
+electronic tickets without transport-company registration.
+
+Official operator/marketplace listings identify these airport routes:
+
+- [Union Business & Travel: CRA terminal → OTP departures](https://ubt.autogari.ro/Transport/AeroportCraiova-Otopeni).
+  [Craiova Airport also lists UBT](https://aeroportcraiova.ro/transfer-aeroport/ubt/)
+  as a transfer provider.
+- [Trans Olteanu: CRA terminal → SBZ airport](https://transolteanu.autogari.ro/Transport/AeroportCraiova-SibiuAeroportInternational),
+  with a connection through Brașov; this is not a direct vehicle.
+- [BILETERIA: SBZ airport → OTP airport](https://bileteria.ro/Transport/SibiuAeroportInternational-Otopeni),
+  with operator-specific itineraries and purchase cutoffs.
+
+These are route listings and a consumer checkout path, not an implemented
+integration, a requested-date quote, or proof of seats for a recovery group.
+No dated search, account creation or booking was performed for this review.
+Actual stops, connections, passenger count, luggage terms, fare currency,
+purchase cutoff and availability would need verification for the chosen trip;
+a request-only service must not be presented as an immediately confirmed seat.
+No open consumer inventory API was verified. The
+[documented Autogari API](https://www.autogari.ro/blog/beneficiile-si-costurile-ecosistemului-autogari-ro/)
+concerns transport-operator system synchronization and commercial onboarding,
+not unrestricted inventory access for this application.
+
 ## Verification and limits
 
 The provider tests cover malformed/upstream errors, response size and timeout

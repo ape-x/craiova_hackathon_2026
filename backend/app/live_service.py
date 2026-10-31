@@ -172,7 +172,9 @@ class LiveOperations:
         def apply(world):
             _live(world)
             additions = prepare(world, request)
-            _invalidate_pending(world, "Operational data changed; request a fresh recovery plan.")
+            # These imports append new identities; they do not replace an existing
+            # group's constraints or allocated services. Preserve its proposals.
+            # Quote replacements invalidate their explicit group/resource scope.
             world.airports.extend(additions.get("airports", []))
             world.groups.extend(additions.get("groups", []))
             world.resources.extend(additions.get("resources", []))
@@ -195,7 +197,7 @@ class LiveOperations:
         return self._import("live-manifest", request, prepare_manifest, "Imported the operator-supplied passenger manifest.")
 
     def generate(self, request: PassengerGenerationInput):
-        return self._import("live-test-passengers", request, prepare_generated_passengers, "Generated explicitly requested test passengers; no transport inventory was created.")
+        return self._import("live-test-passengers", request, prepare_generated_passengers, "Created the requested passenger planning assumptions; no transport inventory was created.")
 
     def resource(self, request: ManualResourceInput):
         return self._import("live-resource", request, prepare_resource, "Imported operator-confirmed transport availability.")
@@ -357,7 +359,7 @@ class LiveOperations:
             offer = _find(world.offers, offer_id, "proposal")
             group = _find(world.groups, offer.group_id, "passenger group")
             if group.source == "synthetic":
-                raise DomainError(409, "Test passengers cannot receive real booking confirmations")
+                raise DomainError(409, "Planning-assumption groups cannot receive real booking confirmations")
             if offer.status not in ("proposed", "accepted"):
                 raise DomainError(409, "Only an active proposal can receive external booking confirmations")
             expected_ids = {leg.resource_id for leg in offer.itinerary.legs}

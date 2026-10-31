@@ -283,7 +283,10 @@ export class LiveVoiceClient {
       if (this.closing) return;
       this.ready = true;
       clearTimeout(this.startupTimer);
-      this.options.onState('listening', 'GPT-Live conectat · cererile modifică numai simulatorul.');
+      this.options.onState(
+        'listening',
+        'GPT-Live conectat · cererile sunt verificate de aplicație.',
+      );
     } else if (event.type === 'session.closed') {
       this.finalized = true;
       this.cleanup();
@@ -345,7 +348,7 @@ export class LiveVoiceClient {
           event_id: crypto.randomUUID(),
           delegation_id: id,
           content:
-            'Nu pot delimita sigur această cerere vocală. Te rog repetă explicit comanda; nu am modificat simulatorul.',
+            'Nu pot delimita sigur această cerere vocală. Te rog repetă explicit comanda; nu am trimis-o aplicației.',
         });
         return;
       }
@@ -389,7 +392,7 @@ export class LiveVoiceClient {
       type: 'session.thinking.append',
       event_id: crypto.randomUUID(),
       delegation_id: id,
-      content: 'Cererea este verificată în simulator. Încă nu există un rezultat confirmat.',
+      content: 'Cererea este verificată de aplicație. Încă nu există un rezultat confirmat.',
     });
     // A delegation may arrive before its transcript. Wait for that turn only,
     // never borrow later speech to complete an older operational command.
@@ -420,11 +423,11 @@ export class LiveVoiceClient {
         event_id: crypto.randomUUID(),
         delegation_id: id,
         content:
-          'Nu am primit o transcriere completă pentru această cerere. Te rog repetă explicit comanda; nu am modificat simulatorul.',
+          'Nu am primit o transcriere completă pentru această cerere. Te rog repetă explicit comanda; nu am trimis-o aplicației.',
       });
       return;
     }
-    this.options.onState('working', 'Interpretez cererea și verific starea simulatorului…');
+    this.options.onState('working', 'Interpretez cererea și verific datele de planificare…');
     try {
       const result = await this.options.onDelegation({
         text,
@@ -448,7 +451,7 @@ export class LiveVoiceClient {
         delegation_id: id,
         content: `Aplicația a raportat o eroare: ${message.slice(0, 700)}. Nu afirma că planul a fost aplicat. Operatorul poate verifica starea curentă.`,
       });
-      // A failed simulator command is recoverable. Keep the same session and
+      // A failed planning command is recoverable. Keep the same session and
       // microphone under UI control; the application already displays its error.
       this.options.onState('listening', '');
     }

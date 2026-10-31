@@ -22,6 +22,7 @@ import {
 import { passengerSourceLabel } from './liveData';
 import './recoveryCase.css';
 import RecoveryJobPanel from './RecoveryJobPanel';
+import { ArrivalReportPanel } from './OperationalReportForms';
 
 type ActionKind = 'create' | 'bind' | 'refresh';
 export default function RecoveryCaseDialog({
@@ -55,6 +56,7 @@ export default function RecoveryCaseDialog({
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [jobSubmissionPending, setJobSubmissionPending] = useState(false);
+  const [arrivalReportPending, setArrivalReportPending] = useState(false);
   const [uncertain, setUncertain] = useState<{ error: TransportError; kind: ActionKind } | null>(
     null,
   );
@@ -65,7 +67,7 @@ export default function RecoveryCaseDialog({
   const generation = useRef(0);
   const mounted = useRef(true);
   const running = useRef(false);
-  const locked = busy || Boolean(uncertain) || jobSubmissionPending;
+  const locked = busy || Boolean(uncertain) || jobSubmissionPending || arrivalReportPending;
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
   const close = useCallback(() => {
@@ -308,11 +310,20 @@ export default function RecoveryCaseDialog({
         incident ? (
           <>
             <CaseSummary incident={incident} world={world} />
+            <ArrivalReportPanel
+              key={`arrival:${incident.id}`}
+              world={world}
+              incident={incident}
+              disabled={busy || Boolean(uncertain) || jobSubmissionPending}
+              onApplied={onApplied}
+              onRefresh={onRefresh}
+              onMutationPending={setArrivalReportPending}
+            />
             <RecoveryJobPanel
               key={incident.id}
               world={world}
               incident={incident}
-              disabled={busy || Boolean(uncertain)}
+              disabled={busy || Boolean(uncertain) || arrivalReportPending}
               onRefresh={onRefresh}
               onMutationPending={setJobSubmissionPending}
             />

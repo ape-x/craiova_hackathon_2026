@@ -1,6 +1,6 @@
 # Live assisted recovery — implementation contract
 
-Updated 31 October 2026. FastAPI owns the validated schema, operational state and allocation checks; React consumes the same versioned state. This contract describes the shipped live assisted workflow, with pending work explicitly separated. See [product scope](product-spec.md), [live data](live-mode.md) and [verification](verification/report.md).
+Updated 1 November 2026. FastAPI owns the validated schema, operational state and allocation checks; React consumes the same versioned state. This contract describes the shipped live assisted workflow, with pending work explicitly separated. See [product scope](product-spec.md), [live data](live-mode.md) and [verification](verification/report.md).
 
 ## State and provenance
 
@@ -24,6 +24,7 @@ Operator endpoints require operator authentication. Mutations use `expected_vers
 | `POST /api/flights/lookup`                                             | Flight number and explicit first-tracked UTC date; return exact FR24 matches, freshness and opaque selection references                    |
 | `POST /api/incidents`                                                  | Append operator report for the selected flight and optional explicit group selection                                                       |
 | `POST /api/incidents/{id}/groups`                                      | Append compatible existing groups; do not move their locations or replace existing bookings                                                |
+| `POST /api/incidents/{id}/arrival-report` | Scoped operator-reported passenger airport/readiness after diversion; no aircraft instruction, source search or booking |
 | `POST /api/incidents/{id}/refresh-flight`                              | Refresh the same exact flight leg/date; never silently substitute another match                                                            |
 | `POST /api/incidents/{id}/recovery-jobs`                               | HTTP202 with `{job,replayed}`; explicit group scope, objective, modes, call limit and instructions                                         |
 | `GET /api/incidents/{id}/recovery-jobs`, `GET /api/recovery-jobs/{id}` | Read durable progress; no new supplier dispatch                                                                                            |
@@ -31,6 +32,7 @@ Operator endpoints require operator authentication. Mutations use `expected_vers
 | `POST /api/live/import-passengers`                                     | Validated manifest with evidence and group constraints                                                                                     |
 | `POST /api/live/generate-passengers`                                   | Explicit planning assumptions only; creates no transport or hotel inventory                                                                |
 | `POST /api/live/resources`                                             | Operator-documented dated service with evidence, price, capacity and validity                                                              |
+| `POST /api/live/resources/{id}/unavailability` | Exact-service operator report; preserve supplier evidence and invalidate only dependent unconfirmed proposals |
 | `POST /api/real-data/search`                                           | Reference hotels/routes and supplier hotel offers; no operational import or booking                                                        |
 | `POST /api/live/hotel-quotes`                                          | Group-specific complete hotel quotes at actual property nodes; sourced stay-policy validation or separately declared property-agreed times |
 | `POST /api/live/travel/search`, `POST /api/live/travel/import`         | Separate dated supplier search and server-held quote import                                                                                |
@@ -48,6 +50,16 @@ Operator endpoints require operator authentication. Mutations use `expected_vers
 | `POST /api/traffic/start`, `POST /api/traffic/stop`                    | Explicit shared FR24 collection with persistent request/credit budget                                                                      |
 
 Legacy scenario events and `/api/reset` remain implementation support for the internal simulation mode. Synthetic reset is rejected in live; it is not an operator step in the live recovery workflow.
+
+## Operator reports and continued live operation
+
+The case panel accepts an explicit arrival report with `group_ids`, known `airport_code`, minute-precision timezone-aware `ready_at`, `description`, version and idempotency key. Only reciprocally linked groups move to the declared starting airport/readiness; destination, deadline, passenger identity and original flight remain unchanged. A readiness after the deadline stays visible as an unmet constraint. An arrival report is operator data, not FR24 landing confirmation or airport operating permission. A newly referenced airport is catalog geography with unknown operational status. Only the selected groups' proposed/accepted offers are invalidated. Existing hotel profile bytes remain as history; changed route identity prevents stale reuse.
+
+The live resource inspector accepts an unavailable-service report with description, version and key. It sets that exact resource unavailable for planning, records operator provenance and receipt time, and invalidates only dependent proposed/accepted offers. Supplier prices, dates, source evidence and booking records remain unchanged. Both report paths reject impacts on externally confirmed bookings before mutation, requiring separate operator review. Reports and receipts preserve actual affected groups/offers. Unknown submission outcomes retain the original serialized request/key. Neither form starts a source call or a replan; review the updated case and request recovery separately. These report endpoints are not yet connected to free-form voice interpretation.
+
+Generic manifest, planning-passenger and manual-service imports are additive. They preserve existing proposals and allocations; source quote replacement still invalidates its explicit affected scope.
+
+Live timestamps retain the original epoch and all stored absolute instants. The upper planning bound is seven days from the current server-derived operation minute, so an operation older than a week can still accept future manifests, services, quotes and full hotel packages. Source-specific future/readiness/deadline checks remain in force. The passenger deadline editor uses explicit UTC dates and contextual limits; it does not advance an expired deadline automatically. The internal simulation retains its fixed seven-day horizon. Historical resource/node caps remain separate capacity limits and still need an archival lifecycle for prolonged accumulation.
 
 ## Durable recovery jobs
 

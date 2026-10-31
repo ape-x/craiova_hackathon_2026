@@ -16,6 +16,7 @@ from .airport_catalog import lookup_airport
 from .live_data import aware
 from .models import Airport, Model, Mutation, Resource
 from .scenario_schema import MAX_RESOURCES, MAX_AIRPORTS
+from .planning_window import planning_horizon_end
 from .store import DomainError, Store, audit
 from .travel import TravelSearchRequest
 
@@ -198,7 +199,7 @@ def append_travel_quote(world, quote, query, group, kind):
     epoch = aware(world.epoch)
     departure = math.floor((departure_time-epoch).total_seconds()/60)
     arrival = math.ceil((arrival_time-epoch).total_seconds()/60)
-    if departure < world.sim_time or arrival <= departure or arrival > 7*1440:
+    if departure < world.sim_time or arrival <= departure or arrival > planning_horizon_end(world):
         raise DomainError(422, "Provider schedule is past or outside the seven-day planning horizon")
     # A supplier identifier can survive a price/time/expiry refresh. Preserve
     # each received quote as its own snapshot instead of reusing older facts.

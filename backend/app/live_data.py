@@ -21,7 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .airport_catalog import lookup_airport
 from .models import Airport, Mutation, PassengerGroup, Resource, World
-from .scenario_schema import HORIZON_MINUTES, MAX_AIRPORTS, MAX_GROUPS, MAX_PASSENGERS, MAX_RESOURCES
+from .scenario_schema import MAX_AIRPORTS, MAX_GROUPS, MAX_PASSENGERS, MAX_RESOURCES
+from .planning_window import planning_horizon_end
 from .store import DomainError
 
 
@@ -150,7 +151,7 @@ class ManualResourceInput(EvidenceInput):
 
 
 class PassengerGenerationInput(Mutation):
-    """Explicit test passenger generation; never creates transport inventory."""
+    """Explicit passenger planning assumptions; never creates transport inventory."""
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True, allow_inf_nan=False)
     passengers: int = Field(ge=1, le=500, strict=True)
     group_size: int = Field(ge=1, le=12, strict=True)
@@ -195,8 +196,8 @@ def relative_minute(world: World, timestamp: datetime, *, rounding: Literal["up"
     epoch = aware(world.epoch)
     minutes = (aware(timestamp) - epoch).total_seconds() / 60
     result = math.ceil(minutes) if rounding == "up" else math.floor(minutes)
-    if not 0 <= result <= HORIZON_MINUTES:
-        raise DomainError(422, "Timestamps must fall within the current seven-day operation window")
+    if not 0 <= result <= planning_horizon_end(world):
+        raise DomainError(422, "Timestamps must follow the operation epoch and be no more than seven days ahead of the current planning time")
     return result
 
 

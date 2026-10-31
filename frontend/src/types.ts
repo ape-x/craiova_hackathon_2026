@@ -144,6 +144,7 @@ export interface Itinerary {
   cost_evidence?: CostEvidence | null;
 }
 export interface Offer {
+  external_bookings?: Record<string, unknown>[];
   id: string;
   group_id: string;
   itinerary: Itinerary;

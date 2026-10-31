@@ -424,6 +424,63 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
     await end(client, channel);
   });
 
+  it('keeps the full date clarification audible and forwards a complete correction unchanged', async () => {
+    const { client, channel, onDelegation, states } = await connected();
+    const clarification =
+      'Nicio modificare operațională aplicată. Data asociată cazului sau zborului este ambiguă ori invalidă. Repetă comanda completă corectată: ID-ul exact al cazului/zborului, o singură dată YYYY-MM-DD, grupul/grupurile, serviciile cerute și limita totală explicită de apeluri pentru noua cerere. Nu am pornit căutarea. Interpretarea a folosit 1 apel. Versiunea 49.';
+    onDelegation.mockResolvedValueOnce(clarification);
+    const malformed =
+      'Recalculează pentru Planning group 1, EK5 din 30 și 1 octombrie 2020 și 6, hotel, ambele transferuri și zbor. Maximum 11 apeluri în total.';
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: malformed,
+      start_ms: 0,
+      end_ms: 900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'bad-date', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledExactlyOnceWith({
+      text: malformed,
+      context: '',
+      delegationId: 'live_test:bad-date',
+    });
+    expect(channel.sent.find((event) => event.type === 'session.commentary.append')?.content).toBe(
+      clarification,
+    );
+    expect(states.at(-1)?.[0]).toBe('listening');
+    const messages = states
+      .map(([, message]) => message)
+      .concat(channel.sent.map((event) => String(event.content ?? '')));
+    expect(messages.join('\n')).not.toMatch(/simulat/i);
+    expect(messages.join('\n')).toContain('Încă nu există un rezultat confirmat');
+
+    const corrected =
+      'Recalculează pentru Planning group 1, EK5 din 2026-10-31, hotel, ambele transferuri și zbor. Maximum 11 apeluri în total.';
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: corrected,
+      start_ms: 1200,
+      end_ms: 1900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'corrected-date', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
+    expect(onDelegation).toHaveBeenLastCalledWith({
+      text: corrected,
+      context: `user: ${malformed}`,
+      delegationId: 'live_test:corrected-date',
+    });
+    await end(client, channel);
+  });
+
   it('retains a delegation when its transcript arrives after the old 250ms deadline', async () => {
     const { client, channel, onDelegation } = await connected();
     channel.emit({
@@ -492,7 +549,7 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
     expect(onDelegation).not.toHaveBeenCalled();
     expect(
       channel.sent.find((event) => event.type === 'session.commentary.append')?.content,
-    ).toContain('nu am modificat simulatorul');
+    ).toContain('nu am trimis-o aplicației');
     channel.emit({
       type: 'session.input_transcript.delta',
       delta: 'Anulează zborul F101. ',

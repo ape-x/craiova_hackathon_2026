@@ -22,6 +22,7 @@ from .providers.base import ProviderError
 from .providers.reference_fx import EcbRateTable, SOURCE_URL as ECB_URL
 from .real_data import RealDataRequest
 from .scenario_schema import HORIZON_MINUTES, MAX_AIRPORTS, MAX_RESOURCES
+from .planning_window import planning_horizon_end
 from .solver import build_candidate, resource_blocked_by_incident, validate_plan
 from .stay_requirements import HotelStayRequirement, REQUIREMENT_KEY
 from .store import DomainError, Store, utcnow
@@ -123,7 +124,7 @@ def validate_hotel_job(world, request):
     pickup = (inputs.pickup_at-epoch).total_seconds()/60
     checkout = (inputs.checkout_at-epoch).total_seconds()/60
     if (inputs.pickup_at <= utcnow() or pickup < max(world.sim_time, group.ready_at) or pickup != int(pickup)
-            or checkout+10+inputs.airport_processing_minutes >= min(group.deadline,HORIZON_MINUTES)):
+            or checkout+10+inputs.airport_processing_minutes >= min(group.deadline,planning_horizon_end(world))):
         raise DomainError(422, "Pickup must be future and after readiness; the stay and airport allowance must fit the group's deadline and planning horizon")
     if inputs.checkin_at.astimezone(LONDON).date() >= inputs.checkout_at.astimezone(LONDON).date():
         raise DomainError(422, "This hotel rate flow requires checkout on a later property-local date")

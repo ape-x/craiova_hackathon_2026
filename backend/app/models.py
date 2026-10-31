@@ -318,7 +318,7 @@ class AcceptRequest(Model):
 
 class ConstraintRequest(Model):
     idempotency_key: str = Field(min_length=8, max_length=120)
-    deadline: int | None = Field(default=None, ge=600, le=10080)
+    deadline: int | None = Field(default=None, ge=0)
     accessible: bool | None = None
     budget: float | None = Field(default=None, ge=0, le=100000)
 
