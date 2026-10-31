@@ -1,5 +1,5 @@
 .live-dialog-intro {
-  color: #b3c8d5;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.7;
 }
@@ -7,20 +7,20 @@
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
-  border-bottom: 1px solid #36515f;
+  border-bottom: 1px solid var(--line);
   padding: 15px 0;
   margin-bottom: 14px;
 }
 .live-tabs button {
-  border: 1px solid #3a586b;
+  border: 1px solid var(--line);
   padding: 8px 12px;
   font-size: 11px;
-  border-radius: 4px;
+  border-radius: 10px;
 }
 .live-tabs button[aria-selected='true'] {
-  background: #214d61;
-  color: #b5f0ff;
-  border-color: #6dacc1;
+  background: var(--cyan-soft);
+  color: var(--cyan);
+  border-color: var(--cyan);
 }
 .live-form-fieldset {
   border: 0;
@@ -42,15 +42,15 @@
 .live-form-fieldset textarea {
   width: 100%;
   resize: vertical;
-  font: 10px/1.7 monospace;
-  background: #10202a;
-  border: 1px solid #415c6b;
-  border-radius: 4px;
+  font: 11px/1.7 var(--mono);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   padding: 11px;
-  color: #d5e7f1;
+  color: var(--text);
 }
 .live-evidence {
-  border-top: 1px solid #314a59;
+  border-top: 1px solid var(--line);
   margin: 15px 0;
   padding-top: 12px;
 }
@@ -79,7 +79,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #b1dfcf;
+  color: var(--mint);
   font-size: 12px;
   line-height: 1.6;
   margin-top: 17px;
@@ -87,15 +87,17 @@
 .live-empty-map {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 50% 40%, #1b3543, #091721 70%);
+  background: radial-gradient(circle at 50% 40%, var(--stage-highlight), var(--stage) 70%);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   text-align: center;
-  padding: 100px 35px;
+  padding: 74px 35px 82px;
+  overflow-y: auto;
 }
 .live-empty-map > div {
   max-width: 470px;
+  margin: auto;
 }
 .live-empty-map h2 {
   font-size: 24px;
@@ -104,7 +106,7 @@
 }
 .live-empty-map p {
   font-size: 12px;
-  color: #aac4d3;
+  color: var(--muted);
   line-height: 1.8;
   margin-bottom: 20px;
 }
@@ -114,14 +116,14 @@
   list-style: none;
   text-align: left;
   padding: 18px 22px;
-  background: #102936c7;
-  border: 1px solid #355a70;
-  border-radius: 5px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
   margin: 20px 0;
 }
 .live-empty-checklist li {
   font-size: 12px;
-  color: #a9c4d4;
+  color: var(--muted);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -131,7 +133,7 @@
     grid-template-columns: 1fr;
   }
   .live-empty-map {
-    padding: 100px 20px;
+    padding: 68px 20px 82px;
   }
   .live-empty-map h2 {
     font-size: 20px;
@@ -139,15 +141,15 @@
 }
 .live-travel-results {
   margin-top: 20px;
-  border-top: 1px solid #355263;
+  border-top: 1px solid var(--line);
   padding-top: 15px;
 }
 .live-travel-quote {
   padding: 14px;
   margin: 12px 0;
-  border: 1px solid #36556a;
-  border-radius: 5px;
-  background: #132c39;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
 }
 .live-travel-quote > strong {
   font-size: 13px;
@@ -155,7 +157,7 @@
 }
 .live-travel-quote p {
   font-size: 11px;
-  color: #b0c6d3;
+  color: var(--muted);
   line-height: 1.6;
   margin: 8px 0;
 }

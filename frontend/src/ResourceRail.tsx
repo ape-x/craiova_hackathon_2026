@@ -38,7 +38,7 @@ export default function ResourceRail({
   onScenario: () => void;
   onLiveData: () => void;
 }) {
-  const [tab, setTab] = useState<ResourceKind | 'groups'>('bus');
+  const [tab, setTab] = useState<ResourceKind | 'groups'>('flight');
   const [query, setQuery] = useState('');
   const [showRealData, setShowRealData] = useState(false);
   const closeRealData = useCallback(() => setShowRealData(false), []);
@@ -58,7 +58,7 @@ export default function ResourceRail({
   return (
     <aside className="resource-rail" aria-label="Resources">
       <div className="rail-title">
-        <h2>Resources</h2>
+        <h2>Your network</h2>
         <button
           className="icon-button"
           title={world.mode === 'live' ? 'Manage operation data' : 'Change scenario conditions'}
@@ -71,41 +71,53 @@ export default function ResourceRail({
         </button>
       </div>
       <div className="airports-list">
-        {world.airports.map((airport) => (
-          <button
-            key={airport.id}
-            title={`${airport.kind === 'station' ? 'Coach station' : 'Airport'} · ${airport.code} · ${airport.name}`}
-            className={`airport-row ${selectedId === airport.id || (!selectedId && airport.code === 'CRA') ? 'selected' : ''}`}
-            onClick={() => {
-              onSelect(airport.id);
-              onMode(airport.code === 'CRA' ? 'airport' : 'region');
-            }}
-          >
-            {airport.kind === 'station' ? (
-              <BusFront size={17} />
-            ) : (
-              <Plane
-                size={17}
-                className={
-                  airport.operational_status !== 'unknown' && !airport.available ? 'text-red' : ''
-                }
-              />
-            )}
-            <span>
-              <strong>{airport.code}</strong>
-              <span className="muted"> / {airport.name}</span>
-            </span>
-            {airport.kind === 'station' ? (
-              <Tag>STATION</Tag>
-            ) : airport.operational_status === 'unknown' ? (
-              <Tag>UNKNOWN</Tag>
-            ) : airport.available ? (
-              <ChevronRight size={14} />
-            ) : (
-              <Dot tone="red" />
-            )}
-          </button>
-        ))}
+        {world.airports
+          .filter(
+            (airport) =>
+              world.mode === 'live' ||
+              !world.resources.length ||
+              world.resources.some(
+                (resource) => resource.origin === airport.id || resource.destination === airport.id,
+              ),
+          )
+          .map((airport) => (
+            <button
+              key={airport.id}
+              title={`${airport.kind === 'station' ? 'Coach station' : 'Airport'} · ${airport.code} · ${airport.name}`}
+              className={`airport-row ${selectedId === airport.id || (!selectedId && airport.code === 'CRA') ? 'selected' : ''}`}
+              onClick={() => {
+                onSelect(airport.id);
+                onMode(airport.code === 'CRA' ? 'airport' : 'region');
+              }}
+            >
+              {airport.kind === 'station' ? (
+                <BusFront size={17} />
+              ) : (
+                <Plane
+                  size={17}
+                  className={
+                    (world.mode !== 'live' || airport.operational_status !== 'unknown') &&
+                    !airport.available
+                      ? 'text-red'
+                      : ''
+                  }
+                />
+              )}
+              <span>
+                <strong>{airport.code}</strong>
+                <span className="muted"> / {airport.name}</span>
+              </span>
+              {airport.kind === 'station' ? (
+                <Tag>STATION</Tag>
+              ) : world.mode === 'live' && airport.operational_status === 'unknown' ? (
+                <Tag>UNKNOWN</Tag>
+              ) : airport.available ? (
+                <ChevronRight size={14} />
+              ) : (
+                <Dot tone="red" />
+              )}
+            </button>
+          ))}
       </div>
       {world.mode === 'live' && (
         <button className="real-data-launch" onClick={onLiveData}>
@@ -126,12 +138,11 @@ export default function ResourceRail({
           onClose={closeRealData}
         />
       )}
-      <div className="resource-tabs" role="tablist" aria-label="Resource type">
+      <div className="resource-tabs" role="group" aria-label="Resource type">
         {tabs.map(({ id, name, Icon }) => (
           <button
             key={id}
-            role="tab"
-            aria-selected={tab === id}
+            aria-pressed={tab === id}
             title={name}
             aria-label={name}
             className={tab === id ? 'active' : ''}
@@ -140,7 +151,8 @@ export default function ResourceRail({
               setQuery('');
             }}
           >
-            <Icon size={19} />
+            <Icon size={16} />
+            <span>{name}</span>
           </button>
         ))}
       </div>
@@ -152,7 +164,6 @@ export default function ResourceRail({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <kbd>/</kbd>
       </div>
       <div className="rail-scroll">
         {world.mode === 'live' && (!world.groups.length || !world.resources.length) && (
@@ -200,7 +211,8 @@ export default function ResourceRail({
                 <span className="resource-name">
                   <strong>{group.name}</strong>
                   <small>
-                    {group.id} · {group.size} passengers · {group.destination}
+                    {group.id} · {group.size} {group.size === 1 ? 'passenger' : 'passengers'} ·{' '}
+                    {group.destination}
                     {group.source === 'synthetic' ? ' · TEST' : ''}
                   </small>
                 </span>

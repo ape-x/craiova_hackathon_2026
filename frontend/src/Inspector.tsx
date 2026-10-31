@@ -12,7 +12,6 @@ import {
   Clock3,
   Copy,
   ExternalLink,
-  FileText,
   Plane,
   ShieldCheck,
   Users,
@@ -70,8 +69,8 @@ export function ShareOffer({ group, config }: { group: PassengerGroup; config: A
         <QRCodeSVG
           value={url}
           size={92}
-          bgColor="#f0f7f9"
-          fgColor="#101d25"
+          bgColor="#ffffff"
+          fgColor="#202321"
           level="M"
           marginSize={1}
         />
@@ -598,7 +597,7 @@ export default function Inspector({
             ? `${airport.code} operations`
             : latest
               ? 'Recovery plan'
-              : 'Network status';
+              : 'Overview';
   return (
     <aside className="inspector" aria-label="Operations inspector">
       <div className="inspector-heading">
@@ -760,7 +759,7 @@ export default function Inspector({
           <>
             <div className="entity-heading">
               <div
-                className={`entity-icon ${airport.kind === 'station' || airport.operational_status === 'unknown' || airport.available ? 'cyan' : 'red'}`}
+                className={`entity-icon ${airport.kind === 'station' || (world.mode === 'live' && airport.operational_status === 'unknown') || airport.available ? 'cyan' : 'red'}`}
               >
                 {airport.kind === 'station' ? <BusFront size={22} /> : <Plane size={22} />}
               </div>
@@ -889,7 +888,11 @@ export default function Inspector({
           </>
         )}
         {!showLog && !group && !resource && !airport && !observation && (
-          <>
+          <details className="network-overview" open={!latest}>
+            <summary>
+              Network at a glance
+              <ChevronDown size={14} />
+            </summary>
             <div className={`network-kpis ${latest ? 'compact-kpis' : ''}`}>
               <div>
                 <Plane size={19} />
@@ -944,17 +947,19 @@ export default function Inspector({
                 </span>
               </div>
             </div>
-          </>
+          </details>
         )}
         {!showLog && !group && !observation && !resourceImpact && latest && (
           <DecisionDetails decision={latest} world={world} />
         )}
         {!showLog && !group && !observation && !latest && (
           <div className="awaiting-event">
-            <FileText size={40} strokeWidth={1} />
+            <div className="welcome-orbit">
+              <Plane size={24} strokeWidth={1.4} />
+            </div>
             <h3>
               {world.groups.some((group) => group.status === 'waiting')
-                ? 'Every passenger needs a way forward.'
+                ? 'Let’s get everyone moving.'
                 : 'Ready for the unexpected.'}
             </h3>
             <p>
@@ -963,13 +968,13 @@ export default function Inspector({
                 .reduce((n, group) => n + group.size, 0)}{' '}
               passengers awaiting recovery.
               <br />
-              Evaluate the available network.
+              Find a complete journey with the resources available.
             </p>
             <button className="primary-button" disabled={busy} onClick={onReplan}>
               Calculate recovery <ArrowRight size={14} />
             </button>
             <button className="secondary-button" onClick={onScenario}>
-              {world.mode === 'live' ? 'Manage operation data' : 'Introduce an incident'}{' '}
+              {world.mode === 'live' ? 'Manage operation data' : 'Adjust the scenario'}{' '}
               <ArrowRight size={14} />
             </button>
           </div>

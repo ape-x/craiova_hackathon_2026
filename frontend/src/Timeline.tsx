@@ -35,8 +35,10 @@ export default function Timeline({
     <section className="timeline" aria-label="Resource schedule">
       <div className="timeline-top">
         <span className="section-label">
-          Resource schedule <b>·</b>{' '}
-          <span className="muted">{world.mode === 'live' ? 'LIVE PROPOSALS' : 'SIMULATION'}</span>
+          Resource schedule{' '}
+          <span className="muted">
+            {world.mode === 'live' ? 'Live proposals' : 'Scenario time'}
+          </span>
         </span>
         <div>
           <button

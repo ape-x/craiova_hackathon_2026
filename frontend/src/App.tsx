@@ -1,10 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Activity,
   ArrowDownToLine,
   ArrowRight,
   Check,
-  ChevronDown,
   Globe2,
   HelpCircle,
   Loader2,
@@ -14,8 +12,7 @@ import {
   Radio,
   RefreshCw,
   Search,
-  Send,
-  Settings2,
+  ArrowUp,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -31,10 +28,13 @@ import { useWorld } from './useWorld';
 import ResourceRail from './ResourceRail';
 import Inspector from './Inspector';
 import Timeline from './Timeline';
+import WorkspaceHeader from './WorkspaceHeader';
+import WorkspaceSummary from './WorkspaceSummary';
 import ScenarioDialog from './ScenarioDialog';
 import LiveDataDialog from './LiveDataDialog';
 import { WeatherNetworkOverlay } from './WeatherStatus';
 import { Brand, Dot, Modal, Tag } from './ui';
+import ThemeToggle from './ThemeToggle';
 import { LiveVoiceClient } from './liveVoice';
 import {
   commandContext,
@@ -74,6 +74,9 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
   const [error, setError] = useState('');
   return (
     <main className="login-page">
+      <div className="page-theme-toggle">
+        <ThemeToggle />
+      </div>
       <Brand />
       <form
         onSubmit={async (event) => {
@@ -118,7 +121,7 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
           <ArrowRight size={16} />
         </button>
       </form>
-      <small>Airport Recovery Live · Simulation environment</small>
+      <small>Airport Recovery Live · Operations workspace</small>
     </main>
   );
 }
@@ -132,6 +135,7 @@ function Operations() {
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
   const [showLog, setShowLog] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [modal, setModal] = useState<
     'scenario' | 'settings' | 'search' | 'help' | 'reset' | 'live-data' | null
   >(null);
@@ -172,6 +176,7 @@ function Operations() {
   const select = useCallback((id: string) => {
     setSelectedId(id);
     setShowLog(false);
+    setMobilePanel('inspector');
   }, []);
   const showScenario = useCallback(
     () => setModal(worldRef.current?.mode === 'live' ? 'live-data' : 'scenario'),
@@ -412,70 +417,30 @@ function Operations() {
   const lastDecision = world.decisions.at(-1);
   const isVoiceActive = !['idle', 'closed', 'error', 'disconnected'].includes(voiceState);
   return (
-    <div className={`operations-app panel-${mobilePanel}`}>
-      <header className="app-header">
-        <Brand />
-        <div className="operation-location">
-          <span>
-            {live
+    <div
+      className={`operations-app panel-${mobilePanel} ${sidebarOpen ? '' : 'sidebar-collapsed'}`}
+    >
+      <WorkspaceHeader
+        mode={world.mode}
+        locationLabel={
+          homeAirport
+            ? `${homeAirport.code} recovery operations`
+            : live
               ? 'Live recovery operations'
-              : homeAirport
-                ? `${homeAirport.code} recovery operations`
-                : 'Simulation workspace'}
-          </span>
-          <Tag>{homeAirport?.code ?? (live ? 'LIVE' : 'NETWORK')}</Tag>
-        </div>
-        <div className="header-center">
-          <Dot tone={connection === 'connected' ? 'mint' : 'amber'} />
-          <span>{connection === 'connected' ? 'NETWORK SYNCED' : 'RECONNECTING'}</span>
-        </div>
-        <div className="header-actions">
-          <button className="mode-selector" onClick={() => setModal('settings')}>
-            <span className="simulation-mark" />
-            {live ? 'LIVE · ASSISTED' : 'SIMULATION'}
-            <ChevronDown size={13} />
-          </button>
-          <button
-            className="icon-button header-search"
-            onClick={() => setModal('search')}
-            aria-label="Search the network"
-            title="Search · ⌘K"
-          >
-            <Search size={18} />
-          </button>
-          <button
-            className="icon-button"
-            onClick={() => {
-              setShowLog((value) => !value);
-              setMobilePanel('inspector');
-            }}
-            aria-label="View decision log"
-            title="Decision log"
-          >
-            <Activity size={18} />
-            {world.decisions.length > 0 && <span className="notification-dot" />}
-          </button>
-          <button
-            className="icon-button"
-            onClick={() => setModal('settings')}
-            aria-label="Connection settings"
-            title="Connections"
-          >
-            <Settings2 size={18} />
-          </button>
-          <span className="header-divider" />
-          <button
-            className={`log-button ${showLog ? 'active' : ''}`}
-            onClick={() => {
-              setShowLog((value) => !value);
-              setMobilePanel('inspector');
-            }}
-          >
-            <ClipboardIcon />
-            <span>Decision log</span>
-          </button>
-        </div>
-      </header>
+              : 'Simulation workspace'
+        }
+        connected={connection === 'connected'}
+        sidebarOpen={sidebarOpen}
+        showLog={showLog}
+        onToggleSidebar={() => setSidebarOpen((value) => !value)}
+        onSearch={() => setModal('search')}
+        onSettings={() => setModal('settings')}
+        onHelp={() => setModal('help')}
+        onLog={() => {
+          setShowLog((value) => !value);
+          setMobilePanel('inspector');
+        }}
+      />
       <nav className="mobile-nav" aria-label="Operations panels">
         <button
           className={mobilePanel === 'resources' ? 'active' : ''}
@@ -493,7 +458,7 @@ function Operations() {
           className={mobilePanel === 'inspector' ? 'active' : ''}
           onClick={() => setMobilePanel('inspector')}
         >
-          Inspector
+          Overview
         </button>
       </nav>
       <div className="operations-workspace">
@@ -506,6 +471,16 @@ function Operations() {
           onLiveData={() => setModal('live-data')}
         />
         <main className="map-workspace" aria-label="Operational 3D view">
+          <WorkspaceSummary
+            world={world}
+            mode={mode}
+            airport={homeAirport}
+            onReview={() => {
+              setSelectedId(null);
+              setShowLog(false);
+              setMobilePanel('inspector');
+            }}
+          />
           <div className={`scene-wrap ${geographic ? 'geographic-view' : ''}`}>
             <Suspense
               fallback={
@@ -575,11 +550,7 @@ function Operations() {
                         setSelectedId(world.groups[0]?.id ?? null);
                     }}
                   >
-                    {view === 'airport'
-                      ? 'Airport'
-                      : view === 'region'
-                        ? 'Regional network'
-                        : 'Passenger'}
+                    {view === 'airport' ? 'Airport' : view === 'region' ? 'Network' : 'Passengers'}
                   </button>
                 ))}
               </div>
@@ -603,9 +574,9 @@ function Operations() {
                 <span>
                   {chosenMode === 'ai'
                     ? world.decisions.some((item) => item.mode === 'ai')
-                      ? 'AI VERIFIED'
-                      : 'AI CONFIGURED'
-                    : 'LOCAL SOLVER'}
+                      ? 'AI planner'
+                      : 'AI configured'
+                    : 'Local solver'}
                 </span>
                 <Dot tone={chosenMode === 'ai' ? 'cyan' : 'slate'} />
               </div>
@@ -646,7 +617,7 @@ function Operations() {
               <div className="map-legend">
                 <span>
                   <i className="legend-line cyan" />
-                  Observed traffic
+                  Observations
                 </span>
                 <span>
                   <i className="legend-line amber dashed" />
@@ -654,16 +625,18 @@ function Operations() {
                 </span>
                 <span>
                   <i className="legend-line mint" />
-                  Recovery plan
+                  Recovery
                 </span>
               </div>
             </div>
             <div className="map-disclaimer">
               {live
-                ? 'REAL GEOGRAPHY · OBSERVED AIRCRAFT · NO SIMULATED VEHICLE POSITIONS'
+                ? 'Real geography · Observed aircraft · No simulated vehicle positions'
                 : mapStyle === 'geographic'
-                  ? 'GEOGRAPHIC TERRAIN · SIMULATED OPERATIONS'
-                  : 'CUSTOM 3D MODEL · SYNTHETIC OPERATIONS'}
+                  ? 'Google terrain · Simulated operations'
+                  : mode === 'region'
+                    ? 'Schematic network · Simulated operations'
+                    : 'Illustrative model · Simulated operations'}
             </div>
             <div className="map-action">
               <button
@@ -672,11 +645,11 @@ function Operations() {
                 title={
                   live
                     ? 'Manage live operation data and test passengers'
-                    : 'Exemple de condiții. Descrie un scenariu propriu prin voce sau text.'
+                    : 'Change the simulation conditions or describe a scenario by voice or text'
                 }
               >
                 <SlidersHorizontal size={14} />
-                {live ? 'Operation data' : 'Exemple rapide'}
+                {live ? 'Operation data' : 'Add a condition'}
               </button>
               <button
                 className="primary-button"
@@ -685,8 +658,8 @@ function Operations() {
                   void replan();
                 }}
               >
-                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
-                Replan <span>{chosenMode === 'ai' ? 'AI' : 'SOLVER'}</span>
+                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}Find
+                recovery <span>{chosenMode === 'ai' ? 'AI' : 'SOLVER'}</span>
               </button>
             </div>
           </div>
@@ -706,7 +679,10 @@ function Operations() {
           showLog={showLog}
         />
       </div>
-      <footer className={`voice-console ${isVoiceActive ? 'listening' : ''}`}>
+      <footer
+        aria-label="Scenario assistant"
+        className={`voice-console ${isVoiceActive ? 'listening' : ''}`}
+      >
         <button
           className={`mic-button ${isVoiceActive ? 'active' : ''}`}
           onClick={() => {
@@ -755,11 +731,11 @@ function Operations() {
             placeholder={
               isVoiceActive
                 ? live
-                  ? 'Ascult. Descrie cererea de recuperare…'
-                  : 'Ascult. Descrie scenariul prin voce…'
+                  ? 'Listening. Describe a recovery request…'
+                  : 'Listening. Tell me what has changed…'
                 : live
-                  ? 'Analizează pasagerii și ofertele verificate…'
-                  : 'Descrie un scenariu, resursele și condițiile…'
+                  ? 'Review passengers and verified offers…'
+                  : 'What changed? Describe a scenario…'
             }
             value={command}
             onChange={(event) => setCommand(event.target.value)}
@@ -776,12 +752,12 @@ function Operations() {
             {busy
               ? operation
               : lastReply
-                ? `Ultimul răspuns verificat: ${lastReply}`
+                ? lastReply
                 : isVoiceActive
                   ? voiceTranscript || 'OpenAI voice session active'
                   : lastCommand ||
                     (config.ai_configured
-                      ? 'Voice + Decisions + Ultrafast · live reasoning, validated actions'
+                      ? 'Describe it in English or Romanian. Every plan is validated before it is applied.'
                       : live
                         ? 'Text & voice need OpenAI access. Operation data and solver are available.'
                         : 'Text & voice need OpenAI access. Scenario controls and solver are available.')}
@@ -792,7 +768,7 @@ function Operations() {
             disabled={busy || !command.trim()}
             aria-label={live ? 'Send planning request' : 'Send scenario command'}
           >
-            <Send size={21} />
+            <ArrowUp size={20} />
           </button>
         </form>
         <div className="console-meta">
@@ -1064,7 +1040,7 @@ function SearchDialog({
           placeholder="Airport, vehicle, flight or passenger…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          autoFocus
+          data-autofocus
           aria-label="Search all entities"
         />
       </label>
@@ -1235,20 +1211,5 @@ function SettingsDialog({
         </span>
       </div>
     </Modal>
-  );
-}
-function ClipboardIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 20 20"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-    >
-      <rect x="4" y="2" width="12" height="16" rx="1" />
-      <path d="M7 6h6M7 10h6M7 14h4" />
-    </svg>
   );
 }

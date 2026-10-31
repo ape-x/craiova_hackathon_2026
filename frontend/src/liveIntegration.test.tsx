@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import Inspector from './Inspector';
+import WorkspaceHeader from './WorkspaceHeader';
+import WorkspaceSummary from './WorkspaceSummary';
+import ResourceRail from './ResourceRail';
 import type { Offer, World } from './types';
 
 function operation(mode: World['mode'], status: Offer['status']): World {
@@ -101,6 +104,76 @@ function render(world: World, selectedId: string) {
 }
 
 describe('integrated live and simulation presentation', () => {
+  it('keeps the redesigned header mode explicit beside its theme toggle', () => {
+    for (const mode of ['simulation', 'live'] as const) {
+      const html = renderToStaticMarkup(
+        <WorkspaceHeader
+          mode={mode}
+          locationLabel="Recovery operations"
+          connected
+          sidebarOpen
+          showLog={false}
+          onToggleSidebar={() => {}}
+          onSearch={() => {}}
+          onSettings={() => {}}
+          onLog={() => {}}
+          onHelp={() => {}}
+        />,
+      );
+      expect(html).toContain(mode === 'live' ? 'Live · assisted' : 'Simulation');
+      if (mode === 'live') expect(html).not.toContain('Simulation');
+      expect(html).toContain('Switch to dark mode');
+    }
+  });
+  it('does not count accepted live proposals as supplier confirmations in the new summary', () => {
+    const html = renderToStaticMarkup(
+      <WorkspaceSummary world={operation('live', 'accepted')} mode="airport" onReview={() => {}} />,
+    );
+    expect(html).toContain('<strong>4</strong><small>Proposed / accepted</small>');
+    expect(html).toContain('<strong class="text-mint">0</strong><small>Supplier confirmed</small>');
+    expect(html).not.toContain('Simulation workspace');
+  });
+  it('keeps live airport and supplier station reference nodes visible before inventory is imported', () => {
+    const world = operation('live', 'proposed');
+    world.resources = [];
+    world.airports = [
+      {
+        id: 'CRA',
+        code: 'CRA',
+        name: 'Craiova',
+        lat: 44.3,
+        lon: 23.8,
+        available: false,
+        diversion_eligible: false,
+        operational_status: 'unknown',
+      },
+      {
+        id: 'STOP',
+        code: 'STOP',
+        name: 'Supplier coach stop',
+        kind: 'station',
+        lat: 44.3,
+        lon: 23.9,
+        available: true,
+        diversion_eligible: false,
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <ResourceRail
+        world={world}
+        selectedId={null}
+        onSelect={() => {}}
+        onMode={() => {}}
+        onScenario={() => {}}
+        onLiveData={() => {}}
+      />,
+    );
+    expect(html).toContain('Craiova');
+    expect(html).toContain('UNKNOWN');
+    expect(html).toContain('Supplier coach stop');
+    expect(html).toContain('STATION');
+    expect(html).toContain('Real hotels &amp; routes');
+  });
   it('never promotes a simulated confirmation or resource to a supplier-verified booking', () => {
     const world = operation('simulation', 'confirmed');
     const journey = render(world, 'FAMILY-1');
@@ -110,6 +183,38 @@ describe('integrated live and simulation presentation', () => {
     expect(coach).toContain('SIMULATED RESOURCE');
     expect(coach).toContain('Available');
     expect(coach).not.toContain('Verified');
+  });
+  it('keeps simulated airport closures visible despite the reference status defaulting to unknown', () => {
+    const world = operation('simulation', 'held');
+    world.airports = [
+      {
+        id: 'CRA',
+        code: 'CRA',
+        name: 'Craiova',
+        lat: 44.3,
+        lon: 23.8,
+        available: false,
+        diversion_eligible: false,
+        operational_status: 'unknown',
+      },
+    ];
+    const rail = renderToStaticMarkup(
+      <ResourceRail
+        world={world}
+        selectedId={null}
+        onSelect={() => {}}
+        onMode={() => {}}
+        onScenario={() => {}}
+        onLiveData={() => {}}
+      />,
+    );
+    expect(rail).not.toContain('UNKNOWN');
+    expect(rail).toContain('text-red');
+    expect(rail).toContain('status-dot red');
+    const detail = render(world, 'CRA');
+    expect(detail).toContain('entity-icon red');
+    expect(detail).toContain('Unavailable');
+    expect(detail).not.toContain('Status unknown');
   });
   it('shows accepted live journeys as pending bookings, and only confirmed journeys as supplier-confirmed', () => {
     const accepted = render(operation('live', 'accepted'), 'FAMILY-1');

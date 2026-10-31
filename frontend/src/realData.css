@@ -5,15 +5,15 @@
   gap: 8px;
   margin: 0 10px 12px;
   padding: 11px 10px;
-  border: 1px solid #497b90;
-  border-radius: 5px;
-  background: linear-gradient(115deg, #204458, #163040);
-  color: #c6f1ff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
   text-align: left;
   font-size: 10px;
 }
 .real-data-launch:hover {
-  background: #28536a;
+  background: var(--hover);
 }
 .real-data-launch span {
   flex: 1;
@@ -22,7 +22,7 @@
   margin: 0 0 20px;
 }
 .real-data-intro p {
-  color: #acc5d3;
+  color: var(--muted);
   line-height: 1.7;
   font-size: 12px;
   margin-top: 12px;
@@ -60,7 +60,7 @@
   white-space: nowrap;
 }
 .real-data-progress {
-  color: #a1d9eb;
+  color: var(--cyan);
   font-size: 12px;
   margin: 20px 0 0;
 }
@@ -75,11 +75,11 @@
   margin-bottom: 8px;
 }
 .real-data-result-heading p {
-  color: #abc5d5;
+  color: var(--muted);
   font-size: 11px;
 }
 .real-data-section {
-  border-top: 1px solid #355263;
+  border-top: 1px solid var(--line);
   margin-top: 20px;
   padding-top: 19px;
 }
@@ -91,14 +91,14 @@
   font-size: 13px;
 }
 .real-data-section h3 svg {
-  color: #74d3ec;
+  color: var(--cyan);
 }
 .real-source-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 12px;
-  color: #8daab9;
+  color: var(--muted);
   font-size: 10px;
   margin-bottom: 15px;
 }
@@ -107,7 +107,7 @@
   margin-left: auto;
 }
 .real-data-section a {
-  color: #96e4ff;
+  color: var(--cyan);
   font-size: 11px;
   display: inline-flex;
   align-items: center;
@@ -128,9 +128,9 @@
   min-width: 0;
   gap: 7px;
   padding: 15px;
-  border: 1px solid #365161;
-  border-radius: 6px;
-  background: #11212c;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
 }
 .real-hotel-card > strong {
   font-size: 12px;
@@ -139,7 +139,7 @@
 .real-hotel-card p {
   font-size: 11px;
   line-height: 1.6;
-  color: #acc2cf;
+  color: var(--muted);
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -147,10 +147,10 @@
 .real-hotel-access {
   font-size: 10px;
   line-height: 1.6;
-  color: #8faebb;
+  color: var(--muted);
 }
 .real-hotel-card .real-hotel-phone {
-  color: #c3dce8;
+  color: var(--text);
 }
 .real-hotel-links {
   display: flex;
@@ -165,9 +165,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 14px 20px;
-  border: 1px solid #36596a;
-  background: #142b39;
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 12px;
   padding: 15px;
   margin-bottom: 9px;
 }
@@ -188,25 +188,25 @@
 .real-offer-card span {
   display: block;
   flex-basis: 100%;
-  color: #98b5c6;
+  color: var(--muted);
   font-size: 10px;
   line-height: 1.6;
 }
 .real-route-card svg {
-  color: #8ad8e9;
+  color: var(--cyan);
 }
 .real-offer-price {
-  color: #a4efd0;
+  color: var(--mint);
 }
 .real-data-boundary,
 .real-data-footnote {
-  color: #98adba;
+  color: var(--muted);
   font-size: 10px;
   line-height: 1.7;
   margin: 13px 0 0;
 }
 .real-data-footnote {
-  border-top: 1px solid #355263;
+  border-top: 1px solid var(--line);
   margin-top: 21px;
   padding-top: 15px;
 }
@@ -256,13 +256,13 @@
   }
 }
 .real-data-attribution {
-  color: #9cb3c1;
+  color: var(--muted);
   font-size: 10px;
   line-height: 1.6;
   margin: 10px 0 0;
 }
 .real-data-attribution a {
-  color: #96e4ff;
+  color: var(--cyan);
   display: inline-flex;
   gap: 2px;
   align-items: center;
@@ -271,7 +271,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 7px;
-  color: #92abb9;
+  color: var(--muted);
   font-size: 9px;
   line-height: 1.6;
 }
@@ -279,15 +279,15 @@
   font-size: inherit;
 }
 .real-google-credit {
-  color: #d4e3ec;
+  color: var(--text);
   font-family: Arial, sans-serif;
   font-size: 13px;
   font-weight: 500;
 }
 .real-comparison {
-  border: 1px solid #4b677b;
-  border-radius: 6px;
-  background: linear-gradient(120deg, #213442, #152731);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
   padding: 18px;
   margin-top: 24px;
 }
@@ -296,14 +296,14 @@
   margin: 0 0 8px;
 }
 .real-comparison p {
-  color: #b0c6d2;
+  color: var(--muted);
   font-size: 11px;
   line-height: 1.6;
   margin: 0;
 }
 .real-comparison-details {
-  color: #bfd2dd;
-  font: 10px/1.8 var(--font-mono, monospace);
+  color: var(--text);
+  font: 10px/1.8 var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   margin: 13px 0;
@@ -321,15 +321,15 @@
   gap: 6px;
   min-height: 34px;
   padding: 9px 12px;
-  color: #daf6ff;
+  color: var(--on-primary);
   font-size: 11px;
-  background: #22556a;
-  border: 1px solid #58899d;
-  border-radius: 4px;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 10px;
   text-decoration: none;
 }
 .real-comparison-actions > a:hover {
-  background: #2e6b82;
+  background: var(--primary-hover);
 }
 .real-comparison .real-copy-status {
   min-height: 18px;

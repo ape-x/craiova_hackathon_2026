@@ -1,17 +1,19 @@
 import { Component, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line, OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { Compass, Focus, Minus, Plus, RotateCcw } from 'lucide-react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { PassengerGroup, Resource, SceneMode, World } from '../types';
-import { busSpots, gates, makeAircraft, makeAirport, makeBus, PALETTE } from './geometry';
+import { busSpots, gates, makeAircraft, makeBus, PALETTE } from './geometry';
 import { groupPosition } from './layout';
+import { makeStudioAirport } from './studioAirport';
 import Region from './Region';
 import Html, { LabelLayer, LabelOverlay, createLabelStore } from './ProjectedHtml';
 import { useSceneAsset } from './lifecycle';
+import { useTheme } from '../theme';
 import './scene.css';
 
 export interface SceneProps {
@@ -75,52 +77,10 @@ function Tag({
   );
 }
 
-function BuildingSign() {
-  const tex = useMemo(() => {
-    const c = document.createElement('canvas');
-    c.width = 1024;
-    c.height = 64;
-    const ctx = c.getContext('2d')!;
-    ctx.fillStyle = '#d5e5e5';
-    ctx.font = '500 35px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('CRAIOVA  /  RECOVERY TERMINAL', 512, 44);
-    return new THREE.CanvasTexture(c);
-  }, []);
-  useEffect(() => () => tex.dispose(), [tex]);
-  return (
-    <mesh position={[0, 13.5, 77.95]}>
-      <planeGeometry args={[98, 6.1]} />
-      <meshBasicMaterial map={tex} transparent depthWrite={false} />
-    </mesh>
-  );
-}
-
-function StaticAirport() {
-  const materials = useLoader(THREE.TextureLoader, [
-    '/scene/aerial_grass_rock.jpg',
-    '/scene/concrete_floor_02.jpg',
-    '/scene/asphalt_01.jpg',
-  ]);
-  const invalidate = useThree((s) => s.invalidate);
-  const model = useMemo(() => makeAirport(invalidate, materials), [invalidate, materials]);
+function StaticAirport({ dark }: { dark: boolean }) {
+  const model = useMemo(() => makeStudioAirport(dark), [dark]);
   useSceneAsset(model);
-  return (
-    <>
-      <primitive object={model} />
-      <BuildingSign />
-      {[-72, 0, 72].map((x) => (
-        <pointLight
-          key={x}
-          position={[x, 3.7, 88]}
-          color="#f5d5a1"
-          intensity={55}
-          distance={30}
-          decay={2}
-        />
-      ))}
-    </>
-  );
+  return <primitive object={model} />;
 }
 
 function SelectionRing({ color, radius = 9 }: { color: string; radius?: number }) {
@@ -151,10 +111,10 @@ function Plane({
   onSelect: (id: string) => void;
   showLabel?: boolean;
 }) {
-  const model = useMemo(() => makeAircraft(index === 1 ? '#54627c' : '#276e83'), [index]);
+  const model = useMemo(() => makeAircraft(index === 1 ? '#8b9b80' : '#6b8470'), [index]);
   useSceneAsset(model);
   const [x, , z] = gates[index];
-  const color = resource.available ? '#b2c1ca' : PALETTE.red;
+  const color = resource.available ? '#687d60' : PALETTE.red;
   return (
     <group position={[x, 0, z]}>
       <group
@@ -179,9 +139,12 @@ function Plane({
           title={resource.name}
           subtitle={
             resource.available
-              ? `G0${index + 1} · SIM · ${resource.destination}`
-              : 'ANULAT · simulare'
+              ? selected
+                ? `Gate 0${index + 1} · ${resource.destination}`
+                : undefined
+              : 'Cancelled'
           }
+          compact={!selected && resource.available}
           color={color}
           selected={selected}
           onSelect={onSelect}
@@ -211,7 +174,7 @@ function Bus({
   reduced: boolean;
   showLabel?: boolean;
 }) {
-  const color = !resource.available ? PALETTE.red : confirmed ? PALETTE.mint : '#9abec6';
+  const color = !resource.available ? PALETTE.red : confirmed ? PALETTE.mint : '#829873';
   const model = useMemo(() => makeBus(color), [color]);
   useSceneAsset(model);
   const group = useRef<THREE.Group>(null);
@@ -265,9 +228,9 @@ function Bus({
           title={resource.id}
           subtitle={
             !resource.available
-              ? 'INDISPONIBIL'
+              ? 'Unavailable'
               : selected
-                ? `${resource.capacity} locuri · ${resource.destination}`
+                ? `${resource.capacity} seats · ${resource.destination}`
                 : undefined
           }
           color={color}
@@ -332,7 +295,7 @@ function PassengerCluster({
           <Tag
             id={group.id}
             title={group.name}
-            subtitle={`${group.size} persoane · ${group.accessible ? 'accesibilitate solicitată' : 'grup indivizibil'}`}
+            subtitle={`${group.size} people · ${group.accessible ? 'Accessibility requested' : 'Travelling together'}`}
             color={color}
             selected
             onSelect={onSelect}
@@ -350,7 +313,8 @@ function AirportWorld({
   selectedId,
   onSelect,
   reduced,
-}: SceneProps & { reduced: boolean }) {
+  dark,
+}: SceneProps & { reduced: boolean; dark: boolean }) {
   const buses = world.resources
     .filter((r) => r.kind === 'bus' && (r.origin === 'CRA' || r.destination === 'CRA'))
     .slice(0, 6);
@@ -383,7 +347,7 @@ function AirportWorld({
     }
   return (
     <group>
-      <StaticAirport />
+      <StaticAirport dark={dark} />
       {flights.map((r, i) => (
         <Plane
           key={r.id}
@@ -452,11 +416,11 @@ function AirportWorld({
         );
       })}
       <Html position={[-160, 35, 29]} center zIndexRange={[5, 0]}>
-        <span className="scene-static-label">CONTROL TOWER</span>
+        <span className="scene-static-label">Control tower</span>
       </Html>
       <Html position={[172, 22, 77]} center zIndexRange={[5, 0]}>
         <button className="scene-static-label scene-hotel-label" onClick={() => onSelect('H-CRA')}>
-          HOTEL · CRA
+          Hotel · CRA
         </button>
       </Html>
       <Html position={[260, 0.5, -246]} center zIndexRange={[2, 0]}>
@@ -494,12 +458,12 @@ function CameraRig({
   const lastZoom = useRef(zoom);
   const lastReset = useRef(reset);
   useEffect(() => {
-    const narrow = Math.max(1, 1.4 / (size.width / size.height));
-    let target: Vec = [-8, 3, 12],
-      position: Vec = [210 * narrow, 205 * narrow, 292 * narrow];
+    const narrow = Math.max(1, 1.5 / (size.width / size.height));
+    let target: Vec = [0, 0, -15],
+      position: Vec = [250 * narrow, 270 * narrow, 350 * narrow];
     if (mode === 'region') {
-      target = [0, 0, -5];
-      position = [25 * narrow, 300 * narrow, 300 * narrow];
+      target = [0, 0, 10];
+      position = [25 * narrow, 370 * narrow, 360 * narrow];
     } else if (mode === 'passenger') {
       const index = Math.max(
         0,
@@ -527,7 +491,7 @@ function CameraRig({
       fromTarget: controls.current?.target.clone() || new THREE.Vector3(0, 0, -30),
       toTarget: new THREE.Vector3(...target),
       startAt: now,
-      duration: reduced ? 0 : 1100,
+      duration: reduced ? 0 : 750,
     };
     invalidate();
   }, [mode, selectedId, reset, size.width, size.height, reduced]);
@@ -579,11 +543,10 @@ class SceneBoundary extends Component<{ children: ReactNode }, { error: string |
   render() {
     return this.state.error ? (
       <div className="scene-fallback">
-        <strong>Scena 3D nu a putut porni</strong>
+        <strong>The 3D view could not start</strong>
         <p>{this.state.error}</p>
         <span>
-          Verifică accelerarea grafică a browserului. Starea operațională rămâne disponibilă în
-          panouri.
+          Check browser graphics acceleration. Your operations remain available in the panels.
         </span>
       </div>
     ) : (
@@ -592,57 +555,32 @@ class SceneBoundary extends Component<{ children: ReactNode }, { error: string |
   }
 }
 
-function ArchitecturalEnvironment({ region }: { region: boolean }) {
+function ArchitecturalEnvironment({ dark }: { dark: boolean }) {
   const { gl, scene, invalidate } = useThree();
   useEffect(() => {
     const pmrem = new THREE.PMREMGenerator(gl);
-    const room = region ? new RoomEnvironment() : null;
-    let sky: THREE.CanvasTexture | undefined;
-    if (!region) {
-      // A local sky/ground reflection field, rather than indoor studio-box reflections.
-      const canvas = document.createElement('canvas');
-      canvas.width = 1024;
-      canvas.height = 512;
-      const ctx = canvas.getContext('2d')!;
-      const gradient = ctx.createLinearGradient(0, 0, 0, 512);
-      for (const [stop, color] of [
-        [0, '#304e71'],
-        [0.36, '#718b9e'],
-        [0.47, '#b1b7b4'],
-        [0.5, '#d4c2a6'],
-        [0.57, '#4b5345'],
-        [1, '#202b23'],
-      ] as const)
-        gradient.addColorStop(stop, color);
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 1024, 512);
-      const sun = ctx.createRadialGradient(210, 136, 1, 210, 136, 48);
-      sun.addColorStop(0, '#ffe9c2');
-      sun.addColorStop(0.15, '#e7d4b8c0');
-      sun.addColorStop(1, '#e7d4b800');
-      ctx.fillStyle = sun;
-      ctx.fillRect(160, 86, 100, 100);
-      sky = new THREE.CanvasTexture(canvas);
-      sky.colorSpace = THREE.SRGBColorSpace;
-      sky.mapping = THREE.EquirectangularReflectionMapping;
-    }
-    const result = room ? pmrem.fromScene(room, 0.04) : pmrem.fromEquirectangular(sky!);
+    const room = new RoomEnvironment();
+    const result = pmrem.fromScene(room, 0.04);
     scene.environment = result.texture;
-    scene.environmentIntensity = region ? 0.25 : 0.65;
-    gl.toneMappingExposure = region ? 1.2 : 1.1;
     invalidate();
     return () => {
       scene.environment = null;
       result.dispose();
       pmrem.dispose();
-      room?.dispose();
-      sky?.dispose();
+      room.dispose();
     };
-  }, [gl, scene, invalidate, region]);
+  }, [gl, scene, invalidate]);
+  useEffect(() => {
+    scene.environmentIntensity = dark ? 0.15 : 0.25;
+    gl.toneMappingExposure = 0.9;
+    invalidate();
+  }, [dark, gl, scene, invalidate]);
   return null;
 }
 
 export default function Scene(props: SceneProps) {
+  const dark = useTheme() === 'dark';
+  const background = dark ? '#1b232d' : '#e7eef3';
   const [reset, setReset] = useState(0),
     [zoom, setZoom] = useState(0);
   const labelStore = useMemo(createLabelStore, []);
@@ -662,7 +600,7 @@ export default function Scene(props: SceneProps) {
         <Suspense
           fallback={
             <div className="scene-fallback">
-              <strong>Construim lumea 3D…</strong>
+              <strong>Preparing the spatial view…</strong>
             </div>
           }
         >
@@ -670,58 +608,53 @@ export default function Scene(props: SceneProps) {
             frameloop="demand"
             shadows
             dpr={[1, 1.7]}
-            camera={{ position: [210, 205, 292], fov: 40, near: 0.5, far: 2500 }}
+            camera={{ position: [250, 270, 350], fov: 40, near: 0.5, far: 2500 }}
             gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
             onCreated={({ gl }) => {
-              gl.setClearColor('#17262d');
+              gl.setClearColor(background);
               gl.toneMapping = THREE.ACESFilmicToneMapping;
               gl.toneMappingExposure = 1.2;
-              gl.shadowMap.type = THREE.PCFShadowMap;
+              gl.shadowMap.type = THREE.PCFSoftShadowMap;
             }}
           >
-            <color attach="background" args={[region ? '#12262d' : '#26353b']} />
-            <fog
-              attach="fog"
-              args={[region ? '#172f34' : '#26353b', region ? 550 : 650, region ? 1000 : 1600]}
-            />
-            <ambientLight intensity={region ? 0.8 : 0.17} color="#b3c5d0" />
+            <color attach="background" args={[background]} />
+            <fog attach="fog" args={[background, 1100, 2200]} />
+            <ambientLight intensity={0.3} color="#ffffff" />
             <hemisphereLight
-              args={[
-                region ? '#c1d0dc' : '#b5c9e1',
-                region ? '#4e5f4e' : '#46503d',
-                region ? 1.3 : 1,
-              ]}
+              args={[dark ? '#9ab7d8' : '#f9fcff', dark ? '#15202c' : '#bccedc', 0.55]}
             />
             <directionalLight
-              position={region ? [-170, 280, 180] : [-230, 210, 110]}
-              color={region ? '#dbe5ef' : '#ffe5c4'}
-              intensity={region ? 2 : 2.45}
+              position={[-250, 370, 180]}
+              color={dark ? '#b8cde5' : '#fffaf4'}
+              intensity={dark ? 1.2 : 1.7}
               castShadow
-              shadow-mapSize={region ? [2048, 2048] : [4096, 4096]}
-              shadow-camera-left={region ? -420 : -330}
-              shadow-camera-right={region ? 420 : 330}
-              shadow-camera-top={region ? 330 : 280}
-              shadow-camera-bottom={region ? -330 : -280}
+              shadow-mapSize={[2048, 2048]}
+              shadow-camera-left={-430}
+              shadow-camera-right={430}
+              shadow-camera-top={350}
+              shadow-camera-bottom={-350}
               shadow-camera-near={1}
-              shadow-camera-far={1000}
-              shadow-bias={region ? -0.0002 : -0.00006}
-              shadow-normalBias={region ? 0.3 : 0.06}
+              shadow-camera-far={1200}
+              shadow-bias={-0.00015}
+              shadow-normalBias={0.25}
+              shadow-radius={4}
             />
             <directionalLight
-              position={[100, 100, -100]}
-              color="#779cb4"
-              intensity={region ? 0.6 : 0.2}
+              position={[180, 150, -100]}
+              color={dark ? '#789abf' : '#dcecff'}
+              intensity={0.5}
             />
-            <ArchitecturalEnvironment region={region} />
+            <ArchitecturalEnvironment dark={dark} />
             <LabelLayer.Provider value={labelStore}>
               {region ? (
                 <Region
+                  dark={dark}
                   world={props.world}
                   selectedId={props.selectedId}
                   onSelect={props.onSelect}
                 />
               ) : (
-                <AirportWorld {...props} reduced={reduced} />
+                <AirportWorld {...props} reduced={reduced} dark={dark} />
               )}
             </LabelLayer.Provider>
             <CameraRig
@@ -737,25 +670,25 @@ export default function Scene(props: SceneProps) {
       </SceneBoundary>
       <LabelOverlay store={labelStore} />
       <div className="scene-vignette" />
-      <div className="scene-tools" aria-label="Controale cameră">
+      <div className="scene-tools" aria-label="Camera controls">
         <button
           onClick={() => setReset((r) => r + 1)}
-          title="Revenire la vedere inițială"
-          aria-label="Revenire la vedere inițială"
+          title="Fit airport to view"
+          aria-label="Fit airport to view"
         >
           <Focus size={19} />
         </button>
-        <button onClick={() => setZoom((v) => v + 1)} title="Apropie" aria-label="Apropie">
+        <button onClick={() => setZoom((v) => v + 1)} title="Zoom in" aria-label="Zoom in">
           <Plus size={19} />
         </button>
-        <button onClick={() => setZoom((v) => v - 1)} title="Depărtează" aria-label="Depărtează">
+        <button onClick={() => setZoom((v) => v - 1)} title="Zoom out" aria-label="Zoom out">
           <Minus size={19} />
         </button>
         <span />
         <button
           onClick={() => setReset((r) => r + 1)}
-          title="Resetează camera"
-          aria-label="Resetează camera"
+          title="Reset camera"
+          aria-label="Reset camera"
         >
           <RotateCcw size={16} />
         </button>

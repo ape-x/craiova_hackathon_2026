@@ -1,17 +1,18 @@
 {
   "checked_at": "2026-10-31T16:45:38.409651+00:00",
-  "base_main": "39923b0",
+  "base_main": "d277678",
   "original_snapshot": "cf774a5",
   "scope": "Release integration, isolated databases, no external provider calls",
   "validation": {
     "backend_tests": 443,
-    "frontend_tests": 132,
+    "frontend_tests": 139,
     "typescript": "passed",
     "prettier": "passed",
     "production_build": "passed",
     "docker_api_build": "passed",
     "docker_web_build": "passed",
-    "production_compose_variables_checked": 30
+    "production_compose_variables_checked": 30,
+    "total_tests": 582
   },
   "browser": {
     "live_empty_start": true,
@@ -34,8 +35,9 @@
     "geographic_missing_key_error_visible": true,
     "simulation_recovered_passengers": 120,
     "simulation_version": 2,
-    "console_errors_on_simulation_and_passenger_pages": 0
+    "console_errors_on_simulation_and_passenger_pages": 0,
+    "redesign_live_header_summary_and_light_form": true
   },
-  "fixtures": "Explicit isolated test passengers and manually entered QA coach; no real availability or booking is claimed. Live runtime on8080 and simulator on8081 were not mutated.",
+  "fixtures": "Isolated test passengers and named QA coach before the single-instance directive; no provider availability or booking claimed. Existing operational data was not reset. Auxiliary QA processes and simulator8081 stopped at the owner request; future work uses8080 only.",
   "voice_harness": "Prepared and offline-tested; real spoken end-to-end run remains unperformed."
 }
