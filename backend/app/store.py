@@ -71,7 +71,9 @@ class Store:
     Every itinerary's resource holds and idempotency result commit in one transaction.
     No model/network call is ever performed under this lock.
     """
-    def __init__(self, path: str, observation_retention_seconds: int=3600, operation_mode: str="simulation"):
+    def __init__(self, path: str, observation_retention_seconds: int=3600, operation_mode: str | None=None):
+        if operation_mode not in (None,"live","simulation"):
+            raise ValueError("Unknown operation mode")
         self.path = path
         self.observation_retention_seconds=observation_retention_seconds
         Path(path).parent.mkdir(parents=True,exist_ok=True)
@@ -93,9 +95,10 @@ class Store:
                 refresh_stats(world)
                 conn.execute("INSERT INTO world VALUES(1,?)",(world.model_dump_json(),))
                 self._save_audit(conn,world)
-            elif json.loads(existing[0]).get("mode","simulation") != operation_mode:
+            elif operation_mode is not None and json.loads(existing[0]).get("mode","simulation") != operation_mode:
                 previous=World.model_validate_json(existing[0])
-                conn.execute("INSERT INTO world_archives VALUES(?,?,?,?)",(secrets.token_hex(16),utcnow().isoformat(),previous.mode,existing[0]))
+                archived=self._without_observations({"world":json.loads(existing[0])})["world"]
+                conn.execute("INSERT INTO world_archives VALUES(?,?,?,?)",(secrets.token_hex(16),utcnow().isoformat(),previous.mode,json.dumps(archived)))
                 world=empty_live_world() if operation_mode=="live" else seed_world()
                 world.version=previous.version+1
                 refresh_stats(world)
@@ -112,6 +115,11 @@ class Store:
                 for key,result in conn.execute("SELECT key,result FROM idempotency").fetchall():
                     conn.execute("UPDATE idempotency SET result=? WHERE key=?",(json.dumps(self._without_observations(json.loads(result))),key))
                 conn.execute("INSERT INTO controls VALUES('observation_redaction_v1','true')")
+            if not conn.execute("SELECT 1 FROM controls WHERE key='archive_observation_redaction_v1'").fetchone():
+                for archive_id,data in conn.execute("SELECT id,data FROM world_archives").fetchall():
+                    cleaned=self._without_observations({"world":json.loads(data)})["world"]
+                    conn.execute("UPDATE world_archives SET data=? WHERE id=?",(json.dumps(cleaned),archive_id))
+                conn.execute("INSERT INTO controls VALUES('archive_observation_redaction_v1','true')")
         os.chmod(self.path,0o600)
 
     @contextmanager

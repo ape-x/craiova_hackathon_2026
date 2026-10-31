@@ -17,6 +17,7 @@ export interface LiveVoiceOptions {
 }
 
 type Fragment = { text: string; start: number; end: number; receivedAt: number };
+type DelegationWindow = { start: number; end: number };
 type ConversationFragment = Fragment & { role: 'user' | 'assistant' };
 
 /** Context appends allow 500 tokens. A smaller UTF-8 byte budget is a
@@ -56,8 +57,8 @@ export class LiveVoiceClient {
   private closeTimer?: ReturnType<typeof setTimeout>;
   private fragments: Fragment[] = [];
   private conversation: ConversationFragment[] = [];
-  private consumedUntil = -1;
-  private delegatedUntil = -1;
+  private retiredThrough = -1;
+  private delegatedThrough = -1;
   private transcript = { user: '', assistant: '' };
   private seenDelegations = new Set<string>();
   private seenEvents = new Set<string>();
@@ -82,8 +83,8 @@ export class LiveVoiceClient {
     this.closing = false;
     this.fragments = [];
     this.conversation = [];
-    this.consumedUntil = -1;
-    this.delegatedUntil = -1;
+    this.retiredThrough = -1;
+    this.delegatedThrough = -1;
     this.transcript = { user: '', assistant: '' };
     this.seenDelegations.clear();
     this.seenEvents.clear();
@@ -291,8 +292,10 @@ export class LiveVoiceClient {
         event.start_ms >= 0 &&
         event.end_ms >= event.start_ms
       ) {
-        // A retired turn must not leak a late transcription into a newer task.
-        if (role === 'user' && event.start_ms <= this.consumedUntil) return;
+        // The interval is half-open: speech exactly at the retired boundary
+        // belongs to the next turn. Earlier late speech is neither a command
+        // nor newly admitted reference context.
+        if (role === 'user' && event.start_ms < this.retiredThrough) return;
         const fragment = {
           text: event.delta,
           start: event.start_ms,
@@ -311,25 +314,30 @@ export class LiveVoiceClient {
       event.delegation?.target === 'client'
     ) {
       const id = event.delegation.id;
-      if (typeof id !== 'string' || this.seenDelegations.has(id) || this.closing) return;
+      if (typeof id !== 'string' || !id || this.seenDelegations.has(id) || this.closing) return;
       this.seenDelegations.add(id);
-      const offset = event.offset_ms;
-      if (!Number.isFinite(offset) || offset < 0 || offset <= this.delegatedUntil) {
+      // Reserve the window immediately, before earlier queued work finishes.
+      // Retiring it does not depend on receiving text or successfully executing
+      // a command: late words from a timed-out turn must never be replayed.
+      if (
+        !Number.isSafeInteger(event.offset_ms) ||
+        event.offset_ms < 0 ||
+        event.offset_ms <= this.delegatedThrough
+      ) {
         this.send({
           type: 'session.commentary.append',
           event_id: crypto.randomUUID(),
           delegation_id: id,
           content:
-            'Această cerere nu are un interval vocal valid. Repetă comanda explicit; nu am modificat simulatorul pentru ea.',
+            'Nu pot delimita sigur această cerere vocală. Te rog repetă explicit comanda; nu am modificat simulatorul.',
         });
         return;
       }
-      // Reserve the interval now, not when the preceding backend call finishes.
-      const after = this.delegatedUntil;
-      this.delegatedUntil = offset;
+      const window = { start: this.delegatedThrough, end: event.offset_ms };
+      this.delegatedThrough = window.end;
       const generation = this.generation;
       this.delegationQueue = this.delegationQueue
-        .then(() => this.delegate(id, after, offset, generation))
+        .then(() => this.delegate(id, window, generation))
         .catch(() => {
           if (generation === this.generation)
             this.fail('Procesarea comenzii vocale a eșuat; sesiunea a fost oprită.');
@@ -337,12 +345,29 @@ export class LiveVoiceClient {
     }
   }
 
-  private async delegate(
-    id: string,
-    after: number,
-    offset: number,
+  private async waitForTranscript(
+    window: DelegationWindow,
     generation: number,
-  ): Promise<void> {
+  ): Promise<Fragment[]> {
+    const deadline = Date.now() + 2000;
+    // GPT-Live has no transcript item ID or turn-complete event. Timeline
+    // windows plus a bounded settling period are a grouping heuristic, not
+    // proof an utterance is complete. Ambiguous requests still need clarification.
+    // https://developers.openai.com/api/docs/guides/live-conversations
+    while (generation === this.generation && !this.closing) {
+      const now = Date.now();
+      const relevant = this.fragments.filter(
+        (part) => part.start >= window.start && part.start < window.end,
+      );
+      const lastArrival = Math.max(...relevant.map((part) => part.receivedAt));
+      if (relevant.length && now - lastArrival >= 250) return relevant;
+      if (now >= deadline) return [];
+      await new Promise((resolve) => setTimeout(resolve, Math.min(50, deadline - now)));
+    }
+    return [];
+  }
+
+  private async delegate(id: string, window: DelegationWindow, generation: number): Promise<void> {
     if (generation !== this.generation || this.closing) return;
     this.send({
       type: 'session.thinking.append',
@@ -350,42 +375,30 @@ export class LiveVoiceClient {
       delegation_id: id,
       content: 'Cererea este verificată în simulator. Încă nu există un rezultat confirmat.',
     });
-    // Delegation and transcript delivery may arrive out of order. Allow up to
-    // two seconds for this interval, then require a short quiet period before
-    // sending its accumulated text once. A transcript delta is not a user turn.
-    let relevant: Fragment[] = [];
-    let settled = false;
-    for (let elapsed = 0; elapsed < 2000; elapsed += 250) {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      if (generation !== this.generation || this.closing) return;
-      relevant = this.fragments.filter((part) => part.start > after && part.start <= offset);
-      if (
-        relevant.length &&
-        Date.now() - Math.max(...relevant.map((part) => part.receivedAt)) >= 250
-      ) {
-        settled = true;
-        break;
-      }
-    }
+    // A delegation may arrive before its transcript. Wait for that turn only,
+    // never borrow later speech to complete an older operational command.
+    const relevant = await this.waitForTranscript(window, generation);
+    if (generation !== this.generation || this.closing) return;
     const text = relevant
       .map((part) => part.text)
       .join('')
       .trim();
     const earlier: Array<{ role: 'user' | 'assistant'; text: string }> = [];
     for (const part of this.conversation) {
-      if (part.start > offset || (part.role === 'user' && part.start > after)) continue;
+      if (part.start >= window.end || (part.role === 'user' && part.start >= window.start))
+        continue;
       const last = earlier.at(-1);
       if (last?.role === part.role) last.text += part.text;
       else earlier.push({ role: part.role, text: part.text });
     }
-    // Spoken assistant text may contain a clarification, but is never proof of
-    // execution. App adds the authoritative backend request/result history.
+    // Assistant speech can clarify a reference, but is not proof of execution.
+    // App separately adds authoritative backend request/result history.
     const context = earlier
       .map((part) => `${part.role}: ${part.text}`)
       .join('\n')
       .slice(-2000);
-    this.consumedUntil = offset;
-    if (!text || !settled) {
+    this.retiredThrough = Math.max(this.retiredThrough, window.end);
+    if (!text) {
       this.send({
         type: 'session.commentary.append',
         event_id: crypto.randomUUID(),

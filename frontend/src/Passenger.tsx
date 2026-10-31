@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Accessibility,
   ArrowRight,
@@ -45,14 +45,24 @@ interface UncertainOfferAction {
   action: OfferAction;
   error: TransportError;
 }
+function readPassengerToken() {
+  try {
+    return decodeURIComponent(location.hash.slice(1));
+  } catch {
+    return '';
+  }
+}
+function subscribePassengerToken(changed: () => void) {
+  window.addEventListener('hashchange', changed);
+  return () => window.removeEventListener('hashchange', changed);
+}
 export default function Passenger() {
-  const token = (() => {
-    try {
-      return decodeURIComponent(location.hash.slice(1));
-    } catch {
-      return '';
-    }
-  })();
+  const token = useSyncExternalStore(subscribePassengerToken, readPassengerToken);
+  // A new boarding link owns fresh state, timers and pending actions. Never
+  // display the previous family's offer while another token is loading.
+  return <PassengerJourney key={token} token={token} />;
+}
+function PassengerJourney({ token }: { token: string }) {
   const [state, setState] = useState<PassengerState | null>(null);
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
@@ -172,6 +182,7 @@ export default function Passenger() {
       );
     } catch (cause) {
       if (cause instanceof TransportError) setUncertain({ offerId, action, error: cause });
+      else setUncertain(null);
       setError(cause instanceof Error ? cause.message : 'Could not save your answer');
       await refresh().catch(() => {});
     } finally {
@@ -208,12 +219,16 @@ export default function Passenger() {
               <span className="eyebrow">YOUR JOURNEY, RECONNECTED</span>
               <h1>
                 {confirmed
-                  ? 'Your bookings are confirmed.'
+                  ? live
+                    ? 'Your bookings are confirmed.'
+                    : 'You’re all set.'
                   : accepted
                     ? 'Your choice is saved.'
                     : offer
                       ? 'A new way forward.'
-                      : 'We’re finding your way.'}
+                      : declined
+                        ? 'Let’s find another way.'
+                        : 'We’re finding your way.'}
               </h1>
               <p>
                 {state.group.name} <span>·</span> {state.group.size} passengers
@@ -243,7 +258,7 @@ export default function Passenger() {
               </div>
             </div>
             <section className={`boarding-card ${confirmed ? 'confirmed' : ''}`}>
-              <div className="boarding-card-heading">
+              <div className="boarding-card-heading" aria-live="polite">
                 {confirmed ? (
                   <CheckCircle2 size={20} />
                 ) : offer ? (
@@ -331,8 +346,7 @@ export default function Passenger() {
                         ) : (
                           <Check size={18} />
                         )}{' '}
-                        Accept
-                        {live ? 'this proposal' : 'this itinerary'}
+                        {live ? 'Accept this proposal' : 'Accept this itinerary'}
                       </button>
                       <button
                         className="decline-offer"
@@ -461,7 +475,7 @@ export default function Passenger() {
                   A change withdraws an incompatible offer and asks the operator to replan your
                   journey.
                 </p>
-                <button className="primary-button" disabled={busy}>
+                <button className="primary-button" disabled={busy || Boolean(uncertain)}>
                   Save requirements
                   <ArrowRight size={14} />
                 </button>

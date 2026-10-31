@@ -4,6 +4,43 @@ import type { World } from './types';
 
 afterEach(() => vi.unstubAllGlobals());
 describe('mutation transport boundary', () => {
+  it('retries a live import with its original quote and distinguishes a definitive rejection', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('upstream interrupted', { status: 502 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            detail: 'Quote expired; search again',
+            applied: false,
+          }),
+          { status: 409 },
+        ),
+      );
+    vi.stubGlobal('fetch', fetch);
+    const input = { search_id: 'SEARCH-1', offer_id: 'QUOTE-1', group_id: 'FAMILY-1' };
+    let failure: unknown;
+    try {
+      await api.liveInput({ version: 9 } as World, 'travel/import', input);
+    } catch (cause) {
+      failure = cause;
+    }
+    expect(failure).toBeInstanceOf(TransportError);
+    input.offer_id = 'QUOTE-2';
+    const retry = (failure as TransportError).retry();
+    await expect(retry).rejects.toBeInstanceOf(ApiError);
+    await expect(retry).rejects.toMatchObject({
+      status: 409,
+      message: 'Quote expired; search again',
+    });
+    expect(fetch.mock.calls[1][0]).toBe('/api/live/travel/import');
+    expect(fetch.mock.calls[1][1].body).toBe(fetch.mock.calls[0][1].body);
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toMatchObject({
+      expected_version: 9,
+      offer_id: 'QUOTE-1',
+      group_id: 'FAMILY-1',
+    });
+  });
   it('sends a clarification reply separately from prior commands and verified results', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ applied: false })));
     vi.stubGlobal('fetch', fetch);

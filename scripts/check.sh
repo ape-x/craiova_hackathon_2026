@@ -6,6 +6,8 @@ project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export OPENAI_API_KEY="" FR24_API_KEY="" GOOGLE_MAPS_API_KEY="" ENVIRONMENT="test"
 export GOOGLE_MAPS_SERVER_API_KEY="" BOOKING_DEMAND_API_TOKEN="" BOOKING_AFFILIATE_ID=""
 export LITEAPI_API_KEY="" LITEAPI_ENVIRONMENT="sandbox" HOTEL_OFFERS_PROVIDER="auto"
-export OPERATION_MODE="simulation"
+export DUFFEL_ACCESS_TOKEN="" DUFFEL_ENVIRONMENT="sandbox"
+export DISTRIBUSION_API_KEY="" DISTRIBUSION_ENVIRONMENT="sandbox" DISTRIBUSION_OFFERS_ENABLED="false"
+export FLIGHT_OFFERS_PROVIDER="auto" OPERATION_MODE="simulation"
 (cd "$project_dir/backend" && .venv/bin/python -m pytest -q)
 (cd "$project_dir/frontend" && npm test && npm run build)

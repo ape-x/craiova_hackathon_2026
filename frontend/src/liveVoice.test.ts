@@ -511,7 +511,44 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
     result.resolve('Prima cerere verificată.');
     await vi.advanceTimersByTimeAsync(250);
     expect(onDelegation).toHaveBeenCalledTimes(2);
-    expect(onDelegation.mock.calls[1][0].text).toBe('Arată aeroportul OTP.');
+    expect(onDelegation).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ text: 'Arată aeroportul OTP.' }),
+    );
+    await end(client, channel);
+  });
+
+  it('keeps speech on the exact next-window boundary and excludes retired late words from reference context', async () => {
+    const { client, channel, onDelegation } = await connected();
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'expired-boundary', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(2100);
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Anulează zborul F101.',
+      start_ms: 0,
+      end_ms: 900,
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Arată autocarul B12.',
+      start_ms: 1000,
+      end_ms: 1900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'next-boundary', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledExactlyOnceWith({
+      text: 'Arată autocarul B12.',
+      delegationId: 'live_test:next-boundary',
+      context: '',
+    });
     await end(client, channel);
   });
 
@@ -543,7 +580,10 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
     });
     await vi.advanceTimersByTimeAsync(250);
     expect(onDelegation).toHaveBeenCalledTimes(2);
-    expect(onDelegation.mock.calls[1][0].text).toBe('Arată aeroportul OTP.');
+    expect(onDelegation).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ text: 'Arată aeroportul OTP.' }),
+    );
     await end(client, channel);
   });
 

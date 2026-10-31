@@ -137,7 +137,12 @@ export function deriveResourceImpact(world: World, resource: Resource) {
   if (!affectedGroups.length) return null;
   const routes = new Map<
     string,
-    { ids: string[]; kind: Resource['kind']; passengers: number; confirmed: number }
+    {
+      ids: string[];
+      kind: Resource['kind'];
+      passengers: number;
+      confirmed: number;
+    }
   >();
   let offered = 0,
     confirmed = 0;
@@ -557,7 +562,7 @@ export default function Inspector({
         world.offers.some(
           (current) =>
             current.group_id === item.id &&
-            ['held', 'confirmed'].includes(current.status) &&
+            ['held', 'proposed', 'accepted', 'confirmed'].includes(current.status) &&
             current.itinerary.legs.some((leg) => leg.resource_id === resource.id),
         ),
       )
@@ -649,7 +654,9 @@ export default function Inspector({
                   <Dot tone={offer.status === 'confirmed' ? 'mint' : 'cyan'} />
                   <strong>
                     {offer.status === 'confirmed'
-                      ? 'Supplier bookings confirmed'
+                      ? world.mode === 'live'
+                        ? 'Supplier bookings confirmed'
+                        : 'Itinerary confirmed in simulation'
                       : offer.status === 'accepted'
                         ? 'Passenger accepted · bookings pending'
                         : 'Your recovery proposal is ready'}
@@ -702,9 +709,11 @@ export default function Inspector({
                   {resource.id}{' '}
                   <span className={resource.available ? 'text-mint' : 'text-red'}>
                     {resource.available
-                      ? resource.capacity_scope === 'quoted_request'
-                        ? 'Unbooked quote'
-                        : 'Verified'
+                      ? world.mode === 'simulation'
+                        ? 'Available'
+                        : resource.capacity_scope === 'quoted_request'
+                          ? 'Unbooked quote'
+                          : 'Verified'
                       : 'Unavailable'}
                   </span>
                 </h3>

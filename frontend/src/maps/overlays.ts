@@ -278,7 +278,13 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
   );
   const observed = observation && observedPoint(observation);
   if (observed)
-    return { center: observed, range: 4000, tilt: 60, heading: 20, altitudeMode: 'ABSOLUTE' };
+    return {
+      center: observed,
+      range: 4000,
+      tilt: 60,
+      heading: 20,
+      altitudeMode: 'ABSOLUTE',
+    };
   const airport = world.airports.find((a) => a.id === selectedId);
   if (airport && mode === 'airport')
     return {

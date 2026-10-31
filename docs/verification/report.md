@@ -2,6 +2,30 @@
 
 This report separates executed tests, bounded real-provider checks and remaining acceptance gates. The application is a synthetic operations simulator. Real Sol Ultrafast interpretation, Decisions selection, GPT-Live transport/closure with synthetic silence and Google geographic rendering have passed. User microphone/delegation, observed traffic, surveyed terminal geometry and photographic fidelity remain open.
 
+## Integrated release verification — 2026-10-31
+
+The combined scenario-authoring, configuration-recovery and passenger/scene release passed **291 tests: 193 backend and 98 frontend**, strict TypeScript, the production build and full frontend formatting. Merge review preserved current-command isolation, role-tagged conversational context and separate reserved/retired transcript windows. An additional exact-boundary regression checks that the next utterance can start at the previous window boundary while retired late fragments cannot enter reference context. The bounded real-provider and browser checks below apply to their stated flows; no new microphone test is inferred from this merge.
+
+Both Docker images rebuilt and the local API/web services became healthy with the existing provider configuration and persistent database. A private SQLite backup was saved first. The canonical full-world snapshot matched byte for byte before and after restart at version 30; no operational mutation or reset was performed. Fresh Chrome inspection of the deployed release showed the live-provider controls and 96 Google model elements without a map warning. Selecting the existing unavailable B12 focused its geometry and preserved incident state.
+
+## Passenger decisions, voice ordering and scene materials — 2026-10-31
+
+An isolated checkout passed **181 tests: 114 backend and 67 frontend**, strict TypeScript, the production Vite build and frontend formatting. The isolation keeps this verified change separate from concurrent scenario-authoring work. No live operator world or microphone session was reset or modified.
+
+Passenger decline now releases every reservation in a held itinerary in one transaction. Authorization precedes cached replay, confirmed journeys cannot be declined, and concurrent accept/decline requests produce exactly one outcome. Seven new backend regressions cover these properties, durable replay and replacement-offer key collisions. Three additional tests distinguish closing an airborne flight's departure airport from closing its destination: F201 and its 60 inbound passengers remain unchanged when LTN closes, while a CRA closure still requires diversion.
+
+Browser verification used a separate local API and SQLite database, with OpenAI and FR24 disabled. The operator created 120 passenger offers. At a 390×844 phone viewport, G001 declined a two-segment offer; B12 and F211 each released four seats, the passenger page displayed **Offer declined**, and the operator received version 3 through SSE. G002 then accepted its bus, hotel and flight itinerary together at version 4. Switching boarding-link fragments now immediately clears the previous family's screen and loads fresh passenger state. The UI preserves request IDs and offers an explicit retry when an action's outcome is uncertain. `passenger-offer-choice.jpg` and `passenger-offer-declined.jpg` show the actual phone-width pages without access tokens.
+
+Four voice regressions reproduce delayed transcripts and queued/expired delegation windows. Each delegation now reserves its own timeline interval immediately; a bounded wait accepts delayed text while expired words cannot become a later command. The provider supplies no utterance-complete event, so the two-second maximum wait and 250 ms settling period remain a grouping heuristic. These are mocked protocol checks, not a completed spoken end-to-end test.
+
+A second isolated browser fixture injected an invalid-JSON HTTP 502 for acceptance, followed by a definitive HTTP 409 rejection on retry. The UI disabled conflicting actions during uncertainty, reused exactly the same request ID, then cleared the uncertain state after the definitive rejection. Declining the still-held offer subsequently succeeded and released both reservations. The fixture had blank provider keys and blocked outbound connections; these injected failures are test evidence only.
+
+The native scene now has restrained apron wear, darker concrete, recessed warm interiors, glass canopy panels and steel ribs. The terminal GLB was regenerated with the same footprint and anchor: 1,048,676 bytes, 48 meshes, core PBR, no extensions. Model preflight revalidates cached assets because filenames are stable between exports. `native-materials-qa.jpg` records the rendered native scene. It is still an authored architectural model and does not match the photographic mockup exactly.
+
+The built frontend was also served by a separate test API with the configured browser Maps key. Chrome loaded 96 model elements on Google terrain; the regenerated terminal, glazing, buses and family figures rendered at close range without a map warning. `google-materials-qa.jpg` records that check with attribution. OpenAI and FR24 were disabled, and the test API used its own SQLite file.
+
+**Implementation gap:** the scenario clock is fixed. Journey advancement, rescue after a simulated departure and recovery from a completed transfer are not implemented. Advancing fixture time reveals origin/continuity problems; this is pending implementation, not a missing-credentials issue. Real spoken delegation, FR24 access, surveyed geography and event-display fidelity remain separate acceptance gates.
+
 ## Free-form scenario authoring — 2026-10-31
 
 The release supports new airports, synthetic flights/buses/hotels and passenger batches, plus composable schedule, route, capacity, cost and group constraints. The voice/text pipeline carries current input separately from bounded prior requests and verified outcomes; clarification replies persist in the UI. Failed or uncertain requests are retained as explicitly unconfirmed context, not executed outcomes. Timestamped voice delegation tests cover delayed fragments, whole compound requests, duplicate events and stale turn isolation.
@@ -137,3 +161,12 @@ OpenAI and Google credentials are now configured. The bounded real OpenAI checks
 ## Non-failing tool notices
 
 The backend test client emits an upstream Starlette deprecation notice for httpx. The lazy Three.js scene chunk exceeds Vite's configured 900 KB raw threshold (about 265 KB gzip); the passenger screen does not load the 3D scene. These notices did not fail the build. Long-term deployment limits, including heuristic optimality, single-role authentication and audit-storage growth, are recorded in `../backend.md`.
+
+
+## Integration of live inventory and simulator — 31 October 2026
+
+The release combines the local live-data work with main 39923b0. Validation passed: **443 backend + 132 frontend tests**, strict TypeScript, formatting, production frontend build, both Docker images and production Compose wiring for 30 environment variables. The bundled airport timezone lookup is included; the development voice harness is excluded from the production entry. Existing warnings remain: Starlette TestClient deprecation and the lazy native Scene bundle above 900 KB.
+
+Browser checks used separate databases on 18806 and 18807, with provider keys blank and backend outbound connections disabled. A deliberately malformed 502 preserved the original submission; Escape/close/tab switching could not discard it. A 409 replay used the same payload and key, unlocked editing, and a subsequent request generated four test passengers. The isolated operator entered an explicitly named QA coach, the solver produced two proposals, one passenger declined and the other accepted a preference. The UI showed awaiting supplier bookings; zero external bookings were created. SSE updated the operator and switching passenger hashes showed the correct group. The simulator planned journeys for 120 passengers and showed an explicit Maps configuration error when its key was missing. This run does not establish new real-provider or spoken-voice access.
+
+[Machine-readable evidence](integration-release-check.json), [simulator screenshot](integration-simulation.jpg), [live preference screenshot](integration-live-acceptance.jpg).

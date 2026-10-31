@@ -2615,12 +2615,26 @@ kbd {
   cursor: pointer;
 }
 .decline-offer:hover:not(:disabled),
-.retry-offer:hover:not(:disabled) { background: #203643; border-color: #6b8b9a; }
+.retry-offer:hover:not(:disabled) {
+  background: #203643;
+  border-color: #6b8b9a;
+}
 .decline-offer:disabled,
-.retry-offer:disabled { opacity: 0.45; cursor: not-allowed; }
+.retry-offer:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .decline-offer:focus-visible,
-.retry-offer:focus-visible { outline: 2px solid #6fe2b6; outline-offset: 3px; }
-.decline-offer-hint { margin: 10px 0 0; color: #8399a5; font-size: 10px; line-height: 1.65; }
+.retry-offer:focus-visible {
+  outline: 2px solid #6fe2b6;
+  outline-offset: 3px;
+}
+.decline-offer-hint {
+  margin: 10px 0 0;
+  color: #8399a5;
+  font-size: 10px;
+  line-height: 1.65;
+}
 .passenger-preferences {
   display: flex;
   align-items: center;

@@ -33,9 +33,11 @@ interface SearchResult {
 export default function LiveTravelSearch({
   world,
   onApplied,
+  onMutationPending,
 }: {
   world: World;
   onApplied: (result: MutationResult) => void;
+  onMutationPending: (pending: boolean) => void;
 }) {
   const [query, setQuery] = useState({
     group_id: '',
@@ -48,11 +50,16 @@ export default function LiveTravelSearch({
   const [result, setResult] = useState<SearchResult | null>(null);
   const [resultGroup, setResultGroup] = useState('');
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [uncertain, setUncertain] = useState<TransportError | null>(null);
   const controller = useRef<AbortController | null>(null);
   const mounted = useRef(true);
+  useEffect(() => {
+    onMutationPending(importing || Boolean(uncertain));
+  }, [importing, uncertain, onMutationPending]);
+  useEffect(() => () => onMutationPending(false), [onMutationPending]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -138,6 +145,7 @@ export default function LiveTravelSearch({
   }
   async function importQuote(quote: TravelQuote, retry?: TransportError) {
     if (!result?.search_id && !retry) return;
+    setImporting(true);
     setBusy(true);
     setError('');
     setNotice('');
@@ -159,9 +167,13 @@ export default function LiveTravelSearch({
       if (mounted.current) {
         setError(cause instanceof Error ? cause.message : 'Quote import failed.');
         if (cause instanceof TransportError) setUncertain(cause);
+        else setUncertain(null);
       }
     } finally {
-      if (mounted.current) setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        setImporting(false);
+      }
     }
   }
   const quotes =

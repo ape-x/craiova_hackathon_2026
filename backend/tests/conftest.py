@@ -26,6 +26,8 @@ def pytest_configure(config):
         "OPENAI_API_KEY": "", "FR24_API_KEY": "", "GOOGLE_MAPS_API_KEY": "",
         "GOOGLE_MAPS_SERVER_API_KEY": "", "BOOKING_DEMAND_API_TOKEN": "", "BOOKING_AFFILIATE_ID": "",
         "LITEAPI_API_KEY": "", "LITEAPI_ENVIRONMENT": "sandbox", "HOTEL_OFFERS_PROVIDER": "auto",
+        "DUFFEL_ACCESS_TOKEN": "", "DUFFEL_ENVIRONMENT": "sandbox", "FLIGHT_OFFERS_PROVIDER": "auto",
+        "DISTRIBUSION_API_KEY": "", "DISTRIBUSION_ENVIRONMENT": "sandbox", "DISTRIBUSION_OFFERS_ENABLED": "false",
         "OPERATOR_TOKEN": "", "ENVIRONMENT": "test", "OPERATION_MODE": "simulation",
         "DATABASE_PATH": str(Path(_temporary.name) / "import-only.sqlite3"),
         "PUBLIC_BASE_URL": "http://localhost:5173",

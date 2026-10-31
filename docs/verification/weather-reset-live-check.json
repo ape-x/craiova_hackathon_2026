@@ -217,8 +217,9 @@
     "verified_reply_visible": true
   },
   "release_validation": {
-    "backend_tests": 231,
-    "frontend_tests": 104,
-    "frontend_build": "passed"
+    "backend_tests": 241,
+    "frontend_tests": 105,
+    "frontend_build": "passed",
+    "integrated_base": "ae516c4"
   }
 }

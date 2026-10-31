@@ -1,0 +1,41 @@
+{
+  "checked_at": "2026-10-31T16:45:38.409651+00:00",
+  "base_main": "39923b0",
+  "original_snapshot": "cf774a5",
+  "scope": "Release integration, isolated databases, no external provider calls",
+  "validation": {
+    "backend_tests": 443,
+    "frontend_tests": 132,
+    "typescript": "passed",
+    "prettier": "passed",
+    "production_build": "passed",
+    "docker_api_build": "passed",
+    "docker_web_build": "passed",
+    "production_compose_variables_checked": 30
+  },
+  "browser": {
+    "live_empty_start": true,
+    "uncertain_submission_blocks_close_and_tabs": true,
+    "retry": {
+      "calls": 2,
+      "same_key": true,
+      "same_payload": true
+    },
+    "definitive_error_restores_editing": true,
+    "subsequent_generation_passengers": 4,
+    "live_version": 6,
+    "live_offer_statuses": {
+      "accepted": 1,
+      "declined": 1
+    },
+    "external_bookings": 0,
+    "operator_sse_updates": true,
+    "passenger_hash_switch": true,
+    "geographic_missing_key_error_visible": true,
+    "simulation_recovered_passengers": 120,
+    "simulation_version": 2,
+    "console_errors_on_simulation_and_passenger_pages": 0
+  },
+  "fixtures": "Explicit isolated test passengers and manually entered QA coach; no real availability or booking is claimed. Live runtime on8080 and simulator on8081 were not mutated.",
+  "voice_harness": "Prepared and offline-tested; real spoken end-to-end run remains unperformed."
+}

@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from app.config import Settings
 from app.live_data import MANIFEST_COLUMNS, ManifestImport, ManualResourceInput, PassengerGenerationInput
 from app.live_service import ExternalConfirmation, HotelQuoteImport, LiveOperations
-from app.models import Itinerary, Leg, Offer, Reservation
+from app.models import AcceptRequest, Itinerary, Leg, Offer, Reservation
 from app.providers.base import ProviderError
 from app.service import RecoveryService
 from app.store import DomainError, Store
@@ -189,6 +189,47 @@ def test_external_confirmation_records_all_segments_atomically_without_provider_
     assert result["world"]["reservations"][0]["status"] == "confirmed"
     assert ops.real_data.provider.calls == 0
     assert ops.confirm("PROPOSAL-1", request)["replayed"]
+
+
+@pytest.mark.parametrize("accepted", [False, True])
+def test_live_decline_releases_proposed_or_accepted_allocations_without_booking_claims(ops, accepted):
+    ops.manifest(manifest_request(ops))
+    ops.resource(resource_request(ops))
+    attach_proposal(ops)
+    token = ops.store.read().groups[0].token
+    if accepted:
+        response = ops.recovery.accept("PROPOSAL-1", AcceptRequest(token=token, idempotency_key="accept-live-proposal"))
+        assert response["offer"]["status"] == "accepted" and response["simulated"] is False
+    before = ops.store.read().version
+    result = ops.recovery.decline("PROPOSAL-1", token, "decline-live-proposal")
+    assert result["simulated"] is False and result["offer"]["status"] == "declined"
+    assert "No supplier cancellation" in result["offer"]["reason"]
+    world = ops.store.read()
+    assert world.version == before+1
+    assert world.groups[0].status == "waiting"
+    assert all(row.status == "released" for row in world.reservations)
+    assert world.stats["resource_usage"]["FLIGHT-REAL"] == 0
+    assert world.offers[0].external_bookings == []
+    assert ops.recovery.decline("PROPOSAL-1", token, "decline-live-proposal")["replayed"]
+    assert ops.store.read().version == world.version
+    assert len([event for event in world.events if event.type == "offer_declined"]) == 1
+    assert ops.real_data.provider.calls == 0
+
+
+def test_passenger_decline_cannot_cancel_a_recorded_external_booking(ops):
+    ops.manifest(manifest_request(ops))
+    ops.resource(resource_request(ops))
+    attach_proposal(ops)
+    ops.confirm("PROPOSAL-1", confirmation(ops))
+    before = ops.store.read()
+    with pytest.raises(DomainError) as error:
+        ops.recovery.decline("PROPOSAL-1", before.groups[0].token, "decline-booked-proposal")
+    assert error.value.status == 409
+    after = ops.store.read()
+    assert after.version == before.version and after.offers == before.offers
+    assert after.reservations == before.reservations
+    assert after.groups[0].status == "confirmed"
+    assert ops.real_data.provider.calls == 0
 
 
 def test_wrong_external_reference_and_test_passenger_confirmation_roll_back(ops):

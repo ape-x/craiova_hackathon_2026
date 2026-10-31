@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDownToLine, CheckCircle2, FileUp, Loader2, Plus, RefreshCw } from 'lucide-react';
@@ -141,6 +141,16 @@ export default function LiveDataDialog({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [uncertain, setUncertain] = useState<TransportError | null>(null);
+  const [travelPending, setTravelPending] = useState(false);
+  const pending = useRef(false);
+  pending.current = busy || Boolean(uncertain) || travelPending;
+  const close = useCallback(() => {
+    if (pending.current) {
+      setError('Finish or recover the pending submission before closing this dialog.');
+      return;
+    }
+    onClose();
+  }, [onClose]);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -177,6 +187,7 @@ export default function LiveDataDialog({
       if (mounted.current) {
         setError(cause instanceof Error ? cause.message : 'The update failed.');
         if (cause instanceof TransportError) setUncertain(cause);
+        else setUncertain(null);
       }
     } finally {
       if (mounted.current) setBusy(false);
@@ -289,7 +300,7 @@ export default function LiveDataDialog({
     URL.revokeObjectURL(url);
   }
   return createPortal(
-    <Modal title="Live operation · verified data" onClose={onClose} wide>
+    <Modal title="Live operation · verified data" onClose={close} wide>
       <p className="live-dialog-intro">
         Generate clearly marked test passengers or import a real manifest. Add transport and hotel
         inventory from verified suppliers.
@@ -309,7 +320,7 @@ export default function LiveDataDialog({
             type="button"
             role="tab"
             aria-selected={tab === value}
-            disabled={busy || Boolean(uncertain)}
+            disabled={busy || Boolean(uncertain) || travelPending}
             key={value}
             onClick={() => {
               setTab(value);
@@ -321,7 +332,13 @@ export default function LiveDataDialog({
         ))}
       </div>
 
-      {tab === 'search' && <LiveTravelSearch world={world} onApplied={onApplied} />}
+      {tab === 'search' && (
+        <LiveTravelSearch
+          world={world}
+          onApplied={onApplied}
+          onMutationPending={setTravelPending}
+        />
+      )}
       {tab === 'generate' && (
         <form
           onSubmit={(event) => {
@@ -727,7 +744,16 @@ export default function LiveDataDialog({
               receive real bookings.
             </p>
             <Field label="Current itinerary">
-              <select value={offerId} onChange={(e) => setOfferId(e.target.value)} required>
+              <select
+                value={offerId}
+                onChange={(e) => {
+                  setOfferId(e.target.value);
+                  // Supplier evidence belongs to this offer's passengers, even
+                  // when another offer includes the same transport resource.
+                  setBooking({});
+                }}
+                required
+              >
                 <option value="" disabled>
                   Select itinerary
                 </option>

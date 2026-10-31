@@ -583,9 +583,9 @@ class RecoveryService:
                 if reservation.offer_id==offer.id:
                     reservation.status="released"
             offer.status="declined"
-            offer.reason="Passenger declined this offer; every held segment was released."
+            offer.reason="Passenger declined this offer; every held segment was released." if world.mode=="simulation" else "Passenger declined this proposal; local allocations released. No supplier cancellation was issued."
             group.status="waiting"
-            audit(world,"offer_declined",f"{group.name}: offer declined; every held segment released atomically.",offer.id,{"group_id":group.id})
+            audit(world,"offer_declined",f"{group.name}: offer declined; every held segment released atomically." if world.mode=="simulation" else f"{group.name}: proposal declined; local allocations released without a supplier cancellation.",offer.id,{"group_id":group.id})
             return {"offer":offer.model_dump(mode="json")}
         result=self.store.mutate(key,payload,None,release,authorize=authorize)
         return {"offer":result["offer"],"version":result["world"]["version"],"replayed":result["replayed"],"simulated":result["world"]["mode"]=="simulation"}

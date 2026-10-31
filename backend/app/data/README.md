@@ -36,3 +36,20 @@ To refresh: download the official CSV, apply the documented filter, serialize
 the existing field mapping in canonical-code order, and update the snapshot
 date, source digest and record count together. Review the resulting diff and run
 `python -m pytest tests/test_airport_catalog.py` from `backend/`.
+
+## Airport timezones
+
+`airport_timezones.json` bundles **4,448** airport-code-to-IANA-timezone mappings
+from [airportsdata](https://github.com/mborsetti/airportsdata), pinned to
+[revision c72652721eb34f41565eb4a2006ab0258f3c08e8](https://raw.githubusercontent.com/mborsetti/airportsdata/c72652721eb34f41565eb4a2006ab0258f3c08e8/airportsdata/airports.csv).
+Its metadata includes the source URL, revision, and complete MIT license notice,
+including the upstream `mwgg/Airports` attribution. Retain that notice when
+redistributing or refreshing the snapshot.
+
+This is offline timezone reference data, not flight availability. The Nuitee
+adapter uses it only when a supplier time has no UTC offset; missing timezone
+metadata, ambiguous local times, and nonexistent daylight-saving times are
+rejected instead of assuming the server's timezone. Offset-bearing supplier
+timestamps remain authoritative. The file is packaged with the backend and
+requires no runtime download. After refreshing it, run
+`python -m pytest tests/test_travel.py` from `backend/`.

@@ -198,7 +198,9 @@ export function createModelAssetLoader(fetcher: typeof fetch) {
       checked = (async () => {
         const response = await fetcher(src, {
           credentials: 'same-origin',
-          cache: 'force-cache',
+          // Asset names are stable across deployments. Revalidate the cached
+          // binary before Google loads it so a new export replaces old meshes.
+          cache: 'no-cache',
           signal: AbortSignal.timeout(10_000),
         });
         if (!response.ok)

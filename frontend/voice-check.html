@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Isolated spoken voice verification</title>
+    <style>
+      body {
+        margin: 32px auto;
+        padding: 0 24px;
+        max-width: 1100px;
+        background: #101821;
+        color: #e5edf5;
+        font: 16px/1.5 system-ui;
+      }
+      h1 {
+        font-size: 30px;
+      }
+      button {
+        padding: 12px 18px;
+        margin: 4px 8px 12px 0;
+        cursor: pointer;
+        font: inherit;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.5;
+      }
+      pre {
+        overflow: auto;
+        background: #081019;
+        padding: 18px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      section {
+        border: 1px solid #354556;
+        border-radius: 10px;
+        padding: 18px;
+        margin: 18px 0;
+      }
+      audio {
+        width: 100%;
+      }
+      .warning {
+        color: #f5cd84;
+      }
+      #status {
+        font-size: 21px;
+      }
+      label {
+        display: block;
+        margin: 12px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Isolated spoken voice verification</h1>
+    <p class="warning">
+      Real paid OpenAI calls only after Start. This page never captures a microphone. It feeds the
+      recording below to the unchanged production voice client, using an isolated simulator.
+    </p>
+    <p>
+      GPT-Live → client delegation → gpt-6.1-sol / ultrafast → validated solver candidates →
+      gpt-6-luna Decisions → spoken verified result → session.closed.
+    </p>
+    <section>
+      <h2>Prerecorded synthetic test speech</h2>
+      <p>În simulator, setează bugetul total la douăzeci de mii de euro și recalculează planul.</p>
+      <audio controls preload="metadata" src="/verification/budget-command.wav"></audio>
+      <p>
+        macOS Ioana, 5.535 seconds, mono 24 kHz PCM. No human recording. Expected isolated budget:
+        €20,000.
+      </p>
+    </section>
+    <section>
+      <div id="status" role="status">Ready for isolated-target preflight.</div>
+      <label
+        ><input type="checkbox" id="confirm" /> I am testing the separate voice-check scenario, with
+        a maximum of two sessions.</label
+      >
+      <button id="preflight">Check isolated target (no provider call)</button>
+      <button id="start" disabled>Start one spoken check</button>
+      <button id="stop" disabled>Close session now</button>
+      <button id="play" disabled>Enable voice playback</button>
+      <button id="download" disabled>Download sanitized evidence</button>
+      <div id="output-audio"></div>
+      <p>
+        Each session allows one backend command. Close is requested 30 seconds after
+        session.started; the server watchdog is 35 seconds. Finalization has a separate 15-second
+        grace period. Failures do not retry automatically.
+      </p>
+    </section>
+    <section>
+      <h2>Actual transcript</h2>
+      <p id="user-transcript">Input: —</p>
+      <p id="assistant-transcript">Assistant: —</p>
+    </section>
+    <section>
+      <h2>Measured evidence</h2>
+      <pre id="evidence">No provider session started.</pre>
+    </section>
+    <script type="module" src="/src/verification/voiceHarness.ts"></script>
+  </body>
+</html>

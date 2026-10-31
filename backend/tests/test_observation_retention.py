@@ -5,8 +5,10 @@ import sqlite3
 import subprocess
 import sys
 import time
+from contextlib import closing
 from datetime import timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
 import app.store as store_module
@@ -103,6 +105,47 @@ def test_backup_omits_observation_cache_preserves_state_and_refuses_overwrite(tm
     before=destination.read_bytes()
     retry=subprocess.run([sys.executable,str(script),str(path),str(destination)],capture_output=True,text=True,timeout=10)
     assert retry.returncode!=0 and destination.read_bytes()==before
+
+
+@pytest.mark.parametrize("has_cache_table", [False, True])
+def test_standalone_backup_scrubs_legacy_json_without_changing_source(tmp_path, has_cache_table):
+    source = tmp_path / "unopened-legacy.sqlite3"
+    destination = tmp_path / "sanitized.sqlite3"
+    marker = "legacy-feed-content-must-not-be-archived"
+    operational = {"version": 17, "scenario_id": "preserved-scenario", "mode": "live", "budget": 321,
+        "groups": [{"id": "G1", "members": ["Fixture passenger"]}],
+        "resources": [{"id": "R1", "provenance": {"source_reference": "keep-operational-evidence"}}]}
+    legacy = {**operational, "observations": [{"id": marker}],
+              "provider_status": {"flights": {"message": marker}, "hotels": {"state": "ready"}}}
+    response = {"world": legacy, "observations": [{"id": marker}], "replayed": False, "offer": {"id": "O1"}}
+    with closing(sqlite3.connect(source)) as conn:
+        conn.executescript("""
+            CREATE TABLE world (id INTEGER PRIMARY KEY, data TEXT NOT NULL);
+            CREATE TABLE idempotency (key TEXT PRIMARY KEY, fingerprint TEXT, result TEXT);
+            CREATE TABLE world_archives (id TEXT PRIMARY KEY, data TEXT);
+        """)
+        conn.execute("INSERT INTO world VALUES(1,?)", (json.dumps(legacy),))
+        conn.execute("INSERT INTO idempotency VALUES(?,?,?)", ("original-key", "original-fingerprint", json.dumps(response)))
+        conn.execute("INSERT INTO world_archives VALUES(?,?)", ("archive-1", json.dumps(legacy)))
+        if has_cache_table:
+            conn.execute("CREATE TABLE observations (id INTEGER PRIMARY KEY, data TEXT)")
+            conn.execute("INSERT INTO observations VALUES(1,?)", (json.dumps([{ "id": marker }]),))
+        conn.commit()
+    original_bytes = source.read_bytes()
+    script = Path(__file__).resolve().parents[2] / "scripts" / "backup.py"
+    result = subprocess.run([sys.executable, str(script), str(source), str(destination)], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert source.read_bytes() == original_bytes
+    assert marker.encode() not in destination.read_bytes()
+    expected = {**operational, "observations": [], "provider_status": {"hotels": {"state": "ready"}}}
+    with closing(sqlite3.connect(destination)) as conn:
+        assert json.loads(conn.execute("SELECT data FROM world").fetchone()[0]) == expected
+        assert json.loads(conn.execute("SELECT data FROM world_archives").fetchone()[0]) == expected
+        key, fingerprint, raw = conn.execute("SELECT key,fingerprint,result FROM idempotency").fetchone()
+        assert (key, fingerprint) == ("original-key", "original-fingerprint")
+        assert json.loads(raw) == {"world": expected, "replayed": False, "offer": {"id": "O1"}}
+        if has_cache_table:
+            assert conn.execute("SELECT count(*) FROM observations").fetchone()[0] == 0
 
 
 def test_dev_script_stops_backend_when_frontend_fails(tmp_path):

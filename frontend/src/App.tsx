@@ -157,7 +157,10 @@ function Operations() {
   const [voiceMuted, setVoiceMuted] = useState(false);
   const waveform = useRef<HTMLDivElement>(null);
   const voice = useRef<LiveVoiceClient | null>(null);
-  const commandHistory = useRef<{ scenarioId: string; exchanges: CommandExchange[] }>({
+  const commandHistory = useRef<{
+    scenarioId: string;
+    exchanges: CommandExchange[];
+  }>({
     scenarioId: '',
     exchanges: [],
   });
@@ -356,6 +359,8 @@ function Operations() {
   }, [authRequired]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (modal || (event.target instanceof Element && event.target.closest('[role="dialog"]')))
+        return;
       const typing =
         event.target instanceof HTMLInputElement ||
         event.target instanceof HTMLTextAreaElement ||
@@ -527,7 +532,7 @@ function Operations() {
                     </button>
                   </div>
                 </div>
-              ) : geographic && config.google_maps_api_key ? (
+              ) : geographic && (!live || config.google_maps_api_key) ? (
                 <GoogleMaps3D
                   world={mapWorld}
                   mode={mode}
@@ -680,8 +685,8 @@ function Operations() {
                   void replan();
                 }}
               >
-                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}Replan{' '}
-                <span>{chosenMode === 'ai' ? 'AI' : 'SOLVER'}</span>
+                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+                Replan <span>{chosenMode === 'ai' ? 'AI' : 'SOLVER'}</span>
               </button>
             </div>
           </div>
@@ -885,7 +890,11 @@ function Operations() {
                 );
               } catch (cause) {
                 const message = `Condition saved at v${result.world.version}. Replanning was not confirmed: ${cause instanceof Error ? cause.message : 'Check the current state.'}`;
-                setNotice((previous) => ({ text: message, error: true, retry: previous?.retry }));
+                setNotice((previous) => ({
+                  text: message,
+                  error: true,
+                  retry: previous?.retry,
+                }));
                 throw new Error(message);
               }
             }
@@ -1026,8 +1035,16 @@ function SearchDialog({
 }) {
   const [query, setQuery] = useState('');
   const entities = [
-    ...world.airports.map((item) => ({ id: item.id, name: item.name, type: 'Airport' })),
-    ...world.resources.map((item) => ({ id: item.id, name: item.name, type: item.kind })),
+    ...world.airports.map((item) => ({
+      id: item.id,
+      name: item.name,
+      type: 'Airport',
+    })),
+    ...world.resources.map((item) => ({
+      id: item.id,
+      name: item.name,
+      type: item.kind,
+    })),
     ...world.groups.map((item) => ({
       id: item.id,
       name: item.name,

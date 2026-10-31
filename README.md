@@ -9,7 +9,7 @@ Duffel and Distribusion adapters require their own activated production accounts
 
 ## Modul de demonstrație existent
 
-Centru de operațiuni pentru recuperarea pasagerilor, cu **FastAPI, React/TypeScript, Three.js, Google Maps 3D și OpenAI**. Juriul modifică o situație prin voce sau text, iar agentul construiește strategii, evaluează inventarul comun și selectează un plan valid. Acceptarea pasagerului confirmă atomic întregul itinerar în simulator.
+Centru de operațiuni pentru recuperarea pasagerilor, cu **FastAPI, React/TypeScript, Three.js, Google Maps 3D și OpenAI**. Juriul modifică o situație prin voce sau text, iar agentul construiește strategii, evaluează inventarul comun și selectează un plan valid. Acceptarea pasagerului confirmă atomic întregul itinerar în simulator; refuzul eliberează toate segmentele ținute pentru grup.
 
 ![Aplicația rulată cu hartă Google și operațiuni simulate](docs/verification/google-models-live.jpg)
 
@@ -39,9 +39,9 @@ Aplicație: **http://127.0.0.1:5173**. API: http://127.0.0.1:8000. Documentația
 
 Dacă `python3.12` nu este instalat, [instrucțiunile backend](docs/backend.md#run-locally) arată instalarea izolată prin `uv`. Adresele locale și QR-urile către localhost funcționează numai pe calculatorul gazdă. Pentru telefon și microfon de la distanță folosește instanța HTTPS descrisă în [lista de verificare a deployului](docs/deploy-checklist.md).
 
-Fără chei API funcționează scena arhitecturală, inventarul, incidentele, solverul, ofertele și pagina mobilă. Interfața afișează **LOCAL SOLVER**. Comenzile în limbaj natural și vocea cer OpenAI; nu sunt înlocuite cu răspunsuri prestabilite.
+Pornirea implicită folosește `OPERATION_MODE=live`, cu inventar gol. Pentru demonstrația sintetică setează explicit `OPERATION_MODE=simulation` în configurația instanței. În acel mod, fără chei API funcționează scena arhitecturală, inventarul demonstrativ, incidentele, solverul, ofertele și pagina mobilă. Comenzile în limbaj natural și vocea cer OpenAI; nu sunt înlocuite cu răspunsuri prestabilite.
 
-## Scenariul inițial
+## Scenariul inițial în modul simulation
 
 - 180 de pasageri sintetici, în 72 de grupuri indivizibile.
 - F101 anulat: 120 de persoane trebuie să ajungă din Craiova la Luton.
@@ -164,6 +164,14 @@ curl --fail http://127.0.0.1:8080/api/ready
 ```
 
 Deschide http://localhost:8080. Portul este legat numai de loopback, iar API-ul este accesibil prin proxy. Datele SQLite sunt păstrate într-un volum. Oprire: `docker compose down` — fără `-v`, pentru a păstra starea.
+
+Simulatorul poate rula separat, cu propria bază de date, la **http://localhost:8081**:
+
+```bash
+docker compose -p airport-recovery-simulation -f compose.yaml -f compose.simulation.yaml up -d --build
+```
+
+Numele distinct al proiectului păstrează inventarul live separat de resetările și incidentele demonstrative. [Scenarii și vreme](docs/weather-and-new-scenes.md).
 
 Pentru un server cu domeniu și HTTPS:
 
