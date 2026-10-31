@@ -172,6 +172,9 @@ async def test_current_budget_is_preserved_not_restored_from_profile(hotel_comma
     "check in on 2026-11-04", "caută alternative pentru2noiembrie2026", "leave tomorrow",
     "pickup at 15:00", "preluare la ora cinci", "minimum rest eight hours", "check out later",
     "move the pickup", "check in on November 4", "checkout on Sunday",
+    "preluare în treizeci de minute", "preluare peste 30 de minute",
+    "minimum rest thirty minutes", "minimum rest sixty minutes",
+    "odihnă de șaizeci de minute", "odihnă de douăzeci de minute",
 ])
 @pytest.mark.asyncio
 async def test_unreported_extra_hotel_dates_or_times_cannot_be_silently_ignored(hotel_command_setup, extra):

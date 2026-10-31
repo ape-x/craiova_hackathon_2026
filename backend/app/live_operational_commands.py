@@ -14,7 +14,7 @@ from .airport_catalog import lookup_airport, match_airports
 from .hotel_recovery import HotelRecoveryInputs, REQUIRED_CALLS, validate_hotel_job
 from .hotel_recovery_profile import HotelRecoveryProfileError, read_hotel_recovery_profile
 from .live_commands import (
-    _NUMBERS, _read_reference_date, _reference_pattern, hotel_input_time_requested, literal_call_limit, mentioned,
+    _DURATION_NUMBERS, _read_reference_date, _reference_pattern, hotel_input_time_requested, literal_call_limit, mentioned,
     normalized, reference_date,
 )
 from .operational_reports import (
@@ -181,7 +181,7 @@ def _readiness(text, proposed, quote, command_received_at):
         rest = normalized(text[ready[-1].end():start] + text[start + len(reference):])
         if re.search(r"[0-9]{1,2}:[0-9]{2}|\b(?:in|peste)\s+(?:[+-]?[0-9]+|thirty|treizeci)\s+(?:de\s+)?(?:minutes?|minute)\b", rest):
             raise ValueError("multiple readiness times")
-        minute_words = {**_NUMBERS, "thirty": 30, "treizeci": 30, "sixty": 60, "saizeci": 60}
+        minute_words = _DURATION_NUMBERS
         duration = re.fullmatch(r"(?:in|peste)\s+([0-9]+|" + "|".join(re.escape(word) for word in sorted(minute_words, key=len, reverse=True)) + r")\s+(?:de\s+)?(?:minutes?|minute)", value)
         if duration:
             minutes = int(duration[1]) if duration[1].isascii() and duration[1].isdigit() else minute_words[duration[1]]
@@ -305,7 +305,7 @@ def route_operational_report(commands, request, world, interpreted):
     if raw is None:
         # A dropped report must not become a global event/plan for other groups.
         if (interpreted.get("events") or interpreted.get("strategies") or interpreted.get("recovery")) and re.search(
-            r"\b(?:arrived|readiness|unavailable|broken|sosit|ajuns|aterizat|indisponibil\w*|stricat\w*|defect\w*|(?:ready|gata|pregatiti)\s+(?:at|in|la|peste)|nu (?:mai )?(?:functioneaza|circula|poate functiona))\b", normalized(request.text)):
+            r"\b(?:arrived|readiness|unavailable|broken|sosit|ajuns|aterizat|indisponibil\w*|stricat\w*|defect\w*|(?:ready|gata|pregatit(?:a|i|e)?)\s+(?:at|in|la|peste)|nu (?:mai )?(?:functioneaza|circula|poate functiona))\b", normalized(request.text)):
             return commands._reply(request, world, "Cererea conține un posibil raport operațional, dar nu este identificat explicit. Repetă raportul cu serviciul sau cazul/grupurile și pregătirea exactă. Nu am aplicat schimbări ori planuri globale. Interpretarea a folosit 1 apel.")
         return None
     try:

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
 
-from app.hotel_recovery_profile import PROFILE_KEY, HotelRecoveryProfileError, read_hotel_recovery_profile
+from app.hotel_recovery_profile import PROFILE_KEY, HotelRecoveryProfileError, build_hotel_recovery_profile, read_hotel_recovery_profile
 from app.live_commands import LiveCommands
 from app.providers import AIProvider
 from app.providers.ai import Interpretation, LiveInterpretation
@@ -365,7 +365,13 @@ async def test_model_cannot_queue_negated_or_conditional_followup(operational_se
     assert_no_report(store, before, jobs)
 
 
-@pytest.mark.parametrize("claim", ["Q1 is unavailable", "G1 arrived at SBZ", "G1 at SBZ ready in 30 minutes"])
+@pytest.mark.parametrize("claim", [
+    "Q1 is unavailable", "G1 arrived at SBZ", "G1 at SBZ ready in 30 minutes",
+    "Grupurile G1 sunt pregătite în treizeci de minute",
+    "Pasagerii G1 sunt pregătiți în treizeci de minute",
+    "Grupul G1 este pregătit peste treizeci de minute",
+    "Persoana din G1 este pregătită în treizeci de minute",
+])
 @pytest.mark.asyncio
 async def test_dropped_report_cannot_dispatch_recovery_against_old_facts(operational_setup, claim):
     _, store, service, jobs, ai, _ = operational_setup
@@ -374,6 +380,56 @@ async def test_dropped_report_cannot_dispatch_recovery_against_old_facts(operati
     result = await service.command(request(store, claim + ". Recover RO321 for G1 with maximum 4 calls"))
     assert result["applied"] is False and "raport operațional" in result["explanation"]
     assert_no_report(store, before, jobs)
+
+
+@pytest.mark.parametrize("airport_reference", [None, "Le Havre", "LHR", "Heathrow"])
+@pytest.mark.asyncio
+async def test_recorded_wrong_airport_speech_cannot_recover_against_saved_lhr_facts(operational_setup, airport_reference):
+    _, store, service, jobs, ai, inputs = operational_setup
+
+    def matching_scope(world):
+        case = world.incidents[0]
+        case.requested_flight_number = "EK5"
+        case.date_utc = "2026-10-31"
+        case.group_ids = ["G1"]
+        world.groups[1].incident_id = None
+        group = world.groups[0]
+        group.original_flight_id = "EK5"
+        group.provenance[PROFILE_KEY] = build_hotel_recovery_profile(world, group, inputs)
+
+    store.mutate("recorded-airport-fixture", {}, store.read().version, matching_scope)
+    claim = "Presupune că toate grupurile cazului EK5 sunt la Le Havre și sunt pregătite în treizeci de minute"
+    followup = "Recalculează pentru toate grupurile cazului EK5 itinerarul complet salvat, cu hotel, ambele transferuri și zborul. Maxim unsprezece apeluri în total"
+    text = claim + ". " + followup
+    recovery = intent(modes=["flight", "hotel", "bus"], max_total_calls=11,
+        call_limit_reference="Maxim unsprezece apeluri în total")
+    report = (arrival(store, reference=claim, group_ids=[], all_linked_groups=True,
+        airport_code="LHR", airport_reference=airport_reference, ready_at=None,
+        ready_at_reference="în treizeci de minute") if airport_reference is not None else None)
+    set_report(ai, report, recovery)
+    before = store.read()
+    req = request(store, text)
+    result = await service.command(req)
+    assert result["applied"] is False and "report" not in result and "recovery_job" not in result
+    if airport_reference is None:
+        assert "raport operațional" in result["explanation"]
+    assert_no_report(store, before, jobs)
+    assert len(ai.calls) == 1 and ai.calls[0][0] == text
+    service.live_commands = LiveCommands(store, jobs)
+    replay = await service.command(req)
+    assert replay["replayed"] and replay["explanation"] == result["explanation"]
+    assert replay["applied"] is False and "report" not in replay and "recovery_job" not in replay
+    assert len(ai.calls) == 1
+    assert_no_report(store, before, jobs)
+
+    # The profile and whole-case scope are otherwise usable. Refusing the
+    # changed location must not disable an explicit ordinary saved-plan request.
+    set_report(ai, None, recovery)
+    valid = await service.command(request(store, followup, idempotency_key="ordinary-saved-hotel"))
+    assert valid["recovery_job"]["status"] == "queued"
+    assert valid["recovery_job"]["group_ids"] == ["G1"]
+    assert valid["recovery_job"]["max_provider_calls"] == 10
+    assert valid["recovery_job"]["calls_dispatched"] == 0
 
 
 @pytest.mark.asyncio

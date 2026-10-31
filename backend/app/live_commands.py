@@ -42,6 +42,10 @@ for _unit, _english, _romanian in ((1, "one", "unu"), (2, "two", "doua"), (3, "t
     _NUMBERS["douazeci si " + _romanian] = 20 + _unit
 _NUMBERS.update({"douazeci si un": 21, "douazeci si doi": 22})
 _COUNT = r"(\d+|" + "|".join(re.escape(word) for word in sorted(_NUMBERS, key=len, reverse=True)) + r")"
+# Readiness accepts durations beyond the spoken spending-limit vocabulary.
+# Share these words with its parser so saved hotel inputs cannot hide a time edit.
+_DURATION_NUMBERS = {**_NUMBERS, "thirty": 30, "treizeci": 30, "sixty": 60, "saizeci": 60}
+_DURATION_COUNT = r"(?:\d+|" + "|".join(re.escape(word) for word in sorted(_DURATION_NUMBERS, key=len, reverse=True)) + r")"
 _CALL_UNIT = r"\s*(?:de\s+)?(?:(?:api|provider|supplier|external|total)\s+){0,3}(?:calls?|apeluri|apel)\b"
 _CALL_LIMIT = re.compile(r"\b(?:maximum|maxim|max|at most|no more than|cel mult|limit(?:a)?)(?: to| of| de)?\s*" + _COUNT + _CALL_UNIT)
 _TRAILING_LIMIT = re.compile(r"\b" + _COUNT + _CALL_UNIT + r"\s+(?:maximum|maxim|max|in total|total|overall)\b")
@@ -163,7 +167,7 @@ def hotel_input_time_requested(text, identifiers):
         r"[0-9]{1,2}:[0-9]{2}",
         r"\b(?:tomorrow|today|yesterday|tonight|maine|poimaine|azi|astazi|ieri|diseara|weekend|week|saptamana|monday|tuesday|wednesday|thursday|friday|saturday|sunday|luni|marti|miercuri|joi|vineri|sambata|duminica)\b",
         r"\b(?:at|by|after|before|la|dupa|inainte de|pana la)\s*(?:ora\s*)?" + _COUNT + r"\b",
-        r"\b" + _COUNT + r"\s*(?:minutes?|hours?|days?|nights?|minute|ore|zile|nopti)\b",
+        r"\b" + _DURATION_COUNT + r"\s*(?:de\s+)?(?:minutes?|hours?|days?|nights?|minute|ore|zile|nopti)\b",
         r"\b(?:check.?in|check.?out|pickup|preluare)\s*(?:at|la)?\s*" + _COUNT + r"\b",
         r"\b(?:earlier|later|early|late|mai devreme|mai tarziu)\b",
         r"\b(?:change|move|shift|delay|advance|schimba|schimb|muta|aman|devanseaza|modifica)\b.{0,50}\b(?:date|time|data|ora|check.?in|check.?out|pickup|preluare)\b",
