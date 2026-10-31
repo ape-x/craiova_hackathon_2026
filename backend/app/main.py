@@ -313,6 +313,10 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     def accept(offer_id: str,body: AcceptRequest):
         return service.accept(offer_id,body)
 
+    @app.post("/api/offers/{offer_id}/decline")
+    def decline(offer_id: str,body: AcceptRequest):
+        return service.decline(offer_id,body.token,body.idempotency_key)
+
     @app.post("/api/voice/session",dependencies=[Depends(operator)])
     async def voice_session(body: VoiceRequest):
         return await voice.create(body.sdp)

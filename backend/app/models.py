@@ -84,7 +84,7 @@ class Offer(Model):
     id: str
     group_id: str
     itinerary: Itinerary
-    status: Literal["held", "confirmed", "expired", "invalidated", "superseded"]
+    status: Literal["held", "confirmed", "declined", "expired", "invalidated", "superseded"]
     expires_at: str
     created_version: int
     confirmed_at: str | None = None

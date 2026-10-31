@@ -109,6 +109,16 @@ function StaticAirport() {
     <>
       <primitive object={model} />
       <BuildingSign />
+      {[-72, 0, 72].map((x) => (
+        <pointLight
+          key={x}
+          position={[x, 3.7, 88]}
+          color="#f5d5a1"
+          intensity={55}
+          distance={30}
+          decay={2}
+        />
+      ))}
     </>
   );
 }
@@ -485,8 +495,8 @@ function CameraRig({
   const lastReset = useRef(reset);
   useEffect(() => {
     const narrow = Math.max(1, 1.4 / (size.width / size.height));
-    let target: Vec = [-8, 3, 30],
-      position: Vec = [190 * narrow, 190 * narrow, 265 * narrow];
+    let target: Vec = [-8, 3, 12],
+      position: Vec = [210 * narrow, 205 * narrow, 292 * narrow];
     if (mode === 'region') {
       target = [0, 0, -5];
       position = [25 * narrow, 300 * narrow, 300 * narrow];
@@ -660,7 +670,7 @@ export default function Scene(props: SceneProps) {
             frameloop="demand"
             shadows
             dpr={[1, 1.7]}
-            camera={{ position: [190, 190, 265], fov: 40, near: 0.5, far: 2500 }}
+            camera={{ position: [210, 205, 292], fov: 40, near: 0.5, far: 2500 }}
             gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
             onCreated={({ gl }) => {
               gl.setClearColor('#17262d');

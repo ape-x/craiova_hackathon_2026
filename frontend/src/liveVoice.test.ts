@@ -307,6 +307,144 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
     await end(client, channel);
   });
 
+  it('retains a delegation when its transcript arrives after the old 250ms deadline', async () => {
+    const { client, channel, onDelegation } = await connected();
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'late-text', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(onDelegation).not.toHaveBeenCalled();
+    expect(channel.sent.filter((event) => event.type === 'session.commentary.append')).toHaveLength(
+      0,
+    );
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Arată autocarul B12.',
+      start_ms: 0,
+      end_ms: 900,
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        text: 'Arată autocarul B12.',
+        delegationId: 'live_test:late-text',
+      }),
+    );
+    await end(client, channel);
+  });
+
+  it('retires an expired turn so its late words never join a later complete command', async () => {
+    const { client, channel, onDelegation } = await connected();
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'expired-text', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(onDelegation).not.toHaveBeenCalled();
+    expect(
+      channel.sent.find((event) => event.type === 'session.commentary.append')?.content,
+    ).toContain('nu am modificat simulatorul');
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Anulează zborul F101. ',
+      start_ms: 0,
+      end_ms: 900,
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Arată autocarul B12.',
+      start_ms: 1100,
+      end_ms: 1900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'new-complete-text', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ text: 'Arată autocarul B12.' }),
+    );
+    await end(client, channel);
+  });
+
+  it('keeps queued command windows separate even when an earlier command is still running', async () => {
+    const result = deferred<string>();
+    const onDelegation = vi
+      .fn()
+      .mockReturnValueOnce(result.promise)
+      .mockResolvedValue('Noua cerere verificată.');
+    const { client, channel } = await connected({ onDelegation });
+    command(channel);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledOnce();
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: ' Fragment vechi întârziat.',
+      start_ms: 800,
+      end_ms: 950,
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Arată aeroportul OTP.',
+      start_ms: 1100,
+      end_ms: 1900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'queued-command', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(onDelegation).toHaveBeenCalledOnce();
+    result.resolve('Prima cerere verificată.');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
+    expect(onDelegation).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ text: 'Arată aeroportul OTP.' }),
+    );
+    await end(client, channel);
+  });
+
+  it('never executes a delegation with missing or backwards transcript boundaries', async () => {
+    const { client, channel, onDelegation } = await connected();
+    command(channel);
+    await vi.advanceTimersByTimeAsync(250);
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Arată aeroportul OTP.',
+      start_ms: 1100,
+      end_ms: 1900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      delegation: { id: 'missing-offset', target: 'client' },
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 900,
+      delegation: { id: 'old-offset', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledOnce();
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'valid-offset', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
+    expect(onDelegation).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ text: 'Arată aeroportul OTP.' }),
+    );
+    await end(client, channel);
+  });
+
   it('bounds Unicode commentary conservatively below the 500-token append limit without splitting code points', async () => {
     const { client, channel } = await connected({ onDelegation: async () => '🛬ș漢'.repeat(300) });
     command(channel);

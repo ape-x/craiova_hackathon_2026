@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Accessibility,
   ArrowRight,
@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react';
-import { ApiError, formatCost, formatTime, key, request } from './api';
+import { ApiError, TransportError, formatCost, formatTime, key, request } from './api';
 import type { Airport, Offer, PassengerGroup, Resource } from './types';
 import { Brand, Dot, Tag } from './ui';
 import { ItineraryView } from './Inspector';
@@ -27,27 +27,46 @@ interface PassengerState {
   simulated: boolean;
   currency: string;
 }
+type OfferAction = 'accept' | 'decline';
+interface OfferResult {
+  offer: Offer;
+  version: number;
+}
+interface UncertainOfferAction {
+  offerId: string;
+  action: OfferAction;
+  error: TransportError;
+}
+function readPassengerToken() {
+  try {
+    return decodeURIComponent(location.hash.slice(1));
+  } catch {
+    return '';
+  }
+}
+function subscribePassengerToken(changed: () => void) {
+  window.addEventListener('hashchange', changed);
+  return () => window.removeEventListener('hashchange', changed);
+}
 export default function Passenger() {
-  const token = (() => {
-    try {
-      return decodeURIComponent(location.hash.slice(1));
-    } catch {
-      return '';
-    }
-  })();
+  const token = useSyncExternalStore(subscribePassengerToken, readPassengerToken);
+  // A new boarding link owns fresh state, timers and pending actions. Never
+  // display the previous family's offer while another token is loading.
+  return <PassengerJourney key={token} token={token} />;
+}
+function PassengerJourney({ token }: { token: string }) {
   const [state, setState] = useState<PassengerState | null>(null);
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<OfferAction | null>(null);
+  const [uncertain, setUncertain] = useState<UncertainOfferAction | null>(null);
   const [editing, setEditing] = useState(false);
   const [deadline, setDeadline] = useState('22:00');
   const [accessible, setAccessible] = useState(false);
   const [deadlineDay, setDeadlineDay] = useState(0);
   const [now, setNow] = useState(Date.now());
-  const acceptKey = useRef(key());
-  useEffect(() => {
-    acceptKey.current = key();
-  }, [state?.offer?.id]);
+  const offerKeys = useRef(new Map<string, string>());
   const refresh = useCallback(async () => {
     if (!token)
       throw new Error(
@@ -96,6 +115,66 @@ export default function Passenger() {
   const offer = state?.offer;
   const seconds = offer ? Math.max(0, Math.ceil((Date.parse(offer.expires_at) - now) / 1000)) : 0;
   const confirmed = offer?.status === 'confirmed';
+  const declined = !offer && state?.last_offer?.status === 'declined';
+  useEffect(() => {
+    if (
+      uncertain &&
+      state &&
+      (state.offer?.id !== uncertain.offerId || state.offer.status !== 'held')
+    ) {
+      setUncertain(null);
+      setError('');
+    }
+  }, [state, uncertain]);
+  async function answerOffer(action: OfferAction, retry?: UncertainOfferAction) {
+    const offerId = retry?.offerId ?? offer?.id;
+    if (!offerId || busy) return;
+    const identity = `${action}:${offerId}`;
+    let idempotencyKey = offerKeys.current.get(identity);
+    if (!idempotencyKey) {
+      idempotencyKey = key();
+      offerKeys.current.set(identity, idempotencyKey);
+    }
+    setBusy(true);
+    setBusyAction(action);
+    setError('');
+    try {
+      const result = retry
+        ? await retry.error.retry<OfferResult>()
+        : await request<OfferResult>(`/offers/${encodeURIComponent(offerId)}/${action}`, {
+            token,
+            idempotency_key: idempotencyKey,
+          });
+      setUncertain(null);
+      // Reflect the acknowledged transaction immediately even if the following
+      // refresh loses its connection. A newer polled version always wins.
+      setState((previous) =>
+        previous && previous.version <= result.version
+          ? {
+              ...previous,
+              version: result.version,
+              offer: result.offer.status === 'confirmed' ? result.offer : null,
+              last_offer: result.offer,
+              group: {
+                ...previous.group,
+                status: result.offer.status === 'confirmed' ? 'confirmed' : 'waiting',
+              },
+            }
+          : previous,
+      );
+      await refresh().catch(() =>
+        setLoadError('Your answer was saved. Reconnecting to refresh your journey.'),
+      );
+    } catch (cause) {
+      if (cause instanceof TransportError) setUncertain({ offerId, action, error: cause });
+      else setUncertain(null);
+      setError(cause instanceof Error ? cause.message : 'Could not save your answer');
+      await refresh().catch(() => {});
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }
   return (
     <main className="passenger-page">
       <header>
@@ -126,7 +205,9 @@ export default function Passenger() {
                   ? 'You’re all set.'
                   : offer
                     ? 'A new way forward.'
-                    : 'We’re finding your way.'}
+                    : declined
+                      ? 'Let’s find another way.'
+                      : 'We’re finding your way.'}
               </h1>
               <p>
                 {state.group.name} <span>·</span> {state.group.size} passengers
@@ -156,7 +237,7 @@ export default function Passenger() {
               </div>
             </div>
             <section className={`boarding-card ${confirmed ? 'confirmed' : ''}`}>
-              <div className="boarding-card-heading">
+              <div className="boarding-card-heading" aria-live="polite">
                 {confirmed ? (
                   <CheckCircle2 size={20} />
                 ) : offer ? (
@@ -170,16 +251,20 @@ export default function Passenger() {
                       ? 'Your itinerary is confirmed'
                       : offer
                         ? 'Your recovery offer'
-                        : state.last_offer?.status === 'invalidated'
-                          ? 'Your previous journey was affected'
-                          : 'Recovery in progress'}
+                        : declined
+                          ? 'Offer declined'
+                          : state.last_offer?.status === 'invalidated'
+                            ? 'Your previous journey was affected'
+                            : 'Recovery in progress'}
                   </h2>
                   <span>
                     {confirmed
                       ? 'All segments secured together in the simulation'
                       : offer
                         ? 'All resources held while you decide'
-                        : 'The operations team is recalculating your options'}
+                        : declined
+                          ? 'Your held seats and rooms have been released'
+                          : 'The operations team is recalculating your options'}
                   </span>
                 </div>
               </div>
@@ -215,31 +300,28 @@ export default function Passenger() {
                       </div>
                       <button
                         className="accept-offer"
-                        disabled={busy || seconds <= 0}
-                        onClick={async () => {
-                          setBusy(true);
-                          setError('');
-                          try {
-                            await request(`/offers/${encodeURIComponent(offer.id)}/accept`, {
-                              token,
-                              idempotency_key: acceptKey.current,
-                            });
-                            await refresh();
-                          } catch (cause) {
-                            await refresh().catch(() => {});
-                            setError(
-                              cause instanceof Error
-                                ? cause.message
-                                : 'Could not confirm the itinerary',
-                            );
-                          } finally {
-                            setBusy(false);
-                          }
-                        }}
+                        disabled={busy || seconds <= 0 || Boolean(uncertain)}
+                        onClick={() => void answerOffer('accept')}
                       >
-                        {busy ? <Loader2 size={18} className="spin" /> : <Check size={18} />} Accept
-                        this itinerary
+                        {busyAction === 'accept' ? (
+                          <Loader2 size={18} className="spin" />
+                        ) : (
+                          <Check size={18} />
+                        )}{' '}
+                        Accept this itinerary
                       </button>
+                      <button
+                        className="decline-offer"
+                        disabled={busy || seconds <= 0 || Boolean(uncertain)}
+                        onClick={() => void answerOffer('decline')}
+                      >
+                        {busyAction === 'decline' && <Loader2 size={16} className="spin" />}
+                        Decline this offer
+                      </button>
+                      <p className="decline-offer-hint">
+                        Declining releases every held segment for your group. You can update your
+                        needs while the team finds another option.
+                      </p>
                     </>
                   )}
                 </>
@@ -262,6 +344,16 @@ export default function Passenger() {
               <p className="form-error" role="alert">
                 {loadError || error}
               </p>
+            )}
+            {uncertain && (
+              <button
+                className="retry-offer"
+                disabled={busy}
+                onClick={() => void answerOffer(uncertain.action, uncertain)}
+              >
+                <RefreshCw size={16} className={busy ? 'spin' : ''} />
+                {uncertain.action === 'accept' ? 'Retry confirmation' : 'Retry decline'}
+              </button>
             )}
             <button
               className="passenger-preferences"
@@ -294,7 +386,6 @@ export default function Passenger() {
                     });
                     await refresh();
                     setEditing(false);
-                    acceptKey.current = key();
                   } catch (cause) {
                     setError(
                       cause instanceof Error ? cause.message : 'Could not update preferences',
@@ -339,7 +430,7 @@ export default function Passenger() {
                   A change withdraws an incompatible offer and asks the operator to replan your
                   journey.
                 </p>
-                <button className="primary-button" disabled={busy}>
+                <button className="primary-button" disabled={busy || Boolean(uncertain)}>
                   Save requirements
                   <ArrowRight size={14} />
                 </button>

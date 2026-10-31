@@ -86,6 +86,10 @@ def apply_change(world: World,event: ScenarioChange):
         airport.available=False
         for r in world.resources:
             if r.kind=="flight" and airport.id in (r.origin,r.destination):
+                # An airport closing after takeoff cannot undo that departure.
+                # Its airborne outbound flight remains subject to arrival closures.
+                if r.origin==airport.id and r.destination!=airport.id and r.departure<=world.sim_time<r.arrival and (r.available or r.status=="needs_diversion"):
+                    continue
                 airborne=r.destination==airport.id and r.departure<=world.sim_time<r.arrival and r.available
                 pending=r.status=="needs_diversion"
                 r.available=False
@@ -342,6 +346,30 @@ class RecoveryService:
             return {"offer":offer.model_dump(mode="json")}
         result=self.store.mutate(key,payload,None,confirm,authorize=authorize)
         # Never expose operator world or other passenger records in this response.
+        return {"offer":result["offer"],"version":result["world"]["version"],"replayed":result["replayed"],"simulated":True}
+
+    def decline(self,offer_id: str,token: str,idempotency_key: str):
+        payload={"offer_id":offer_id,"token":token,"idempotency_key":idempotency_key}
+        key="decline:"+Store.fingerprint(token)+":"+idempotency_key
+        def authorize(world):
+            offer=lookup(world.offers,offer_id,"offer")
+            group=lookup(world.groups,offer.group_id,"group")
+            if not secrets.compare_digest(group.token.encode(),token.encode()):
+                raise DomainError(403,"This passenger token cannot decline that offer")
+        def release(world):
+            offer=lookup(world.offers,offer_id,"offer")
+            if offer.status!="held":
+                raise DomainError(409,"Only a held offer can be declined",{"status":offer.status})
+            group=lookup(world.groups,offer.group_id,"group")
+            for reservation in world.reservations:
+                if reservation.offer_id==offer.id:
+                    reservation.status="released"
+            offer.status="declined"
+            offer.reason="Passenger declined this offer; every held segment was released."
+            group.status="waiting"
+            audit(world,"offer_declined",f"{group.name}: offer declined; every held segment released atomically.",offer.id,{"group_id":group.id})
+            return {"offer":offer.model_dump(mode="json")}
+        result=self.store.mutate(key,payload,None,release,authorize=authorize)
         return {"offer":result["offer"],"version":result["world"]["version"],"replayed":result["replayed"],"simulated":True}
 
     def passenger(self,token):

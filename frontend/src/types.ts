@@ -59,7 +59,7 @@ export interface Offer {
   id: string;
   group_id: string;
   itinerary: Itinerary;
-  status: 'held' | 'confirmed' | 'expired' | 'invalidated' | 'superseded';
+  status: 'held' | 'confirmed' | 'expired' | 'invalidated' | 'superseded' | 'declined';
   expires_at: string;
   created_version: number;
   confirmed_at: string | null;

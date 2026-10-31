@@ -70,8 +70,8 @@
     },
     "terminal": {
       "url": "/scene/models/terminal.glb",
-      "bytes": 934344,
-      "sha256": "73e71490b8b8e59e45f31d1dcdb10e46f1ad9918dcfc54f3d5525bd64647c977",
+      "bytes": 1048676,
+      "sha256": "604dea49dfff667a467442157455aa2531eabe8ca231259ec7b91277790991e7",
       "bounds": {
         "min": [
           -110,
@@ -81,15 +81,15 @@
         "max": [
           110,
           20.299999237060547,
-          48
+          48.07500076293945
         ]
       },
       "dimensions": {
         "width": 220,
         "height": 20.299999237060547,
-        "length": 118.96499633789062
+        "length": 119.03999710083008
       },
-      "meshCount": 44,
+      "meshCount": 48,
       "extensions": [],
       "nativeAnchor": [
         0,

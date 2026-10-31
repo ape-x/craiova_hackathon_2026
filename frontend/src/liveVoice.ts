@@ -16,7 +16,8 @@ export interface LiveVoiceOptions {
   onEvent?: (event: Record<string, unknown>) => void;
 }
 
-type Fragment = { text: string; start: number; end: number };
+type Fragment = { text: string; start: number; end: number; receivedAt: number };
+type DelegationWindow = { start: number; end: number };
 
 /** Context appends allow 500 tokens. A smaller UTF-8 byte budget is a
  * conservative bound without shipping a tokenizer or guessing chars/token.
@@ -54,7 +55,7 @@ export class LiveVoiceClient {
   private handshakeTimer?: ReturnType<typeof setTimeout>;
   private closeTimer?: ReturnType<typeof setTimeout>;
   private fragments: Fragment[] = [];
-  private consumedUntil = -1;
+  private delegatedThrough = -1;
   private transcript = { user: '', assistant: '' };
   private seenDelegations = new Set<string>();
   private seenEvents = new Set<string>();
@@ -78,7 +79,7 @@ export class LiveVoiceClient {
     this.finalized = false;
     this.closing = false;
     this.fragments = [];
-    this.consumedUntil = -1;
+    this.delegatedThrough = -1;
     this.transcript = { user: '', assistant: '' };
     this.seenDelegations.clear();
     this.seenEvents.clear();
@@ -280,8 +281,19 @@ export class LiveVoiceClient {
       if (typeof event.delta !== 'string') return;
       this.transcript[role] = (this.transcript[role] + event.delta).slice(-6000);
       this.options.onTranscript(this.transcript[role], role);
-      if (role === 'user' && Number.isFinite(event.start_ms) && Number.isFinite(event.end_ms)) {
-        this.fragments.push({ text: event.delta, start: event.start_ms, end: event.end_ms });
+      if (
+        role === 'user' &&
+        Number.isFinite(event.start_ms) &&
+        Number.isFinite(event.end_ms) &&
+        event.start_ms >= 0 &&
+        event.end_ms >= event.start_ms
+      ) {
+        this.fragments.push({
+          text: event.delta,
+          start: event.start_ms,
+          end: event.end_ms,
+          receivedAt: Date.now(),
+        });
         this.fragments = this.fragments.slice(-200);
       }
     } else if (
@@ -289,12 +301,30 @@ export class LiveVoiceClient {
       event.delegation?.target === 'client'
     ) {
       const id = event.delegation.id;
-      if (typeof id !== 'string' || this.seenDelegations.has(id) || this.closing) return;
+      if (typeof id !== 'string' || !id || this.seenDelegations.has(id) || this.closing) return;
       this.seenDelegations.add(id);
+      // Reserve the window immediately, before earlier queued work finishes.
+      // Retiring it does not depend on receiving text or successfully executing
+      // a command: late words from a timed-out turn must never be replayed.
+      if (
+        !Number.isSafeInteger(event.offset_ms) ||
+        event.offset_ms < 0 ||
+        event.offset_ms <= this.delegatedThrough
+      ) {
+        this.send({
+          type: 'session.commentary.append',
+          event_id: crypto.randomUUID(),
+          delegation_id: id,
+          content:
+            'Nu pot delimita sigur această cerere vocală. Te rog repetă explicit comanda; nu am modificat simulatorul.',
+        });
+        return;
+      }
+      const window = { start: this.delegatedThrough, end: event.offset_ms };
+      this.delegatedThrough = window.end;
       const generation = this.generation;
-      const offset = Number.isFinite(event.offset_ms) ? event.offset_ms : Infinity;
       this.delegationQueue = this.delegationQueue
-        .then(() => this.delegate(id, offset, generation))
+        .then(() => this.delegate(id, window, generation))
         .catch(() => {
           if (generation === this.generation)
             this.fail('Procesarea comenzii vocale a eșuat; sesiunea a fost oprită.');
@@ -302,7 +332,29 @@ export class LiveVoiceClient {
     }
   }
 
-  private async delegate(id: string, offset: number, generation: number): Promise<void> {
+  private async waitForTranscript(
+    window: DelegationWindow,
+    generation: number,
+  ): Promise<Fragment[]> {
+    const deadline = Date.now() + 2000;
+    // GPT-Live has no transcript item ID or turn-complete event. Timeline
+    // windows plus a bounded settling period are a grouping heuristic, not
+    // proof an utterance is complete. Ambiguous requests still need clarification.
+    // https://developers.openai.com/api/docs/guides/live-conversations
+    while (generation === this.generation && !this.closing) {
+      const now = Date.now();
+      const relevant = this.fragments.filter(
+        (part) => part.start >= window.start && part.start < window.end,
+      );
+      const lastArrival = Math.max(...relevant.map((part) => part.receivedAt));
+      if (relevant.length && now - lastArrival >= 250) return relevant;
+      if (now >= deadline) return [];
+      await new Promise((resolve) => setTimeout(resolve, Math.min(50, deadline - now)));
+    }
+    return [];
+  }
+
+  private async delegate(id: string, window: DelegationWindow, generation: number): Promise<void> {
     if (generation !== this.generation || this.closing) return;
     this.send({
       type: 'session.thinking.append',
@@ -310,23 +362,19 @@ export class LiveVoiceClient {
       delegation_id: id,
       content: 'Cererea este verificată în simulator. Încă nu există un rezultat confirmat.',
     });
-    // Transcripts and delegation are distinct events; allow queued fragments to
-    // arrive, but execute only once for this delegation, never for each delta.
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    // A delegation may arrive before its transcript. Wait for that turn only,
+    // never borrow later speech to complete an older operational command.
+    const relevant = await this.waitForTranscript(window, generation);
     if (generation !== this.generation || this.closing) return;
-    const relevant = this.fragments.filter(
-      (part) => part.end > this.consumedUntil && part.start <= offset,
-    );
     const text = relevant
       .map((part) => part.text)
       .join('')
       .trim();
     const context = this.fragments
-      .filter((part) => part.end <= this.consumedUntil)
+      .filter((part) => part.end <= window.start)
       .map((part) => part.text)
       .join('')
       .slice(-2000);
-    if (relevant.length) this.consumedUntil = Math.max(...relevant.map((part) => part.end));
     if (!text) {
       this.send({
         type: 'session.commentary.append',

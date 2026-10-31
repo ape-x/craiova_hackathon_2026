@@ -17,6 +17,7 @@ Working contract; backend owns the authoritative typed schema and reports adjust
 - POST /api/commands — text, expected_version, idempotency_key; AI parse and plan when configured, explicit 503 otherwise
 - POST /api/replan — expected_version, idempotency_key, mode: ai | solver; solver mode visibly marked deterministic
 - POST /api/offers/{offer_id}/accept — passenger-scoped token and idempotency_key
+- POST /api/offers/{offer_id}/decline — same passenger-scoped credentials; held offers only; releases all segments atomically and sets the group waiting
 - GET /api/passenger/{token} — only that group's offer and itinerary
 - POST /api/passenger/{token}/constraints — deadline / accessible / budget changes, invalidates impacted offer
 - POST /api/reset — fresh seeded scenario; demo operator action
