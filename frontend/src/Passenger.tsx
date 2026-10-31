@@ -14,6 +14,7 @@ import { ApiError, TransportError, formatCost, formatTime, key, request } from '
 import type { Airport, Offer, PassengerGroup, Resource } from './types';
 import { Brand, Dot, Tag } from './ui';
 import { ItineraryView } from './Inspector';
+import ThemeToggle from './ThemeToggle';
 
 interface PassengerState {
   version: number;
@@ -179,7 +180,10 @@ function PassengerJourney({ token }: { token: string }) {
     <main className="passenger-page">
       <header>
         <Brand compact />
-        <Tag tone="amber">SIMULATION</Tag>
+        <div className="passenger-header-actions">
+          <Tag tone="amber">SIMULATION</Tag>
+          <ThemeToggle />
+        </div>
       </header>
       <div className="passenger-content">
         {!state ? (

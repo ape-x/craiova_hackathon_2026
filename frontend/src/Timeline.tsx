@@ -35,7 +35,7 @@ export default function Timeline({
     <section className="timeline" aria-label="Resource schedule">
       <div className="timeline-top">
         <span className="section-label">
-          Resource schedule <b>·</b> <span className="muted">SIMULATION</span>
+          Resource schedule <span className="muted">Scenario time</span>
         </span>
         <div>
           <button

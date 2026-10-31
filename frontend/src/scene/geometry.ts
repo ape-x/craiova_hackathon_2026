@@ -11,10 +11,10 @@ export { gates, busSpots } from './layout.ts';
 
 // All geometry in this file is authored for the simulation, not a surveyed airport.
 export const PALETTE = {
-  cyan: '#5fd9ed',
-  mint: '#89e3c1',
-  amber: '#f5b75f',
-  red: '#ff7368',
+  cyan: '#3f839a',
+  mint: '#3d7d59',
+  amber: '#bc8a43',
+  red: '#c06459',
   glass: '#233d45',
   white: '#c6cdd1',
 };

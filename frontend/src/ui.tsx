@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { Route, X } from 'lucide-react';
 export function Dot({ tone = 'mint' }: { tone?: string }) {
   return <span className={`status-dot ${tone}`} aria-hidden="true" />;
 }
@@ -19,12 +19,17 @@ export function Modal({
   wide?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     const last = document.activeElement as HTMLElement | null;
-    panel.current?.querySelector<HTMLElement>('button, input, select')?.focus();
+    const initial =
+      panel.current?.querySelector<HTMLElement>('[data-autofocus]') ??
+      panel.current?.querySelector<HTMLElement>('button, input, select');
+    initial?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onClose();
+        closeRef.current();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -47,7 +52,7 @@ export function Modal({
       window.removeEventListener('keydown', onKey);
       last?.focus();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div
       className="modal-backdrop"
@@ -76,23 +81,15 @@ export function Modal({
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className="brand">
-      <svg viewBox="0 0 40 40" aria-hidden="true">
-        <path
-          d="M5 32 20 7l7 12-7 12h15l-8-12"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <span className="brand-symbol">
+        <Route size={20} strokeWidth={1.8} />
+      </span>
       <div>
-        <span className="brand-eyebrow">AIRPORT</span>
         <span className="brand-name">
-          RECOVERY <b>LIVE</b>
+          Recovery<span className="brand-live">live</span>
         </span>
+        {!compact && <span className="brand-eyebrow">Airport operations</span>}
       </div>
-      {!compact && <span className="brand-version">01</span>}
     </div>
   );
 }

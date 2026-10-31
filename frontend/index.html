@@ -1,2 +1,46 @@
 <!doctype html>
-<html lang="ro"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="theme-color" content="#0d171f"/><meta name="description" content="Airport Recovery Live — centru operațional 3D pentru simularea și rezolvarea incidentelor aeroportuare."/><link rel="icon" href="/icon.svg" type="image/svg+xml"/><title>Recovery Live · Craiova Operations</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta name="theme-color" content="#f8f8f8" />
+    <meta
+      name="description"
+      content="A clear view of airport recovery. Explore the network, simulate changes and find a validated journey for every passenger."
+    />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <title>Recovery Live · Craiova Operations</title>
+    <style>
+      /* Match the loading canvas before the application stylesheet arrives. */
+      html {
+        background: #f8f8f8;
+      }
+      html[data-theme='dark'] {
+        background: #171717;
+        color-scheme: dark;
+      }
+    </style>
+    <script>
+      // Apply the saved appearance before the first paint, including boarding links.
+      (() => {
+        let saved;
+        try {
+          saved = localStorage.getItem('recovery-theme');
+        } catch {}
+        const theme =
+          saved === 'light' || saved === 'dark'
+            ? saved
+            : matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light';
+        document.documentElement.dataset.theme = theme;
+        document.querySelector('meta[name="theme-color"]').content =
+          theme === 'dark' ? '#171717' : '#f8f8f8';
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

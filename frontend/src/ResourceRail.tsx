@@ -34,7 +34,7 @@ export default function ResourceRail({
   onMode: (mode: SceneMode) => void;
   onScenario: () => void;
 }) {
-  const [tab, setTab] = useState<ResourceKind | 'groups'>('bus');
+  const [tab, setTab] = useState<ResourceKind | 'groups'>('flight');
   const [query, setQuery] = useState('');
   const search = useDeferredValue(query.toLowerCase());
   const resources = world.resources.filter(
@@ -52,7 +52,7 @@ export default function ResourceRail({
   return (
     <aside className="resource-rail" aria-label="Resources">
       <div className="rail-title">
-        <h2>Resources</h2>
+        <h2>Your network</h2>
         <button
           className="icon-button"
           title="Change scenario conditions"
@@ -64,7 +64,11 @@ export default function ResourceRail({
       </div>
       <div className="airports-list">
         {world.airports
-          .filter((airport) => ['CRA', 'OTP', 'SBZ'].includes(airport.code))
+          .filter((airport) =>
+            world.resources.some(
+              (resource) => resource.origin === airport.id || resource.destination === airport.id,
+            ),
+          )
           .map((airport) => (
             <button
               key={airport.id}
@@ -77,26 +81,17 @@ export default function ResourceRail({
               <Plane size={17} className={!airport.available ? 'text-red' : ''} />
               <span>
                 <strong>{airport.code}</strong>
-                <span className="muted">
-                  {' '}
-                  /{' '}
-                  {airport.code === 'CRA'
-                    ? 'Craiova'
-                    : airport.code === 'OTP'
-                      ? 'Bucharest'
-                      : 'Sibiu'}
-                </span>
+                <span className="muted"> / {airport.name}</span>
               </span>
               {airport.available ? <ChevronRight size={14} /> : <Dot tone="red" />}
             </button>
           ))}
       </div>
-      <div className="resource-tabs" role="tablist" aria-label="Resource type">
+      <div className="resource-tabs" role="group" aria-label="Resource type">
         {tabs.map(({ id, name, Icon }) => (
           <button
             key={id}
-            role="tab"
-            aria-selected={tab === id}
+            aria-pressed={tab === id}
             title={name}
             aria-label={name}
             className={tab === id ? 'active' : ''}
@@ -105,7 +100,8 @@ export default function ResourceRail({
               setQuery('');
             }}
           >
-            <Icon size={19} />
+            <Icon size={16} />
+            <span>{name}</span>
           </button>
         ))}
       </div>
@@ -117,7 +113,6 @@ export default function ResourceRail({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <kbd>/</kbd>
       </div>
       <div className="rail-scroll">
         <div className="section-label">
@@ -149,7 +144,8 @@ export default function ResourceRail({
                 <span className="resource-name">
                   <strong>{group.name}</strong>
                   <small>
-                    {group.id} · {group.size} passengers · {group.destination}
+                    {group.id} · {group.size} {group.size === 1 ? 'passenger' : 'passengers'} ·{' '}
+                    {group.destination}
                   </small>
                 </span>
                 {group.accessible ? (

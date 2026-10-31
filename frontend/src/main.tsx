@@ -25,7 +25,9 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
         <img src="/icon.svg" width="48" alt="" />
         <h1>Recovery Live needs to reconnect</h1>
         <p>The last confirmed state is preserved on the server.</p>
-        <button onClick={() => location.reload()}>Reload operations</button>
+        <button className="primary-button" onClick={() => location.reload()}>
+          Reload operations
+        </button>
       </main>
     ) : (
       this.props.children

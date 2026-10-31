@@ -1,5 +1,4 @@
 import { useEffect, useMemo } from 'react';
-import { useLoader } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import * as THREE from 'three';
 import type { World } from '../types';
@@ -58,9 +57,9 @@ function makeTerrain() {
     p.setY(i, y);
     const forest = noise(x * 0.04, z * 0.04);
     const c = new THREE.Color().setRGB(
-      0.075 + y * 0.006 + forest * 0.035,
-      0.12 + y * 0.005 + forest * 0.035,
-      0.1 + y * 0.006 + forest * 0.03,
+      0.59 + y * 0.002 + forest * 0.025,
+      0.68 + y * 0.002 + forest * 0.025,
+      0.75 + y * 0.002 + forest * 0.025,
     );
     colors.push(c.r, c.g, c.b);
   }
@@ -142,32 +141,24 @@ export default function Region({
   world,
   selectedId,
   onSelect,
+  dark,
 }: {
   world: World;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  dark: boolean;
 }) {
   const terrain = useMemo(makeTerrain, []);
   const contours = useMemo(makeContours, []),
     urban = useMemo(makeUrbanRoads, []);
-  const sourceTexture = useLoader(THREE.TextureLoader, '/scene/aerial_grass_rock.jpg');
-  const terrainTexture = useMemo(() => {
-    const t = sourceTexture.clone();
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(14, 12);
-    t.anisotropy = 8;
-    return t;
-  }, [sourceTexture]);
   const plane = useMemo(() => makeAircraft(PALETTE.cyan), []);
   useEffect(
     () => () => {
       terrain.dispose();
-      terrainTexture.dispose();
       contours.dispose();
       urban.dispose();
     },
-    [terrain, terrainTexture, contours, urban],
+    [terrain, contours, urban],
   );
   useSceneAsset(plane);
   const projection = useMemo(() => buildNetworkProjection(world.airports), [world.airports]);
@@ -218,16 +209,16 @@ export default function Region({
           <mesh geometry={terrain} receiveShadow>
             <meshStandardMaterial
               vertexColors
-              map={terrainTexture}
+              color={dark ? '#344b62' : '#ffffff'}
               roughness={1}
               envMapIntensity={0}
             />
           </mesh>
           <lineSegments geometry={contours}>
-            <lineBasicMaterial color="#94b7a8" transparent opacity={0.14} />
+            <lineBasicMaterial color={dark ? '#566c80' : '#8d9dab'} transparent opacity={0.45} />
           </lineSegments>
           <lineSegments geometry={urban}>
-            <lineBasicMaterial color="#b4b8a3" transparent opacity={0.36} />
+            <lineBasicMaterial color={dark ? '#617c91' : '#a5b3bd'} transparent opacity={0.36} />
           </lineSegments>
           {cities.map(([name, lat, lon]) => {
             const [x, , z] = geoPoint(lat, lon);
@@ -272,18 +263,14 @@ export default function Region({
         <>
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.4, 0]}>
             <planeGeometry args={[650, 520]} />
-            <meshStandardMaterial color="#122a31" roughness={1} />
+            <meshStandardMaterial color={dark ? '#2c3b4b' : '#dce5ed'} roughness={1} />
           </mesh>
-          <gridHelper args={[520, 26, '#35535b', '#244047']} position={[0, 0, 0]} />
+          <gridHelper
+            args={[520, 26, dark ? '#445a6b' : '#b9c8d4', dark ? '#344656' : '#d0dce6']}
+            position={[0, 0, 0]}
+          />
         </>
       )}
-      <Html position={[-80, 2, -138]} center zIndexRange={[8, 0]}>
-        <span className="scene-city">
-          {projection.regional
-            ? 'Regiune ilustrată · Conexiuni externe la margine'
-            : 'Rețea schematică · Poziții adaptate pentru lizibilitate'}
-        </span>
-      </Html>
       {airports.map((a) => {
         const pos = byCode.get(a.id)!;
         const weather = airportWeatherState(a);
@@ -321,16 +308,14 @@ export default function Region({
               >
                 <strong>{a.code}</strong>
                 <span>
-                  {projection.regional && !inIllustratedRegion(a.lat, a.lon)
-                    ? 'Conexiune externă · '
-                    : ''}
+                  {projection.regional && !inIllustratedRegion(a.lat, a.lon) ? 'External · ' : ''}
                   {!a.available
-                    ? 'Indisponibil'
+                    ? 'Unavailable'
                     : !weather.landingAllowed
-                      ? 'Aterizări blocate'
+                      ? 'Landings blocked'
                       : !weather.departureAllowed
-                        ? 'Decolări blocate'
-                        : 'Disponibil'}
+                        ? 'Departures blocked'
+                        : 'Available'}
                   {weather.condition ? ` · ${weather.condition}` : ''}
                 </span>
               </button>
@@ -425,16 +410,18 @@ export default function Region({
                 zIndexRange={[14, 0]}
               >
                 <button
-                  className={`scene-tag region-tag region-flight-tag ${selected ? 'selected' : ''}`}
+                  className={`scene-tag region-tag region-flight-tag ${selected ? 'selected' : 'compact'}`}
                   style={{ '--tag-color': color } as React.CSSProperties}
                   onClick={() => onSelect(flight.id)}
                   title={`${flight.name} · ${flight.origin} → ${flight.destination}`}
-                  aria-label={`Inspect ${flight.name}, ${flight.origin} to ${flight.destination}`}
+                  aria-label={`Inspect ${flight.name}, ${flight.origin} to ${flight.destination}, simulated flight`}
                 >
                   <strong>{flight.id}</strong>
-                  <span>
-                    {flight.origin} → {flight.destination} · Simulare
-                  </span>
+                  {selected && (
+                    <span>
+                      {flight.origin} → {flight.destination} · Simulation
+                    </span>
+                  )}
                 </button>
               </Html>
             )}
@@ -474,7 +461,7 @@ export default function Region({
                 onClick={() => onSelect(id)}
               >
                 <strong>{o.callsign || id}</strong>
-                <span>Observație · {o.source || 'FR24'}</span>
+                <span>Observation · {o.source || 'FR24'}</span>
               </button>
             </Html>
           </group>
