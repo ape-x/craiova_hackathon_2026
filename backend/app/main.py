@@ -30,6 +30,7 @@ from .providers.travel import TravelProvider
 from .recovery_jobs import RecoveryJobs, RecoveryJobRequest, RecoveryCancellation
 from .live_commands import LiveCommands
 from .ground_transfers import GroundTransfers, create_transfer_router
+from .coach_fares import CoachFares, create_coach_router
 from .transfer_planning import GroundPlanning, create_planning_transfer_router
 from .incidents import FlightContextSelection, FlightLookupRequest, IncidentCreate, IncidentGroupBinding, IncidentService
 from .service import RecoveryService
@@ -99,8 +100,9 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     travel_provider=TravelProvider(settings)
     travel=LiveTravel(store,travel_provider)
     ground_transfers=GroundTransfers(settings)
+    coach_fares=CoachFares(settings,fx=ground_transfers.fx)
     jobs=RecoveryJobs(settings,store,service,travel_provider,ai,hotel_provider=real_data.provider,
-        apl_provider=ground_transfers.provider,fx_provider=ground_transfers.fx)
+        apl_provider=ground_transfers.provider,fx_provider=ground_transfers.fx,coach_fares=coach_fares)
     service.live_commands=LiveCommands(store,jobs)
     ground_planning=GroundPlanning(store,ground_transfers,real_data.provider)
     operational_reports=OperationalReports(store)
@@ -144,7 +146,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         with suppress(asyncio.CancelledError):
             await task
         await jobs.aclose()
-        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose(),ground_transfers.aclose())
+        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose(),ground_transfers.aclose(),coach_fares.aclose())
 
     app=FastAPI(title="Airport Recovery Live",version="0.1.0",lifespan=lifespan,docs_url=None if settings.production else "/docs",redoc_url=None,openapi_url=None if settings.production else "/openapi.json")
     app.state.store,app.state.service,app.state.settings=store,service,settings
@@ -155,6 +157,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     app.state.jobs=jobs
     app.state.live_commands=service.live_commands
     app.state.ground_transfers=ground_transfers
+    app.state.coach_fares=coach_fares
     app.state.ground_planning=ground_planning
     app.state.operational_reports=operational_reports
     app.add_middleware(CORSMiddleware,allow_origins=settings.origins,allow_credentials=True,allow_methods=["GET","POST","DELETE"],allow_headers=["Content-Type","Authorization","Last-Event-ID"])
@@ -189,6 +192,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
             raise DomainError(401,"Operator authentication required")
 
     app.include_router(create_transfer_router(ground_transfers,operator))
+    app.include_router(create_coach_router(coach_fares,operator))
     app.include_router(create_planning_transfer_router(ground_planning,operator))
     app.include_router(create_inventory_history_router(store,operator))
 

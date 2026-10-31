@@ -342,6 +342,7 @@ export type RecoveryJobStage =
   | 'planning_queries'
   | 'searching_flights'
   | 'searching_hotels'
+  | 'searching_ground'
   | 'locating_hotel'
   | 'quoting_initial_airport_to_hotel'
   | 'routing_initial_airport_to_hotel'
@@ -373,6 +374,7 @@ export interface RecoveryJobInput {
   hotel_recovery?: HotelRecoveryInput;
 }
 export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions' | 'hotel_recovery'> {
+  ground_references?: import('./coachFareData').GroundFareReference[];
   id: string;
   incident_id: string;
   status: RecoveryJobStatus;

@@ -254,8 +254,8 @@ price and cannot be treated as a zero-cost offer.
 The search required no account or transport-company registration. A separate
 unauthenticated HTTP GET to the same public URL returned 200 with the selected
 date, party parameter, fare and stop names in the HTML. This establishes a
-technical path for a bounded automatic consumer-search adapter; none is
-implemented in the app yet. It does not establish a supported inventory API or
+technical path for the bounded automatic consumer-search adapter described
+below. It does not establish a supported inventory API or
 an integration contract.
 
 The displayed party fare and purchase button are **not proof that two seats were
@@ -264,7 +264,7 @@ exposed. The boarding wording is retained as source text, not invented as a
 quote-expiration timestamp. The check stopped at fare display without clicking
 the purchase button, creating an account or reservation, accepting terms or
 making a payment. Any
-future adapter must preserve original RON pricing, exact dated party/stops,
+adapter must preserve original RON pricing, exact dated party/stops,
 source observation time and unknown availability/expiry; EUR conversion needs
 explicit estimate provenance. Luggage terms, current sellability and any
 connections still need verification for the selected trip. An application cache
@@ -274,6 +274,55 @@ No open consumer inventory API was verified. The
 [documented Autogari API](https://www.autogari.ro/blog/beneficiile-si-costurile-ecosistemului-autogari-ro/)
 concerns transport-operator system synchronization and commercial onboarding,
 not unrestricted inventory access for this application.
+
+## Integrated Romanian consumer-fare search
+
+The application now has a bounded **CRA airport → OTP airport** adapter for the
+public BILETERIA dated search. Other Romanian routes listed above remain research
+references and are not silently enabled. Searches require an explicit local date
+from today through the next 31 days and **one to eight adults**; discounts and
+child ages are not inferred. No account, checkout request, booking endpoint or
+new credential is involved.
+
+Authenticated `GET /api/coaches/status` exposes this exact coverage and
+`POST /api/coaches/search` accepts `origin_airport`, `destination_airport`,
+`travel_date` and `adults`. The provider makes one bounded HTTPS GET with redirects
+and retries disabled. It verifies the returned search form's route/party, selected
+date, visible fare and currency, exact station links and inert per-row date/party
+metadata. It never executes the page scripts or follows purchase links. Changed,
+conflicting, oversized or unrecognizable source markup cannot create a substitute
+fare. Connections, missing prices and unverifiable rows are disclosed as exclusions.
+
+Direct results retain source operator, exact stops, original RON total for the
+requested party, displayed departure/arrival dates and clocks, duration,
+reservation notices and application observation time. An overnight arrival day is
+retained only when the source explicitly supplies it and the displayed duration
+agrees. The source supplies no UTC offset; these local clocks are not presented as
+verified UTC instants. Purchase-button state is source evidence only. Seat
+availability and supplier expiry remain unknown, including when the button is
+enabled. No `Resource`, capacity, hold or EUR allocation is inferred from a fare.
+
+Optional ECB enrichment retains the RON amount and adds a separately labelled
+EUR reference estimate with `source_currency: RON`, rate date, observation time
+and the existing three-calendar-day freshness policy. Missing or stale rates leave
+the original fare visible without an EUR estimate. The APL-specific GBP planning
+contract is unchanged.
+
+The existing **Real hotels & routes** dialog includes coach fare search. Automatic
+recovery requests containing ground transport also query supported selected groups'
+earliest eligible local date, deduplicating identical route/date/adult-party
+requests. Each BILETERIA or ECB dispatch is counted in the durable job allowance;
+reference searches use spare calls after flight sourcing and preserve an actual
+candidate's required Decisions call. Original RON observations survive an FX
+failure or exhausted FX allowance. Timeout/failed reference steps remain visible,
+without retries or invalidating an independently verified flight plan.
+
+Jobs retain bounded `ground_references` separately from allocated services. The
+operator sees reference fares alongside the unresolved availability/physical
+connection requirement; Decisions receives an application-authored summary of
+that limitation. A ground-only request cannot report passengers recovered merely
+because a consumer fare was found. This integration establishes automatic dated
+fare discovery, **not verified Romanian seat inventory or a complete ground journey**.
 
 ## Verification and limits
 

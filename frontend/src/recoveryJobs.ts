@@ -3,14 +3,32 @@ import type { RecoveryJob, RecoveryJobStage } from './types';
 export const recoveryJobActive = (job: RecoveryJob): boolean =>
   job.status === 'queued' || job.status === 'running';
 
+const groundReferenceLimitations = new Set([
+  'ground_availability_unverified',
+  'ground_fare_allowance_uncovered',
+  'ground_fare_date_unsupported',
+  'ground_fare_fx_allowance_uncovered',
+  'ground_fare_fx_unavailable',
+  'ground_fare_not_found',
+  'ground_fare_party_unsupported',
+  'ground_fare_provider_unavailable',
+  'ground_fare_route_unsupported',
+  'ground_fare_source_failed',
+  'ground_fare_window_closed',
+]);
+
 /** Search outcomes describe alternatives; they do not invalidate a selected plan. */
-export function classifyRecoveryJobGaps(gaps: RecoveryJob['gaps']) {
+export function classifyRecoveryJobGaps(gaps: RecoveryJob['gaps'], allPassengersProposed = false) {
   const requirements: RecoveryJob['gaps'] = [];
   const sourceExclusions: RecoveryJob['gaps'] = [];
   const waitingNotes: RecoveryJob['gaps'] = [];
   for (const gap of gaps) {
     if (gap.code === 'overnight_wait_without_accommodation') waitingNotes.push(gap);
-    else if (gap.code === 'quote_not_usable' || gap.code === 'no_flight_offers')
+    else if (
+      gap.code === 'quote_not_usable' ||
+      gap.code === 'no_flight_offers' ||
+      (allPassengersProposed && groundReferenceLimitations.has(gap.code))
+    )
       sourceExclusions.push(gap);
     else requirements.push(gap); // Unknown requirements remain visible, never silently downgraded.
   }
@@ -23,6 +41,7 @@ export const recoveryStageLabel: Record<RecoveryJobStage, string> = {
   planning_queries: 'Preparing provider searches',
   searching_flights: 'Searching flight suppliers',
   searching_hotels: 'Searching hotel rates',
+  searching_ground: 'Searching dated coach fares',
   locating_hotel: 'Checking hotel location and published policy',
   quoting_initial_airport_to_hotel: 'Getting airport-to-hotel transfer quotes',
   routing_initial_airport_to_hotel: 'Checking the airport-to-hotel driving route',

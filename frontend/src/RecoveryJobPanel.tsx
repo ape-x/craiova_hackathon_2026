@@ -19,6 +19,7 @@ import {
 import { Tag } from './ui';
 import HotelRecoveryFields from './HotelRecoveryFields';
 import HistoricalSource from './HistoricalSource';
+import { CoachFareResults } from './CoachFares';
 import {
   emptyHotelRecoveryForm,
   hotelRecoveryGroupIssue,
@@ -64,7 +65,13 @@ export function RecoveryJobDetails({ job, world }: { job: RecoveryJob; world: Wo
     requirements: unresolved,
     sourceExclusions,
     waitingNotes: waitNotes,
-  } = classifyRecoveryJobGaps(job.gaps);
+  } = classifyRecoveryJobGaps(
+    job.gaps,
+    job.status === 'completed' &&
+      result !== null &&
+      result.recovered_passengers > 0 &&
+      result.exception_passengers === 0,
+  );
   const currentOfferIds = new Set(
     world.offers
       .filter(
@@ -207,6 +214,26 @@ export function RecoveryJobDetails({ job, world }: { job: RecoveryJob; world: Wo
               </ul>
             </section>
           )}
+        </section>
+      )}
+      {Boolean(job.ground_references?.length) && (
+        <section className="coach-job-references" aria-label="Recorded ground fare references">
+          <h4>Ground fares requiring seat confirmation</h4>
+          <p className="field-hint">
+            These are source observations from this search. They do not add recovered passengers,
+            transport allocations or supplier bookings.
+          </p>
+          {job.ground_references?.map((reference, index) => (
+            <div className="coach-job-reference" key={`${reference.group_ids.join('-')}-${index}`}>
+              <p className="field-hint">
+                Groups:{' '}
+                {reference.group_ids
+                  .map((id) => world.groups.find((group) => group.id === id)?.name ?? id)
+                  .join(', ')}
+              </p>
+              <CoachFareResults result={reference.result} historical />
+            </div>
+          ))}
         </section>
       )}
       {waitNotes.length > 0 && (

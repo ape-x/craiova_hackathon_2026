@@ -17,6 +17,7 @@ import { isAirportNode } from './locationNodes';
 import { Modal, Tag } from './ui';
 import HotelOfferPrice from './HotelOfferPrice';
 import TransferQuotes from './TransferQuotes';
+import CoachFares from './CoachFares';
 import {
   addCalendarDays,
   bucharestDate,
@@ -96,6 +97,7 @@ export default function RealDataDialog({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [showTransfers, setShowTransfers] = useState(false);
+  const [showCoaches, setShowCoaches] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle');
   const copyGeneration = useRef(0);
   const currentRequest = useRef<AbortController | null>(null);
@@ -195,6 +197,20 @@ export default function RealDataDialog({
       {showTransfers && (
         <div id="uk-transfer-panel">
           <TransferQuotes />
+        </div>
+      )}
+      <button
+        type="button"
+        className="secondary-button transfer-toggle"
+        aria-expanded={showCoaches}
+        aria-controls="romanian-coach-panel"
+        onClick={() => setShowCoaches((visible) => !visible)}
+      >
+        {showCoaches ? 'Hide Romanian coach fares' : 'Check Romanian coach fares'}
+      </button>
+      {showCoaches && (
+        <div id="romanian-coach-panel">
+          <CoachFares />
         </div>
       )}
       <form

@@ -13,7 +13,7 @@ from pydantic import Field, field_validator, model_serializer
 
 from .airport_catalog import lookup_airport
 from .hotel_location import coordinate_timezone, property_zone
-from .hotel_recovery import HotelRecoveryInputs, run_hotel_recovery, validate_hotel_job
+from .hotel_recovery import HotelRecoveryInputs, _rates, _restore_rates, run_hotel_recovery, validate_hotel_job
 from .live_data import identifier
 from .live_travel import append_travel_quote, retire_travel_quotes
 from .models import Model, Mutation, Strategy
@@ -196,9 +196,10 @@ def flight_query_options(world,groups):
 
 
 class RecoveryJobs:
-    def __init__(self,settings,store,service,travel_provider,ai,*,hotel_provider=None,apl_provider=None,fx_provider=None):
+    def __init__(self,settings,store,service,travel_provider,ai,*,hotel_provider=None,apl_provider=None,fx_provider=None,coach_fares=None):
         self.settings,self.store,self.service,self.travel,self.ai=settings,store,service,travel_provider,ai
         self.hotel_provider,self.apl_provider,self.fx_provider=hotel_provider,apl_provider,fx_provider
+        self.coach_fares=coach_fares
         self.ledger=RecoveryLedger(store,settings.request_timeout_seconds+60)
         self.task=None
 
@@ -263,7 +264,7 @@ class RecoveryJobs:
             return True
         return False
 
-    async def _call(self,job,owner,stage,provider,query,group_ids,call):
+    async def _call(self,job,owner,stage,provider,query,group_ids,call,*,optional_reference=False):
         current=await asyncio.to_thread(self.store.read)
         if current.version!=job["_planning_version"] or scope_fingerprint(current,job["incident_id"],job["group_ids"])!=job["_scope_hash"]:
             raise DomainError(409,"Operation changed while sourcing; no further provider call was issued. Review the recorded results before a new attempt.")
@@ -282,12 +283,94 @@ class RecoveryJobs:
             unknown=code in ("timeout","connection","http_500","http_502","http_503","http_504")
             message=str(exc) if isinstance(exc,ProviderError) else "Provider deadline reached; upstream outcome and charges are unconfirmed."
             await asyncio.to_thread(self.ledger.outcome,job["id"],owner,step,"unknown" if unknown else "failed",message)
-            await asyncio.to_thread(self.ledger.halt,job["id"],owner,"unknown_outcome" if unknown else "failed",message+" No automatic retry was issued; other dispatched outcomes are being recorded.")
+            if not optional_reference:
+                await asyncio.to_thread(self.ledger.halt,job["id"],owner,"unknown_outcome" if unknown else "failed",message+" No automatic retry was issued; other dispatched outcomes are being recorded.")
             raise
         except Exception:
             await asyncio.to_thread(self.ledger.outcome,job["id"],owner,step,"unknown","Provider dispatch did not produce a recordable outcome. No retry was issued.")
             await asyncio.to_thread(self.ledger.halt,job["id"],owner,"unknown_outcome","Provider outcome could not be established; no automatic retry or plan application was attempted.")
             raise
+
+    async def _ground_references(self,job,owner,world,groups,gaps,*,reserve_calls):
+        """Observe dated consumer fares without creating inventory or route links.
+
+        Flight sourcing and candidate validation run first. Only spare calls may
+        be used here; an independently valid plan retains its Decisions call.
+        A failed optional GET remains visible in the ledger and never retries.
+        """
+        from .providers.bileteria import BileteriaSearchRequest, SOURCE
+        from .providers.reference_fx import SOURCE as FX_SOURCE, SOURCE_URL as FX_URL
+
+        references=[]
+        if self.coach_fares is None or not self.coach_fares.provider.configured:
+            gaps.append(gap("ground_fare_provider_unavailable","Romanian coach fare references are unavailable. No ground inventory or connection was invented.",job["group_ids"]))
+            await self._update(job,owner,ground_references=references,gaps=gaps)
+            return references
+        locations={node.id:node for node in world.airports}
+        epoch=datetime.fromisoformat(world.epoch)
+        zone=property_zone("Europe/Bucharest")
+        searches={}
+        for group in groups:
+            start,end=locations.get(group.origin),locations.get(group.destination)
+            if not start or not end or start.kind!="airport" or end.kind!="airport" or (start.code,end.code)!=("CRA","OTP"):
+                gaps.append(gap("ground_fare_route_unsupported","Automatic consumer coach fare references currently cover only Craiova airport → Otopeni airport. No nearby stop or transfer was assumed.",[group.id]))
+                continue
+            if group.adult_count!=group.size or not 1<=group.size<=8:
+                gaps.append(gap("ground_fare_party_unsupported","Consumer coach search needs an explicitly adult-only party of at most eight passengers. Child ages or discounted fares were not inferred.",[group.id]))
+                continue
+            ready=max(world.sim_time,group.ready_at)
+            if ready>=group.deadline:
+                gaps.append(gap("ground_fare_window_closed","The group's readiness/deadline window has elapsed; no dated coach reference was requested.",[group.id]))
+                continue
+            day=(epoch+timedelta(minutes=ready)).astimezone(zone).date()
+            request=BileteriaSearchRequest(origin_airport="CRA",destination_airport="OTP",travel_date=day,adults=group.size)
+            try:
+                self.coach_fares.provider.validate_request(request)
+            except (ValueError,ProviderError):
+                gaps.append(gap("ground_fare_date_unsupported","The group's earliest local travel date is outside the consumer source's supported search window. Its date was not replaced.",[group.id]))
+                continue
+            key=Store.fingerprint(request.model_dump(mode="json"))
+            searches.setdefault(key,{"request":request,"group_ids":[]})["group_ids"].append(group.id)
+        for item in searches.values():
+            current=await asyncio.to_thread(self.ledger.get,job["id"],private=True)
+            if current["cancel_requested"]:
+                return
+            if current["max_provider_calls"]-current["calls_dispatched"]<=reserve_calls:
+                gaps.append(gap("ground_fare_allowance_uncovered","The explicit call allowance cannot cover this coach reference while preserving an independently valid plan's decision. No extra request was made.",item["group_ids"]))
+                continue
+            query=item["request"]
+            try:
+                result=await self._call(job,owner,"searching_ground",SOURCE,query.model_dump(mode="json"),item["group_ids"],
+                    lambda:self.coach_fares.provider.search(query),optional_reference=True)
+            except (TimeoutError,ProviderError):
+                gaps.append(gap("ground_fare_source_failed","The consumer coach source did not return a usable dated fare reference. Its failed or unknown request is recorded; no retry or substitute fare was used.",item["group_ids"]))
+                continue
+            # The normalized provider response contains bounded public facts,
+            # not HTML, operational tokens, capacity, holds or allocations.
+            references.append({"group_ids":item["group_ids"],"result":self.coach_fares.enrich(result,{"table":None,"cache":None,"code":"fx_not_requested"})})
+            gaps.append(gap("ground_availability_unverified" if result["options"] else "ground_fare_not_found",
+                "Dated coach fares are reference information only. Seats, luggage, exact physical connections and suitability for the group's readiness/deadline remain unverified; these services were not allocated. Only the earliest local calendar date was searched."
+                if result["options"] else "No priced consumer coach reference was returned for the requested party and earliest local travel date. This does not establish that no other transport exists.",item["group_ids"]))
+            await self._update(job,owner,ground_references=references,gaps=gaps)
+        priced=[entry for entry in references if entry["result"]["options"]]
+        if priced:
+            current=await asyncio.to_thread(self.ledger.get,job["id"],private=True)
+            if current["cancel_requested"]:
+                return
+            ids=sorted({identity for entry in priced for identity in entry["group_ids"]})
+            if current["max_provider_calls"]-current["calls_dispatched"]>reserve_calls:
+                try:
+                    source=await self._call(job,owner,"reference_fx",FX_SOURCE,{"url":FX_URL,"currency":"RON"},ids,
+                        lambda:_rates(self.coach_fares.fx),optional_reference=True)
+                    rates=_restore_rates(source)
+                    for entry in priced:
+                        entry["result"]=self.coach_fares.enrich(entry["result"],rates)
+                except (TimeoutError,ProviderError):
+                    gaps.append(gap("ground_fare_fx_unavailable","The ECB reference was unavailable. Original RON fares remain recorded; no EUR amount was invented.",ids))
+            else:
+                gaps.append(gap("ground_fare_fx_allowance_uncovered","The explicit call allowance has no spare ECB lookup. Original RON fares remain recorded without EUR estimates.",ids))
+        await self._update(job,owner,ground_references=references,gaps=gaps)
+        return references
 
     async def run(self,job,owner):
         started=time.perf_counter()
@@ -323,7 +406,7 @@ class RecoveryJobs:
             await run_hotel_recovery(self,job,owner,world,started)
             return
         for mode in job["modes"]:
-            if mode in ("hotel","bus"):
+            if mode=="hotel" or (mode=="bus" and self.coach_fares is None):
                 gaps.append(gap("hotel_inputs_required" if mode=="hotel" else "ground_inputs_required","Automatic hotel sourcing requires confirmed stay times, room occupancy and verified property transfers." if mode=="hotel" else "Automatic coach/private-transfer sourcing requires exact passenger ages or baggage, physical pickup links, EUR costs and sourced arrival times. Existing complete sourced links may still be used.",job["group_ids"]))
         options=[]
         if "flight" in job["modes"]:
@@ -416,6 +499,11 @@ class RecoveryJobs:
         candidates=await asyncio.to_thread(lambda:[build_candidate(projected,item,scope_group_ids=scope) for item in strategies])
         candidates=[item for item in candidates if item.validation["valid"]]
         timings["solver_ms"]=round((time.perf_counter()-before)*1000,2)
+        ground_references=[]
+        if "bus" in job["modes"] and self.coach_fares is not None:
+            ground_references=await self._ground_references(job,owner,world,groups,gaps,reserve_calls=int(any(item.recovered_passengers for item in candidates))) or []
+            if await self._cancelled(job,owner):
+                return
         if not candidates or not any(item.recovered_passengers for item in candidates):
             gaps.append(gap("no_complete_journey","No complete sourced itinerary passed budget, accessibility, deadline, connection and incident checks. Accommodation alone is not recovery.",job["group_ids"]))
             await self._update(job,owner,status="blocked",stage="finished",message="No complete sourced recovery proposal is currently feasible; no operational allocation changed.",gaps=gaps)
@@ -424,6 +512,14 @@ class RecoveryJobs:
             return
         before=time.perf_counter()
         decision_request={"text":f"Recover only incident {job['incident_id']} groups {', '.join(job['group_ids'])}. Objective: {job['objective']}. {job['_request']['instructions']}","context":"All other groups' allocations are fixed. These are sourced quotes, not bookings. Explain remaining exceptions honestly."}
+        if "bus" in job["modes"] and self.coach_fares is not None:
+            # Application-authored bounded facts only. Supplier HTML, messages
+            # and instructions never enter this independent decision context.
+            count=sum(len(entry["result"]["options"]) for entry in ground_references)
+            ground_codes=sorted({item["code"] for item in gaps if item["code"].startswith("ground_")})[:10]
+            decision_request["context"]+=(f" Consumer coach observations: {len(ground_references)}; displayed fare options: {count}. "
+                "Coach seat availability and physical connections are unverified. These references are excluded from validated candidates and are not resources, allocations or bookings. "
+                "Recorded ground-reference gap codes: "+(", ".join(ground_codes) or "none")+".")
         choice=await self._call(job,owner,"deciding","OpenAI Decisions",{"candidate_ids":[item.id for item in candidates],"request":decision_request},job["group_ids"],lambda:self.ai.choose(projected.model_dump(mode="json"),[item.model_dump(mode="json") for item in candidates],decision_request))
         timings["decisions_ms"]=round((time.perf_counter()-before)*1000,2)
         plan=next((item for item in candidates if item.id==choice.get("plan_id")),None)
