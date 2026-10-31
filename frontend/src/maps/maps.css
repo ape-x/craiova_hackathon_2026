@@ -152,6 +152,16 @@
   font-size: 10px;
   color: var(--amber);
 }
+.geographic-map-legend.is-transfer-review {
+  max-width: 300px;
+  padding: 8px 10px;
+  gap: 6px 10px;
+}
+.is-transfer-review .geographic-route-review {
+  padding-bottom: 0;
+  border-bottom: 0;
+  gap: 3px;
+}
 .geographic-map-recenter {
   position: absolute;
   z-index: 2;

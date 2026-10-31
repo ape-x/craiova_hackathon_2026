@@ -3,7 +3,7 @@ import { AlertCircle, Building2, Globe2, Loader2, Plane, RotateCcw, Users, X } f
 import type { SceneMode, World } from '../types';
 import type { GoogleMapElement, LoadedMaps } from './contracts';
 import { getMapsLoader } from './loader';
-import { buildOverlays, cameraFor, updateObservationTracks } from './overlays';
+import { buildOverlays, cameraFor, observedPoint, updateObservationTracks } from './overlays';
 import type { ObservationTracks } from './overlays';
 import { ALL_MODELS, buildModelDescriptors } from './models';
 import type { ModelVisibility } from './models';
@@ -26,6 +26,73 @@ export interface GoogleMaps3DProps {
 }
 
 type Runtime = LoadedMaps & { map: GoogleMapElement; initialization: MapInitialization };
+
+export function GeographicLegend({
+  mode,
+  selectedReview,
+  roadGeometry,
+  hasObservations,
+}: {
+  mode: World['mode'];
+  selectedReview: ReturnType<typeof transferReview> | null;
+  roadGeometry: { sourced: boolean; connectionOnly: boolean };
+  hasObservations: boolean;
+}) {
+  return (
+    <div className={`geographic-map-legend${selectedReview ? ' is-transfer-review' : ''}`}>
+      {selectedReview && (
+        <div className="geographic-route-review" role="status">
+          <strong>{selectedReview.title}</strong>
+          <span>{selectedReview.status}</span>
+          <small>
+            {selectedReview.sourceTime}.{' '}
+            {roadGeometry.sourced
+              ? 'Dated prediction, not a vehicle position.'
+              : 'Endpoints only; no driving path shown.'}
+          </small>
+        </div>
+      )}
+      {hasObservations && (
+        <span>
+          <i className="geo-observed" />
+          Received observations
+        </span>
+      )}
+      {roadGeometry.sourced && (
+        <span>
+          <i className="geo-road" />
+          Google Routes · predicted road
+        </span>
+      )}
+      {roadGeometry.connectionOnly && <span>Connection only · road geometry unavailable</span>}
+      {mode !== 'live' && (
+        <>
+          <span>
+            <i className="geo-scenario" />
+            Simulated network
+          </span>
+          <span>
+            <i className="geo-confirmed" />
+            Confirmed in simulator
+          </span>
+        </>
+      )}
+      {mode !== 'live' ? (
+        <small>
+          Authored terminal, fleet and families · simulated layout and positions. Links are
+          schematic. Observed aircraft enlarged 2.5×; Google terrain is real.
+        </small>
+      ) : hasObservations ? (
+        <small>
+          Observed aircraft at provider positions, enlarged 2.5×. Google terrain is real; airport
+          status requires verification.
+        </small>
+      ) : !selectedReview ? (
+        <small>Google terrain is real; airport status requires verification.</small>
+      ) : null}
+    </div>
+  );
+}
 
 /** Mount only after the operator explicitly chooses the geographic view. */
 export default function GoogleMaps3D({
@@ -279,6 +346,10 @@ export default function GoogleMaps3D({
       ? world.resources.find((item) => item.id === selectedId && privateTransfer(item))
       : undefined;
   const selectedReview = selectedTransfer ? transferReview(world, selectedTransfer, clock) : null;
+  const hasObservations = world.observations.some(
+    (observation) =>
+      Boolean(observation.id ?? observation.fr24_id) && observedPoint(observation) !== null,
+  );
 
   return (
     <section className="geographic-map" aria-label="Geographic 3D operations view">
@@ -311,49 +382,14 @@ export default function GoogleMaps3D({
           <div className="geographic-map-source">
             <Globe2 size={14} />
             <span>GOOGLE GEOGRAPHIC 3D</span>
-            <b>{fresh} fresh aircraft observations</b>
+            {(!selectedReview || hasObservations) && <b>{fresh} fresh aircraft observations</b>}
           </div>
-          <div className="geographic-map-legend">
-            {selectedReview && (
-              <div className="geographic-route-review" role="status">
-                <strong>{selectedReview.title}</strong>
-                <span>{selectedReview.status}</span>
-                <small>
-                  {selectedReview.sourceTime}. Dated prediction, not a vehicle position.
-                </small>
-              </div>
-            )}
-            <span>
-              <i className="geo-observed" />
-              Received observations
-            </span>
-            {roadGeometry.sourced && (
-              <span>
-                <i className="geo-road" />
-                Google Routes · predicted road
-              </span>
-            )}
-            {roadGeometry.connectionOnly && (
-              <span>Connection only · road geometry unavailable</span>
-            )}
-            {world.mode !== 'live' && (
-              <span>
-                <i className="geo-scenario" />
-                Simulated network
-              </span>
-            )}
-            {world.mode !== 'live' && (
-              <span>
-                <i className="geo-confirmed" />
-                Confirmed in simulator
-              </span>
-            )}
-            <small>
-              {world.mode === 'live'
-                ? 'Observed aircraft at provider positions, enlarged 2.5×. Google terrain is real; airport status requires verification.'
-                : 'Authored terminal, fleet and families · simulated layout and positions. Links are schematic. Observed aircraft enlarged 2.5×; Google terrain is real.'}
-            </small>
-          </div>
+          <GeographicLegend
+            mode={world.mode}
+            selectedReview={selectedReview}
+            roadGeometry={roadGeometry}
+            hasObservations={hasObservations}
+          />
           <div className="geographic-model-controls" role="group" aria-label="3D object layers">
             <span>3D OBJECTS</span>
             {(

@@ -104,43 +104,54 @@ export function buildOverlays(
   now = Date.now(),
 ): { markers: GeoMarker[]; routes: GeoRoute[] } {
   const liveWorld = world.mode === 'live' ? world : null;
+  const inspected = liveWorld?.resources.find((resource) => resource.id === selectedId);
+  const inspectedPath = inspected && liveWorld ? groundPath(inspected, liveWorld) : null;
+  const focusedTransfer = inspectedPath?.geometry === 'sourced_road' ? inspected : undefined;
   if (world.mode === 'live')
     world = { ...world, resources: [], groups: [], offers: [], reservations: [] };
-  const markers: GeoMarker[] = world.airports.map((airport) => ({
-    id: airport.id,
-    label:
-      airport.kind === 'meeting_point'
-        ? `${airport.name} · REPORTED MEETING POINT`
-        : airport.kind === 'hotel'
-          ? `${airport.name} · HOTEL`
-          : airport.kind === 'station'
-            ? `${airport.code} · COACH STATION`
-            : world.mode === 'live'
-              ? `${airport.code}${airport.operational_status === 'unknown' ? ' · STATUS UNKNOWN' : airport.operational_status === 'closed' ? ' · CLOSED' : ''}`
-              : `${airport.code}${!airport.available ? ' · CLOSED IN SIM' : airportWeatherState(airport).weatherRestricted ? ' · WEATHER RESTRICTED' : ''}`,
-    title:
-      airport.kind === 'meeting_point'
-        ? `${airport.name}. Operator-declared initial meeting point for its passenger group, not a verified terminal or flight connection.`
-        : airport.kind === 'hotel'
-          ? `${airport.name}. Property coordinates supplied by the accommodation provider; room availability depends on the quoted offer.`
-          : airport.kind === 'station'
-            ? `${airport.name}. Coach station location supplied by the transport provider.`
-            : world.mode === 'live'
-              ? `${airport.name}. Reference airport location. Operational status: ${airport.operational_status ?? 'unknown'}.`
-              : `${airport.name}. Airport availability is simulated.${airport.weather ? ` ${airportWeatherState(airport).condition}. Landings ${airportWeatherState(airport).landingAllowed ? 'allowed' : 'blocked'}; departures ${airportWeatherState(airport).departureAllowed ? 'allowed' : 'blocked'}.` : ''}`,
-    point: world.mode === 'live' ? pointOf(airport) : scenePoint(airport, 0, 51, 28),
-    color: !isAirportNode(airport)
-      ? COLORS.muted
-      : world.mode === 'live'
-        ? airport.operational_status === 'closed'
-          ? COLORS.unavailable
-          : COLORS.muted
-        : airportWeatherState(airport).restricted
-          ? COLORS.unavailable
-          : COLORS.scenario,
-    observed: false,
-    selected: selectedId === airport.id,
-  }));
+  const markers: GeoMarker[] = world.airports
+    .filter(
+      (airport) =>
+        !focusedTransfer ||
+        !['hotel', 'meeting_point'].includes(airport.kind ?? 'airport') ||
+        airport.id === focusedTransfer.origin ||
+        airport.id === focusedTransfer.destination,
+    )
+    .map((airport) => ({
+      id: airport.id,
+      label:
+        airport.kind === 'meeting_point'
+          ? `${airport.name} · REPORTED MEETING POINT`
+          : airport.kind === 'hotel'
+            ? `${airport.name} · HOTEL`
+            : airport.kind === 'station'
+              ? `${airport.code} · COACH STATION`
+              : world.mode === 'live'
+                ? `${airport.code}${airport.operational_status === 'unknown' ? ' · STATUS UNKNOWN' : airport.operational_status === 'closed' ? ' · CLOSED' : ''}`
+                : `${airport.code}${!airport.available ? ' · CLOSED IN SIM' : airportWeatherState(airport).weatherRestricted ? ' · WEATHER RESTRICTED' : ''}`,
+      title:
+        airport.kind === 'meeting_point'
+          ? `${airport.name}. Operator-declared initial meeting point for its passenger group, not a verified terminal or flight connection.`
+          : airport.kind === 'hotel'
+            ? `${airport.name}. Property coordinates supplied by the accommodation provider; room availability depends on the quoted offer.`
+            : airport.kind === 'station'
+              ? `${airport.name}. Coach station location supplied by the transport provider.`
+              : world.mode === 'live'
+                ? `${airport.name}. Reference airport location. Operational status: ${airport.operational_status ?? 'unknown'}.`
+                : `${airport.name}. Airport availability is simulated.${airport.weather ? ` ${airportWeatherState(airport).condition}. Landings ${airportWeatherState(airport).landingAllowed ? 'allowed' : 'blocked'}; departures ${airportWeatherState(airport).departureAllowed ? 'allowed' : 'blocked'}.` : ''}`,
+      point: world.mode === 'live' ? pointOf(airport) : scenePoint(airport, 0, 51, 28),
+      color: !isAirportNode(airport)
+        ? COLORS.muted
+        : world.mode === 'live'
+          ? airport.operational_status === 'closed'
+            ? COLORS.unavailable
+            : COLORS.muted
+          : airportWeatherState(airport).restricted
+            ? COLORS.unavailable
+            : COLORS.scenario,
+      observed: false,
+      selected: selectedId === airport.id,
+    }));
   const routes: GeoRoute[] = [];
   const active = world.offers.filter(
     (offer) => offer.status === 'held' || offer.status === 'confirmed',
@@ -256,7 +267,8 @@ export function buildOverlays(
         Number(b.id === selectedId || allocated.has(b.id)) -
         Number(a.id === selectedId || allocated.has(a.id)),
     )) {
-      const road = groundPath(item, liveWorld);
+      if (focusedTransfer && item.id !== focusedTransfer.id) continue;
+      const road = item.id === inspected?.id ? inspectedPath : groundPath(item, liveWorld);
       if (!road) continue;
       const selected = item.id === selectedId || allocated.has(item.id);
       const review = transferReview(liveWorld, item, now);
@@ -278,7 +290,7 @@ export function buildOverlays(
       if (selected || road.geometry === 'connection_only')
         markers.push({
           id: item.id,
-          label: `${review.title} · ${review.status} · ${road.geometry === 'sourced_road' ? 'ROAD PREDICTION' : 'CONNECTION ONLY'}`,
+          label: `${review.title} · ${road.geometry === 'sourced_road' ? 'ROAD PREDICTION' : 'CONNECTION ONLY'}`,
           title:
             road.geometry === 'sourced_road'
               ? `${review.sourceTime}. Dated Google Routes driving prediction, not vehicle telemetry. ${review.status}. Record: ${item.id}.`

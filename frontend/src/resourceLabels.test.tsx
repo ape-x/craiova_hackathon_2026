@@ -4,6 +4,7 @@ import Inspector from './Inspector';
 import { geographicContext, locationName, resourceTitle, transferReview } from './resourceLabels';
 import { buildOverlays, cameraFor } from './maps/overlays';
 import { ALL_MODELS, buildModelDescriptors } from './maps/models';
+import { GeographicLegend } from './maps/GoogleMaps3D';
 import type { Airport, Resource, World } from './types';
 
 // Entirely synthetic coordinates and records; no provider request or production fixture.
@@ -194,7 +195,8 @@ describe('imported transfer selection in the live geographic workspace', () => {
     const stale = buildOverlays(world, resourceId, new Map(), now + 300_000);
     expect(stale.routes[0].path).toEqual(current.routes[0].path);
     const label = stale.markers.find((marker) => marker.id === resourceId)!;
-    expect(label.label).toContain('APL Saloon · Unbooked · Quote stale');
+    expect(label.label).toBe('APL Saloon · ROAD PREDICTION');
+    expect(label.title).toContain('Unbooked · Quote stale');
     expect(label.title).toContain('20:00:04 UTC');
     expect(label.title).toContain('Dated Google Routes driving prediction, not vehicle telemetry');
     expect(transferReview(world, resource, now + 300_000).sourceTime).toContain('20:00:04 UTC');
@@ -203,6 +205,61 @@ describe('imported transfer selection in the live geographic workspace', () => {
       'Unavailable',
     );
     expect(buildModelDescriptors(world, resourceId)).toEqual([]);
+  });
+
+  it('focuses property labels on the selected road while preserving all properties in the overview', () => {
+    const world = operation();
+    world.airports.push(
+      node('OTHER-HP', 'Unrelated hotel', 'hotel', 51.473, -0.481),
+      node('OTHER-MP', 'Other meeting point', 'meeting_point', 51.472, -0.482),
+    );
+    world.observations = [
+      {
+        id: 'observed-plane',
+        lat: 51.5,
+        lon: -0.4,
+        mode: 'LIVE',
+        observed_at: '2026-10-31T20:00:00Z',
+      },
+    ];
+    const focused = buildOverlays(world, resourceId, new Map(), now);
+    expect(focused.markers.map((marker) => marker.id)).toEqual(
+      expect.arrayContaining([pointId, hotelId, 'LHR', 'observed-plane', resourceId]),
+    );
+    expect(focused.markers.some((marker) => ['OTHER-HP', 'OTHER-MP'].includes(marker.id))).toBe(
+      false,
+    );
+    const overview = buildOverlays(world, null, new Map(), now);
+    expect(overview.markers.map((marker) => marker.id)).toEqual(
+      expect.arrayContaining([pointId, hotelId, 'OTHER-HP', 'OTHER-MP']),
+    );
+    expect(world.airports).toHaveLength(6);
+    world.resources[0].provenance = {};
+    expect(
+      buildOverlays(world, resourceId, new Map(), now).markers.some(
+        (marker) => marker.id === 'OTHER-HP',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps source time and stale/unbooked evidence in a compact legend without irrelevant aircraft prose', () => {
+    const selectedReview = transferReview(operation(), resource, now + 300_000);
+    const props = {
+      mode: 'live' as const,
+      selectedReview,
+      roadGeometry: { sourced: true, connectionOnly: false },
+      hasObservations: false,
+    };
+    const html = renderToStaticMarkup(<GeographicLegend {...props} />);
+    expect(html).toContain('Unbooked · Quote stale');
+    expect(html).toContain('20:00:04 UTC');
+    expect(html).toContain('Dated prediction, not a vehicle position');
+    expect(html).toContain('Google Routes');
+    expect(html).not.toContain('Received observations');
+    expect(html).not.toContain('Observed aircraft at provider positions');
+    const withAircraft = renderToStaticMarkup(<GeographicLegend {...props} hasObservations />);
+    expect(withAircraft).toContain('Received observations');
+    expect(withAircraft).toContain('enlarged 2.5');
   });
 
   it('uses human primary labels, keeps app identifiers secondary, and dates road versus quote evidence independently', () => {
