@@ -123,10 +123,11 @@ async def test_decisions_rejects_unvalidated_candidates_without_network(world):
 
 @pytest.mark.asyncio
 async def test_decisions_refusal_or_unknown_choice_is_error(world):
-    for answer in [{"type": "refusal", "name": "recovery_plan"}, {"type": "choice", "name": "recovery_plan", "choice": "made-up"}]:
+    for answer, code in [({"type": "refusal", "name": "recovery_plan"}, "refused"), ({"type": "choice", "name": "recovery_plan", "choice": "made-up"}, "invalid_response")]:
         async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"answers": [answer]}))) as client:
-            with pytest.raises(ProviderError, match="no valid candidate"):
+            with pytest.raises(ProviderError) as failure:
                 await AIProvider(settings(), client=client).choose(world, [{"id": "valid", "validation": {"valid": True}}, {"id": "other-valid", "validation": {"valid": True}}], "choose")
+            assert failure.value.code == code
 
 
 @pytest.mark.asyncio
@@ -148,21 +149,35 @@ async def test_decisions_approves_single_plan_with_real_boolean_choices(world):
     assert "4 pasageri" in result["explanation"]
 
 
-@pytest.mark.parametrize("answer", [
-    {"type": "choice", "name": "approve_recovery_plan", "choice": False},
-    {"type": "choice", "name": "approve_recovery_plan", "choice": "true"},
-    {"type": "choice", "name": "approve_recovery_plan", "choice": 1},
-    {"type": "choice", "name": "approve_recovery_plan", "choice": "only-valid-plan"},
-    {"type": "predicate", "name": "approve_recovery_plan", "probability": 1.0},
-    {"type": "refusal", "name": "approve_recovery_plan"},
-    {},
+@pytest.mark.parametrize("answer,code", [
+    ({"type": "choice", "name": "approve_recovery_plan", "choice": False}, "not_approved"),
+    ({"type": "choice", "name": "approve_recovery_plan", "choice": "true"}, "invalid_response"),
+    ({"type": "choice", "name": "approve_recovery_plan", "choice": 1}, "invalid_response"),
+    ({"type": "choice", "name": "approve_recovery_plan", "choice": "only-valid-plan"}, "invalid_response"),
+    ({"type": "predicate", "name": "approve_recovery_plan", "probability": 1.0}, "invalid_response"),
+    ({"type": "refusal", "name": "approve_recovery_plan"}, "refused"),
+    ({}, "invalid_response"),
 ])
 @pytest.mark.asyncio
-async def test_decisions_single_plan_requires_explicit_typed_approval(world, answer):
+async def test_decisions_single_plan_requires_explicit_typed_approval(world, answer, code):
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"answers": [answer]}))) as client:
-        with pytest.raises(ProviderError, match="did not approve") as failure:
+        with pytest.raises(ProviderError, match="no changes were applied") as failure:
             await AIProvider(settings(), client=client).choose(world, [{"id": "only-valid-plan", "validation": {"valid": True}}], "choose")
-    assert failure.value.code == "not_approved"
+    assert failure.value.code == code
+
+
+@pytest.mark.parametrize("answers", [
+    [], None, "true",
+    [{"type": "choice", "name": "other_question", "choice": True}],
+    [{"type": "choice", "name": "approve_recovery_plan", "choice": True},
+     {"type": "choice", "name": "approve_recovery_plan", "choice": False}],
+])
+@pytest.mark.asyncio
+async def test_decisions_missing_or_ambiguous_answer_is_not_model_rejection(world, answers):
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"answers": answers}))) as client:
+        with pytest.raises(ProviderError) as failure:
+            await AIProvider(settings(), client=client).choose(world, [{"id": "only-valid-plan", "validation": {"valid": True}}], "choose")
+    assert failure.value.code == "invalid_response"
 
 
 @pytest.mark.asyncio

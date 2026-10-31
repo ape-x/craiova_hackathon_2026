@@ -594,13 +594,20 @@ class AIProvider(HTTPProvider):
             "input": [{"role": "user", "content": [{"type": "input_json", "data": evidence}]}],
             "questions": [question],
         })
-        answers = data.get("answers", [])
-        if not isinstance(answers, list):
-            raise ProviderError("Decisions returned invalid answers.", provider="OpenAI Decisions", code="invalid_response")
-        answer = next((a for a in answers if isinstance(a, dict) and a.get("name") == question["name"]), {})
+        # One named question requires one matching typed answer. A malformed
+        # answer is not evidence that the model explicitly rejected the plan.
+        # Refusal is also a distinct documented answer type, not choice=false.
+        answers = data.get("answers") if isinstance(data, dict) else None
+        if not isinstance(answers, list) or len(answers) != 1 or not isinstance(answers[0], dict) or answers[0].get("name") != question["name"]:
+            raise ProviderError("Decisions returned invalid answers; no changes were applied.", provider="OpenAI Decisions", code="invalid_response")
+        answer = answers[0]
+        if answer.get("type") == "refusal":
+            raise ProviderError("Decisions declined to answer the plan-selection question; no changes were applied.", provider="OpenAI Decisions", code="refused")
         if single:
-            if answer.get("type") != "choice" or answer.get("choice") is not True:
-                raise ProviderError("Decisions did not approve the sole validated plan; no changes were applied.", provider="OpenAI Decisions", code="not_approved")
+            if answer.get("type") != "choice" or type(answer.get("choice")) is not bool:
+                raise ProviderError("Decisions returned no valid boolean approval; no changes were applied.", provider="OpenAI Decisions", code="invalid_response")
+            if answer["choice"] is False:
+                raise ProviderError("Decisions explicitly rejected the sole validated plan; no changes were applied.", provider="OpenAI Decisions", code="not_approved")
             selected = candidates[0]
         else:
             if answer.get("type") != "choice" or not isinstance(answer.get("choice"), str) or answer["choice"] not in ids:
