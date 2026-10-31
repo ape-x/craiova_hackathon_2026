@@ -8,6 +8,8 @@ Public evidence includes application screenshots, sanitized test/benchmark resul
 
 `google-materials-qa.jpg` verifies the regenerated terminal in the real Google renderer on a separate test API. It contains Google attribution and synthetic operations, with no passenger links or voice content.
 
+`integrated-google-live.jpg` is the deployed Docker release after integration. It preserves the existing airport closure and B12 incident at world version 30; provider controls are ready, and the expired earlier plan is explicitly marked for refresh. The full frame retains Google attribution and contains no passenger access links or voice transcript.
+
 Private Google Cloud billing-console captures remain local and are excluded by Git and Docker ignore rules. The public report summarizes the outcome without publishing account identifiers, payment details or links to those private files. Provider secrets, private environment files, databases and backups must also remain outside the repository. The browser Maps key is public at runtime and requires referrer/API restrictions; its presence is not permission to publish account-console records.
 
 The current evidence establishes bounded real Sol Ultrafast interpretation, Decisions selection, GPT-Live transport and final closure using synthetic silence, and Google geographic rendering at CRA. Real user-microphone/delegation/playback tests, FR24 observations, detailed terminal photogrammetry, precise surveyed alignment and event-display visual fidelity remain open. The authored terminal, fleet and family GLBs now have live upright-rendering evidence in `google-models-live.jpg`. Billing health and deployment-specific access must be checked by the account owner.

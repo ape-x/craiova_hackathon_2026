@@ -4,7 +4,7 @@ Centru de operațiuni pentru recuperarea pasagerilor, cu **FastAPI, React/TypeSc
 
 ![Aplicația rulată cu hartă Google și operațiuni simulate](docs/verification/google-models-live.jpg)
 
-Captură din aplicația funcțională: imaginile geografice sunt reale, iar pasagerii, incidentele și rezervările sunt simulate. **279 de teste trecute**; interpretarea Sol Ultrafast, selecția Decisions și încărcarea Google Maps au fost verificate cu furnizorii reali. [Rezultate și limite](docs/verification/report.md).
+Captură din aplicația funcțională: imaginile geografice sunt reale, iar pasagerii, incidentele și rezervările sunt simulate. **291 de teste trecute**; interpretarea Sol Ultrafast, selecția Decisions și încărcarea Google Maps au fost verificate cu furnizorii reali. [Rezultate și limite](docs/verification/report.md).
 
 Specificația originală și imaginile de referință sunt în [docs/product-spec.md](docs/product-spec.md) și [docs/mockups](docs/mockups).
 

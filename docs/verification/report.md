@@ -4,7 +4,9 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Integrated release verification — 2026-10-31
 
-The combined scenario-authoring and passenger/scene release passed **279 tests: 189 backend and 90 frontend**, strict TypeScript, the production build and full frontend formatting. Merge review preserved current-command isolation, role-tagged conversational context and separate reserved/retired transcript windows. An additional exact-boundary regression checks that the next utterance can start at the previous window boundary while retired late fragments cannot enter reference context. The bounded real-provider and browser checks below apply to their stated flows; no new microphone test is inferred from this merge.
+The combined scenario-authoring, configuration-recovery and passenger/scene release passed **291 tests: 193 backend and 98 frontend**, strict TypeScript, the production build and full frontend formatting. Merge review preserved current-command isolation, role-tagged conversational context and separate reserved/retired transcript windows. An additional exact-boundary regression checks that the next utterance can start at the previous window boundary while retired late fragments cannot enter reference context. The bounded real-provider and browser checks below apply to their stated flows; no new microphone test is inferred from this merge.
+
+Both Docker images rebuilt and the local API/web services became healthy with the existing provider configuration and persistent database. A private SQLite backup was saved first. The canonical full-world snapshot matched byte for byte before and after restart at version 30; no operational mutation or reset was performed. Fresh Chrome inspection of the deployed release showed the live-provider controls and 96 Google model elements without a map warning. Selecting the existing unavailable B12 focused its geometry and preserved incident state.
 
 ## Passenger decisions, voice ordering and scene materials — 2026-10-31
 
