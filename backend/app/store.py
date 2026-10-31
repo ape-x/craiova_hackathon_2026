@@ -308,7 +308,7 @@ class Store:
             conn.commit()
             return response
 
-    def mutate(self,key: str,payload,expected_version: int | None,operation: Callable[[World],dict | None],*,request_started: float | None=None,authorize: Callable[[World],None] | None=None):
+    def mutate(self,key: str,payload,expected_version: int | None,operation: Callable[[World],dict | None],*,request_started: float | None=None,authorize: Callable[[World],None] | None=None,on_commit: Callable | None=None):
         transaction_started=time.perf_counter()
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -345,6 +345,8 @@ class Store:
             self._save(conn,world)
             response={"world":self._with_observations(conn,world).model_dump(mode="json"),**result,"replayed":False}
             conn.execute("INSERT INTO idempotency VALUES(?,?,?,?)",(key,self.fingerprint(payload),json.dumps(self._without_observations(response)),utcnow().isoformat()))
+            if on_commit is not None:
+                on_commit(conn,response)
             conn.commit()
             if request_started is not None and response.get("decision"):
                 finished=time.perf_counter()

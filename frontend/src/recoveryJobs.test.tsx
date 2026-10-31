@@ -1,0 +1,319 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { api, ApiError, TransportError } from './api';
+import { RecoveryJobDetails } from './RecoveryJobPanel';
+import { mergeRecoveryJobs, recoveryJobActive } from './recoveryJobs';
+import type { RecoveryJob, RecoveryJobInput, RecoveryJobResponse, World } from './types';
+
+const input: RecoveryJobInput = {
+  group_ids: ['G-1'],
+  objective: 'balanced',
+  modes: ['flight'],
+  max_provider_calls: 8,
+  instructions: 'Keep this family together.',
+};
+const job: RecoveryJob = {
+  id: 'JOB-1',
+  incident_id: 'CASE-1',
+  group_ids: ['G-1'],
+  objective: 'balanced',
+  modes: ['flight'],
+  max_provider_calls: 8,
+  calls_dispatched: 2,
+  status: 'running',
+  stage: 'searching_flights',
+  message: 'Searching the selected flight alternatives.',
+  created_at: '2026-11-01T10:00:00Z',
+  updated_at: '2026-11-01T10:01:00Z',
+  cancel_requested: false,
+  source_version: 4,
+  applied_version: null,
+  steps: [
+    {
+      id: 'STEP-1',
+      stage: 'searching_flights',
+      provider: 'Supplier A',
+      status: 'succeeded',
+      started_at: '2026-11-01T10:00:10Z',
+      finished_at: '2026-11-01T10:01:00Z',
+      group_ids: ['G-1'],
+      message: 'One quoted flight returned.',
+      quote_count: 1,
+    },
+  ],
+  gaps: [
+    {
+      code: 'ground_link_missing',
+      message: 'No verified transfer connects the hotel to the airport.',
+      group_ids: ['G-1'],
+    },
+  ],
+  result: null,
+};
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe('durable recovery request boundaries', () => {
+  it('recovers an unknown start using the exact request and does not silently start a new provider attempt', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('upstream failed', { status: 502 }))
+      .mockResolvedValueOnce(Response.json({ job, replayed: true }));
+    vi.stubGlobal('fetch', fetcher);
+    const mutable = { ...input, group_ids: ['G-1'] };
+    let unknown: TransportError | null = null;
+    try {
+      await api.startRecoveryJob({ version: 4 } as World, 'CASE/1', mutable);
+    } catch (cause) {
+      expect(cause).toBeInstanceOf(TransportError);
+      unknown = cause as TransportError;
+    }
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    mutable.group_ids.push('G-2');
+    const replay = await unknown!.retry<RecoveryJobResponse>();
+    expect(replay.replayed).toBe(true);
+    const [first, second] = fetcher.mock.calls;
+    expect(first[0]).toBe('/api/incidents/CASE%2F1/recovery-jobs');
+    expect(second[1].body).toBe(first[1].body);
+    expect(JSON.parse(second[1].body)).toMatchObject({ group_ids: ['G-1'], expected_version: 4 });
+  });
+  it('keeps cancellation separate from a new search and reuses its key after an unknown outcome', async () => {
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Connection lost'))
+      .mockResolvedValueOnce(Response.json({ job: { ...job, cancel_requested: true } }));
+    vi.stubGlobal('fetch', fetcher);
+    let unknown: TransportError | null = null;
+    try {
+      await api.cancelRecoveryJob('JOB/1');
+    } catch (cause) {
+      unknown = cause as TransportError;
+    }
+    const response = await unknown!.retry<RecoveryJobResponse>();
+    expect(response.job.cancel_requested).toBe(true);
+    expect(fetcher.mock.calls.map(([path]) => path)).toEqual([
+      '/api/recovery-jobs/JOB%2F1/cancel',
+      '/api/recovery-jobs/JOB%2F1/cancel',
+    ]);
+    expect(fetcher.mock.calls[1][1].body).toBe(fetcher.mock.calls[0][1].body);
+    expect(Object.keys(JSON.parse(fetcher.mock.calls[0][1].body))).toEqual(['idempotency_key']);
+  });
+  it('exposes definitive conflicts and gives explicit new attempts new request identities', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ detail: 'Operation changed', applied: false }, { status: 409 }),
+      )
+      .mockResolvedValue(Response.json({ job }));
+    vi.stubGlobal('fetch', fetcher);
+    await expect(
+      api.startRecoveryJob({ version: 4 } as World, 'CASE-1', input),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await api.startRecoveryJob({ version: 5 } as World, 'CASE-1', input);
+    const bodies = fetcher.mock.calls.map(([, options]) => JSON.parse(options.body));
+    expect(bodies[0].idempotency_key).not.toBe(bodies[1].idempotency_key);
+    expect(bodies[1].expected_version).toBe(5);
+  });
+  it('polls the incident endpoint as a read, without a provider dispatch body', async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ jobs: [job] }));
+    vi.stubGlobal('fetch', fetcher);
+    const controller = new AbortController();
+    expect((await api.recoveryJobs('CASE-1', controller.signal)).jobs).toHaveLength(1);
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'GET', body: undefined });
+  });
+});
+
+describe('recovery progress and provenance', () => {
+  it('preserves acknowledged jobs across an older list response and never regresses completed work', () => {
+    const completed: RecoveryJob = {
+      ...job,
+      status: 'completed',
+      stage: 'finished',
+      updated_at: '2026-11-01T10:02:00Z',
+    };
+    expect(mergeRecoveryJobs([completed], [job])[0]).toEqual(completed);
+    expect(mergeRecoveryJobs([completed], [])[0]).toEqual(completed);
+    expect(
+      mergeRecoveryJobs([completed], [{ ...job, updated_at: completed.updated_at }])[0],
+    ).toEqual(completed);
+    expect(recoveryJobActive(completed)).toBe(false);
+    for (const status of [
+      'needs_review',
+      'unknown_outcome',
+      'blocked',
+      'cancelled',
+      'failed',
+    ] as const)
+      expect(recoveryJobActive({ ...job, status })).toBe(false);
+  });
+  it('shows actual provider counts and gaps without a percentage or capacity claim', () => {
+    const html = renderToStaticMarkup(
+      <RecoveryJobDetails job={job} world={{ offers: [] } as unknown as World} />,
+    );
+    expect(html).toContain('2 provider calls dispatched');
+    expect(html).toContain('limit 8');
+    expect(html).toContain('Supplier A');
+    expect(html).toContain('No verified transfer connects the hotel to the airport');
+    expect(html).not.toContain('25%');
+    expect(html).not.toContain('seats available');
+  });
+  it('separates historical proposal results from expired offers and actual supplier confirmation', () => {
+    const completed: RecoveryJob = {
+      ...job,
+      status: 'completed',
+      stage: 'finished',
+      applied_version: 5,
+      result: {
+        decision_id: 'D-1',
+        plan_id: 'P-1',
+        recovered_passengers: 3,
+        exception_passengers: 0,
+        offer_ids: ['O-1'],
+        resource_ids: ['F-1'],
+        source_counts: { 'Supplier A': 1 },
+      },
+    };
+    const expiredWorld = {
+      offers: [{ id: 'O-1', status: 'proposed', expires_at: '2020-01-01T00:00:00Z' }],
+    } as unknown as World;
+    const html = renderToStaticMarkup(<RecoveryJobDetails job={completed} world={expiredWorld} />);
+    expect(html).toContain('passengers proposed');
+    expect(html).toContain('0 of 1');
+    expect(html).toContain('Proposals are not supplier bookings');
+    expect(html).not.toContain('3 passengers confirmed');
+  });
+  it('does not describe requested cancellation or an unknown provider outcome as safely finished', () => {
+    const html = renderToStaticMarkup(
+      <RecoveryJobDetails
+        job={{ ...job, status: 'unknown_outcome', cancel_requested: true }}
+        world={{ offers: [] } as unknown as World}
+      />,
+    );
+    expect(html).toContain('in-flight provider call may still finish and incur a charge');
+    expect(html).toContain('A new attempt can incur additional provider charges');
+    expect(html).toContain('UNKNOWN OUTCOME');
+  });
+});
+
+type RecordedWait = NonNullable<NonNullable<RecoveryJob['result']>['waits']>[number];
+const waitWorld = {
+  offers: [],
+  groups: [{ id: 'G-1', name: 'Planning family' }],
+  airports: [{ id: 'JFK', name: 'John F. Kennedy International Airport' }],
+} as unknown as World;
+function completedWithWait(overrides: Partial<RecordedWait> = {}): RecoveryJob {
+  return {
+    ...job,
+    status: 'completed',
+    stage: 'finished',
+    gaps: [],
+    applied_version: 5,
+    result: {
+      decision_id: 'D-1',
+      plan_id: 'P-1',
+      recovered_passengers: 2,
+      exception_passengers: 0,
+      offer_ids: [],
+      resource_ids: ['F-1'],
+      source_counts: { 'Supplier A': 1 },
+      waits: [
+        {
+          group_id: 'G-1',
+          location_id: 'JFK',
+          from_at: '2027-01-02T03:30:00Z',
+          to_at: '2027-01-02T05:00:00Z',
+          duration_minutes: 90,
+          timezone: 'America/New_York',
+          overnight: true,
+          accommodation_included: false,
+          ...overrides,
+        },
+      ],
+    },
+  };
+}
+
+describe('recorded waits and local time', () => {
+  it('shows elapsed duration and source-location local times without making an overnight wait a failure', () => {
+    const completed = completedWithWait();
+    completed.gaps = [
+      {
+        code: 'overnight_wait_without_accommodation',
+        message: 'Review the recorded overnight waiting interval.',
+        group_ids: ['G-1'],
+      },
+    ];
+    const html = renderToStaticMarkup(<RecoveryJobDetails job={completed} world={waitWorld} />);
+    expect(html).toContain('90 min (1 h 30 min)');
+    expect(html).toContain('John F. Kennedy International Airport (JFK)');
+    expect(html).toContain('Planning family');
+    expect(html).toContain('01 Jan 2027, 22:30 GMT-5');
+    expect(html).toContain('02 Jan 2027, 00:00 GMT-5');
+    expect(html).toContain('America/New_York');
+    expect(html).toContain('Wait crosses local midnight');
+    expect(html).toContain('Accommodation is not included during this wait');
+    expect(html).toContain('no mandatory rest requirement was assumed');
+    expect(html).toContain('Informational waiting considerations');
+    expect(html).not.toContain('Requirements still unresolved');
+    expect(html).toContain('COMPLETED');
+  });
+
+  it('retains actual elapsed duration across the London clock change rather than subtracting local clock labels', () => {
+    const completed = completedWithWait({
+      location_id: 'LHR',
+      timezone: 'Europe/London',
+      from_at: '2027-10-31T00:30:00Z',
+      to_at: '2027-10-31T03:30:00Z',
+      duration_minutes: 180,
+      overnight: false,
+    });
+    const html = renderToStaticMarkup(<RecoveryJobDetails job={completed} world={waitWorld} />);
+    expect(html).toContain('180 min (3 h)');
+    expect(html).toContain('01:30 GMT+1');
+    expect(html).toContain('03:30 GMT');
+    expect(html).toContain('Europe/London');
+    expect(html).not.toContain('Wait crosses local midnight');
+  });
+
+  it('labels unknown or unsupported local zones and explicitly uses UTC, preserving fractional minutes', () => {
+    for (const timezone of [null, 'Unsupported/Timezone']) {
+      const completed = completedWithWait({
+        timezone,
+        overnight: null,
+        from_at: '2027-01-02T03:30:00Z',
+        to_at: '2027-01-02T03:35:30Z',
+        duration_minutes: 5.5,
+      });
+      const html = renderToStaticMarkup(<RecoveryJobDetails job={completed} world={waitWorld} />);
+      expect(html).toContain('5.5 min');
+      expect(html).toContain('03:30 GMT');
+      expect(html).toContain('UTC · local timezone unavailable');
+      expect(html).toContain('Local overnight status unknown');
+    }
+  });
+
+  it('keeps a separate explicit operator requirement unresolved while presenting the overnight disclosure as informational', () => {
+    const completed = completedWithWait();
+    completed.gaps = [
+      {
+        code: 'overnight_wait_without_accommodation',
+        message: 'Informational overnight wait.',
+        group_ids: ['G-1'],
+      },
+      {
+        code: 'rest_requirement_unmet',
+        message: 'The operator-required accessible rest facility is missing.',
+        group_ids: ['G-1'],
+      },
+    ];
+    const html = renderToStaticMarkup(<RecoveryJobDetails job={completed} world={waitWorld} />);
+    expect(html).toContain('Waiting considerations');
+    const requirements = html.split('aria-label="Recovery gaps"')[1].split('</section>')[0];
+    expect(requirements).toContain('Requirements still unresolved');
+    expect(requirements).toContain('operator-required accessible rest facility');
+    expect(requirements).not.toContain('Informational overnight wait');
+  });
+});

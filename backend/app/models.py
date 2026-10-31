@@ -30,7 +30,7 @@ class Airport(Model):
     diversion_eligible: bool = True
     weather: WeatherDefinition | None = None
     operational_status: Literal["unknown", "open", "closed"] = "unknown"
-    kind: Literal["airport", "station"] = "airport"
+    kind: Literal["airport", "station", "hotel"] = "airport"
 
 
 class Resource(Model):

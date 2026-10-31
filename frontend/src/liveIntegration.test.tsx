@@ -186,6 +186,41 @@ describe('integrated live and simulation presentation', () => {
     expect(coach).toContain('Available');
     expect(coach).not.toContain('Verified');
   });
+  it('keeps hotel properties distinct from airport operation and diversion status', () => {
+    const world = operation('live', 'proposed');
+    world.airports = [
+      {
+        id: 'HOTEL-42',
+        code: 'HOTEL-42',
+        name: 'Supplier Property',
+        kind: 'hotel',
+        lat: 44.47,
+        lon: 26.08,
+        available: true,
+        diversion_eligible: false,
+        operational_status: 'unknown',
+      },
+    ];
+    const rail = renderToStaticMarkup(
+      <ResourceRail
+        world={world}
+        selectedId="HOTEL-42"
+        onSelect={() => {}}
+        onMode={() => {}}
+        onScenario={() => {}}
+        onLiveData={() => {}}
+      />,
+    );
+    expect(rail).toContain('Supplier Property');
+    expect(rail).toContain('HOTEL');
+    expect(rail).not.toContain('UNKNOWN');
+    const detail = render(world, 'HOTEL-42');
+    expect(detail).toContain('HOTEL PROPERTY');
+    expect(detail).toContain('Property location');
+    expect(detail).toContain('transport to the property must be verified separately');
+    expect(detail).not.toContain('Status unknown');
+    expect(detail).not.toContain('Diversion eligibility');
+  });
   it('distinguishes planning assumptions, imported manifests and missing passenger provenance', () => {
     const world = operation('live', 'proposed');
     for (const [source, label] of [

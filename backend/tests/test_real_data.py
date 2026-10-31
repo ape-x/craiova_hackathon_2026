@@ -17,6 +17,47 @@ def settings(**values):
     return SimpleNamespace(request_timeout_seconds=1, **values)
 
 
+def test_hotel_search_calendar_uses_source_airport_time_zone(monkeypatch):
+    import app.real_data as module
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = datetime(2026, 11, 1, 0, 30, tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+    monkeypatch.setattr(module, "datetime", FixedDateTime)
+    request = RealDataRequest(airport_code="LAX", destination_code="JFK", checkin="2026-10-31", checkout="2026-11-01")
+    assert request.checkin.isoformat() == "2026-10-31"
+    with pytest.raises(ValidationError):
+        RealDataRequest(airport_code="NRT", destination_code="JFK", checkin="2026-10-31", checkout="2026-11-01")
+
+
+@pytest.mark.asyncio
+async def test_supplier_property_location_uses_exact_metadata_identity_and_coordinates():
+    def handler(request):
+        assert request.url.path == "/v3.0/data/hotel"
+        assert request.url.params["hotelId"] == "property-123"
+        assert request.headers["X-API-Key"] == "prod_test"
+        return httpx.Response(200, json={"data": {"id": "property-123", "location": {
+            "latitude": 51.47, "longitude": -0.45}}})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await RealDataProvider(settings(liteapi_api_key="prod_test", liteapi_environment="live"), client=client).hotel_location("property-123")
+    assert result["latitude"] == 51.47 and result["longitude"] == -0.45
+    assert result["location_source"] == "Nuitee / LiteAPI"
+    assert "prod_test" not in json.dumps(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("data", [
+    {"id": "different-property", "location": {"latitude": 51.47, "longitude": -0.45}},
+    {"id": "property-123", "location": {"latitude": True, "longitude": -0.45}},
+    {"id": "property-123", "location": {"latitude": 51.47}},
+])
+async def test_supplier_property_metadata_cannot_guess_or_mix_locations(data):
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"data": data}))) as client:
+        with pytest.raises(ProviderError):
+            await RealDataProvider(settings(liteapi_api_key="prod_test", liteapi_environment="live"), client=client).hotel_location("property-123")
+
+
 def search(**values):
     return RealDataRequest(**({"airport_code": "CRA", "destination_code": "OTP", "checkin": local_today(), "checkout": local_today()+timedelta(days=1), "adults": 2, "rooms": 1} | values))
 

@@ -356,15 +356,17 @@ class RecoveryService:
         return self.store.mutate("event:"+request.idempotency_key,payload,request.expected_version,
             lambda world:apply_change(world,ScenarioChange(type=request.type,target_id=request.target_id,value=request.value)))
 
-    def _hold_plan(self,world,plan,mode,request,provider,explanation,candidates,latency,focus_id=None,timings=None,apply_started=None,candidate_counts=None):
+    def _hold_plan(self,world,plan,mode,request,provider,explanation,candidates,latency,focus_id=None,timings=None,apply_started=None,candidate_counts=None,scope_group_ids=None):
         apply_started=apply_started if apply_started is not None else time.perf_counter()
+        if scope_group_ids is not None and (plan.scenario_changes or any(item.get("group_id") not in scope_group_ids for item in plan.exceptions)):
+            raise DomainError(409,"A scoped recovery plan cannot change the scenario or unrelated passenger groups")
         for change in plan.scenario_changes:
             apply_change(world,ScenarioChange.model_validate(change))
-        check=validate_allocations(world,plan.allocations)
+        check=validate_allocations(world,plan.allocations,scope_group_ids=scope_group_ids)
         if not check["valid"]:
             raise DomainError(409,"Candidate failed authoritative validation",check)
         for offer in active_offers(world):
-            if offer.status in ("held","proposed","accepted"):
+            if offer.status in ("held","proposed","accepted") and (scope_group_ids is None or offer.group_id in scope_group_ids):
                 offer.status="superseded"
                 offer.reason="Replaced by a newer validated recovery plan."
                 for r in world.reservations:

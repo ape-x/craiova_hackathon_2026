@@ -8,6 +8,7 @@ export GOOGLE_MAPS_SERVER_API_KEY="" BOOKING_DEMAND_API_TOKEN="" BOOKING_AFFILIA
 export LITEAPI_API_KEY="" LITEAPI_ENVIRONMENT="sandbox" HOTEL_OFFERS_PROVIDER="auto"
 export DUFFEL_ACCESS_TOKEN="" DUFFEL_ENVIRONMENT="sandbox"
 export DISTRIBUSION_API_KEY="" DISTRIBUSION_ENVIRONMENT="sandbox" DISTRIBUSION_OFFERS_ENABLED="false"
+export APL_API_KEY=""
 export FLIGHT_OFFERS_PROVIDER="auto" OPERATION_MODE="simulation"
 (cd "$project_dir/backend" && .venv/bin/python -m pytest -q)
 (cd "$project_dir/frontend" && npm test && npm run build)

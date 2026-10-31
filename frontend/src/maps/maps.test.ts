@@ -186,6 +186,26 @@ const world = {
 } as unknown as World;
 
 describe('geographic source separation', () => {
+  it('labels supplier hotels as properties and focuses their exact coordinates without a campus offset', () => {
+    const property = {
+      ...world.airports[0],
+      id: 'HOTEL-42',
+      code: 'HOTEL-42',
+      kind: 'hotel' as const,
+      name: 'Supplier Property',
+      lat: 44.47,
+      lon: 26.08,
+      operational_status: 'unknown' as const,
+    };
+    const live = { ...world, mode: 'live' as const, airports: [property] };
+    const result = buildOverlays(live, property.id, new Map());
+    const marker = result.markers.find((item) => item.id === property.id)!;
+    expect(marker.label).toBe('Supplier Property · HOTEL');
+    expect(marker.title).toContain('room availability depends on the quoted offer');
+    expect(marker.label).not.toMatch(/AIRPORT|CLOSED|STATUS UNKNOWN/);
+    expect(cameraFor(live, 'airport', property.id).center).toEqual(marker.point);
+    expect(marker.point).toEqual({ lat: 44.47, lng: 26.08, altitude: 0 });
+  });
   it('uses exact live airport coordinates and never draws planned resources as GPS positions', () => {
     const live = {
       ...world,

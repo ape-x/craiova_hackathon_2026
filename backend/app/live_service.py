@@ -1,22 +1,23 @@
 """Atomic live-data imports and explicit operator records of external bookings."""
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
-from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .airport_catalog import lookup_airport
+from .hotel_location import property_location, property_zone
 from .live_data import (
     ManifestImport, ManualResourceInput, PassengerGenerationInput, _new_airports,
     aware, identifier, prepare_generated_passengers, prepare_manifest, prepare_resource, relative_minute,
 )
 from .models import Allocation, Mutation, Resource
 from .real_data import RealDataRequest
-from .scenario_schema import MAX_RESOURCES
+from .scenario_schema import MAX_AIRPORTS, MAX_RESOURCES
 from .solver import units, validate_allocations
 from .store import DomainError, audit, utcnow
 
@@ -78,15 +79,21 @@ class HotelQuoteImport(Mutation):
     @field_validator("checkin_at", "checkout_at", mode="before")
     @classmethod
     def stay_timestamp(cls, value):
-        return aware(value)
+        instant = aware(value)
+        if instant.second or instant.microsecond:
+            raise ValueError("Use whole-minute check-in and checkout timestamps")
+        return instant
 
     @model_validator(mode="after")
     def confirmed_stay(self):
-        local = ZoneInfo("Europe/Bucharest")
         if not self.stay_times_confirmed:
             raise ValueError("Confirm the property's check-in and checkout times")
-        if self.checkin_at.astimezone(local).date() != self.checkin or self.checkout_at.astimezone(local).date() != self.checkout:
-            raise ValueError("Stay times must match the selected dates in Europe/Bucharest")
+        # Exact date validation requires each supplier property's coordinates.
+        # Reject clearly impossible inputs here, before any supplier request.
+        if any(abs((instant.date()-day).days) > 1 for instant, day in ((self.checkin_at,self.checkin),(self.checkout_at,self.checkout))):
+            raise ValueError("Stay times cannot match the selected local dates")
+        if not self.checkin < self.checkout:
+            raise ValueError("Checkout date must follow check-in date")
         if self.checkout_at <= self.checkin_at:
             raise ValueError("Checkout must follow check-in")
         return self
@@ -224,6 +231,21 @@ class LiveOperations:
         if self.real_data.provider.hotel_offer_provider != "liteapi":
             raise DomainError(503, "Choose the live Nuitee / LiteAPI supplier to import complete hotel quotes")
         quotes = await self.real_data.provider.offers({"code": airport["code"], "name": airport["name"], "latitude": airport["lat"], "longitude": airport["lon"]}, query)
+        gate = asyncio.Semaphore(3)
+        async def locate(quote):
+            pricing = quote.get("pricing")
+            if not isinstance(pricing, dict) or pricing.get("status") != "complete":
+                return quote
+            if quote.get("latitude") is not None and quote.get("longitude") is not None:
+                return quote
+            async with gate:
+                location = await self.real_data.provider.hotel_location(quote["id"])
+            return {**quote, **location}
+        located = await asyncio.gather(*(locate(quote) for quote in quotes), return_exceptions=True)
+        for result in located:
+            if isinstance(result, BaseException):
+                raise result
+        quotes = located
         resources = self._quote_resources(world, request, group, quotes, departure, arrival)
         skipped = len(quotes) - len(resources)
 
@@ -238,10 +260,19 @@ class LiveOperations:
             if len(current.resources) + len(resources) > MAX_RESOURCES:
                 raise DomainError(422, f"Operation limit is {MAX_RESOURCES} resources")
             current.airports.extend(_new_airports(current, [request.airport_code]))
+            for resource in resources:
+                node, _ = property_location(resource.provenance)
+                existing = next((item for item in current.airports if item.id == node.id), None)
+                if existing and (existing.kind != "hotel" or existing.lat != node.lat or existing.lon != node.lon):
+                    raise DomainError(409, "Supplier property location changed; review the existing property before replacing it")
+                if not existing:
+                    current.airports.append(node)
+            if len(current.airports) > MAX_AIRPORTS:
+                raise DomainError(422, f"Operation limit is {MAX_AIRPORTS} airport, station and property locations")
             current.resources.extend(resources)
             audit(current, "live-hotel-quotes", "Imported supplier hotel quotes for the selected group; no booking or room hold was made.", group.id,
                   {"resource_ids": [resource.id for resource in resources], "rooms": request.rooms, "supplier": "Nuitee / LiteAPI", "skipped_incomplete_pricing": skipped})
-            explanation = f"Imported {len(resources)} supplier hotel quotes. They require revalidation before booking."
+            explanation = f"Imported {len(resources)} supplier hotel quotes at their actual property locations. Ground connections are required for a complete itinerary; quotes require revalidation before booking."
             if skipped:
                 explanation += f" Skipped {skipped} quotes with unresolved mandatory costs."
             return {"applied": True, "explanation": explanation, "focus_id": group.id, "skipped_incomplete_pricing": skipped}
@@ -274,15 +305,24 @@ class LiveOperations:
             seen.add(hotel_id)
             if budget_total is None:
                 continue
+            try:
+                node, location = property_location(quote)
+            except (ValueError, KeyError, TypeError) as exc:
+                raise DomainError(502, "Supplier property coordinates or time zone could not be verified") from exc
+            local = property_zone(location["timezone"])
+            if request.checkin_at.astimezone(local).date() != request.checkin or request.checkout_at.astimezone(local).date() != request.checkout:
+                raise DomainError(422, "Stay times must match the selected dates in each property's local time zone")
             local_id = "HQ-" + hashlib.sha256((group.id + "|" + hotel_id + "|" + reference).encode()).hexdigest()[:28].upper()
-            resources.append(Resource(id=local_id, kind="hotel", name=name[:140], origin=request.airport_code,
-                destination=request.airport_code, departure=departure, arrival=arrival, capacity=request.rooms,
+            resources.append(Resource(id=local_id, kind="hotel", name=name[:140], origin=node.id,
+                destination=node.id, departure=departure, arrival=arrival, capacity=request.rooms,
                 cost_per_person=0, room_capacity=1, accessible=False, source="Nuitee / LiteAPI", status="quoted",
                 eligible_group_ids=[group.id], quote_total_cost=float(amount), budget_total_cost=float(budget_total), quote_rooms=request.rooms,
                 valid_until=expires_at.isoformat() if expires_at else None, requires_revalidation=True,
                 external_offer_id=reference, capacity_scope="quoted_request", provenance={
                     **copy.deepcopy(quote), "checkin_at": request.checkin_at.isoformat(), "checkout_at": request.checkout_at.isoformat(),
                     "stay_times_source": "operator_confirmed", "stay_times_confirmed": True,
+                    "property_location": location, "search_airport": request.airport_code,
+                    "ground_connections_verified": False,
                 }))
         if quotes and not resources:
             raise DomainError(422, "Hotel quotes have unresolved mandatory costs; review the supplier price breakdown before importing a fully budgeted option")

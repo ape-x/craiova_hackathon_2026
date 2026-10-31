@@ -127,6 +127,10 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
             mandatory=pricing.get("mandatory_total") if isinstance(pricing,dict) else None
             if r.budget_total_cost is None or not isinstance(pricing,dict) or pricing.get("status")!="complete" or not isinstance(mandatory,dict) or mandatory.get("currency")!="EUR":
                 return False
+            location=r.provenance.get("property_location")
+            node=next((item for item in world.airports if item.id==r.origin and item.kind=="hotel"),None)
+            if not isinstance(location,dict) or node is None or location.get("node_id")!=r.origin or r.origin!=r.destination or location.get("latitude")!=node.lat or location.get("longitude")!=node.lon:
+                return False
         if resource_blocked_by_incident(world,r,g):
             return False
     if not r.available or r.id in used_ids or r.origin != current or r.departure < minute:
@@ -146,22 +150,28 @@ def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Iti
     if passenger_arrival_pending(world,group):
         return []
     options = []
+    expansions = 0
+    max_legs = 6 if world.mode=="live" else 4
     ready = max(world.sim_time, group.ready_at)
     def visit(location, minute, legs, seen, cost):
+        nonlocal expansions
+        expansions += 1
+        if expansions>4000:
+            return
         if location==group.destination and legs:
             if any(leg.kind in ("bus","flight") for leg in legs):
                 options.append(Itinerary(legs=legs,arrival=legs[-1].arrival,total_cost=round(cost,2)))
             return
-        if len(legs)>=4 or len(options)>=limit:
+        if len(legs)>=max_legs or len(options)>=limit:
             return
         for r in sorted(world.resources,key=lambda x:(x.departure,x.id)):
             connection = 30 if r.kind=="flight" else 10 if legs else 0
             if not resource_feasible(world,r,group,location,minute+connection,{x.resource_id for x in legs}):
                 continue
-            if r.kind!="hotel" and r.destination in seen:
+            if r.kind!="hotel" and r.destination in seen and not any(leg.kind=="hotel" for leg in legs):
                 continue
             # A next-day journey requires a dated hotel segment before departure.
-            if r.departure//1440 > minute//1440:
+            if world.mode!="live" and r.departure//1440 > minute//1440:
                 continue
             price = resource_cost(r,group)
             if cost+price > group.budget+1e-6:
@@ -172,14 +182,20 @@ def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Iti
     return options
 
 
-def validate_allocations(world: World, allocations: list[Allocation], include_confirmed=True) -> dict:
+def fixed_offers(world: World, scope_group_ids: set[str] | None = None):
+    return [offer for offer in active_offers(world) if offer.status == "confirmed" or (scope_group_ids is not None and offer.group_id not in scope_group_ids)]
+
+
+def validate_allocations(world: World, allocations: list[Allocation], include_confirmed=True, scope_group_ids: set[str] | None = None) -> dict:
     """Independent exact checker: never trusts totals or leg fields in a plan."""
     errors: list[str] = []
     resources = {r.id:r for r in world.resources}
     groups = {g.id:g for g in world.groups}
     all_allocations = list(allocations)
+    if scope_group_ids is not None and any(item.group_id not in scope_group_ids for item in allocations):
+        errors.append("An allocation is outside this recovery job's passenger scope")
     if include_confirmed:
-        all_allocations += [Allocation(group_id=o.group_id,itinerary=o.itinerary) for o in active_offers(world,True)]
+        all_allocations += [Allocation(group_id=o.group_id,itinerary=o.itinerary) for o in fixed_offers(world,scope_group_ids)]
     used = Counter()
     seen_groups = set()
     occupied_resources = set()
@@ -206,7 +222,7 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
             connection = 30 if r.kind=="flight" else 10 if seen_legs else 0
             if not resource_feasible(world,r,g,location,minute+connection,seen_legs):
                 errors.append(f"{g.id}: unavailable, inaccessible or discontinuous {r.id}")
-            if r.departure//1440 > minute//1440:
+            if world.mode!="live" and r.departure//1440 > minute//1440:
                 errors.append(f"{g.id}: missing overnight accommodation")
             expected_price = resource_cost(r,g)
             if (leg.origin,leg.destination,leg.departure,leg.arrival,leg.kind)!=(r.origin,r.destination,r.departure,r.arrival,r.kind) or not math.isfinite(leg.cost) or abs(leg.cost-expected_price)>0.005:
@@ -234,14 +250,16 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
     return {"valid":not errors,"errors":errors,"checks":["family_integrity","shared_capacities","temporal_continuity","full_destination","accessibility","deadlines","group_budgets","scenario_budget","hotel_room_occupancy","vehicle_schedule"],"total_committed_cost":round(total_cost,2)}
 
 
-def build_candidate(world: World, strategy: Strategy) -> Plan:
+def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] | None = None) -> Plan:
     started = time.perf_counter()
     projected,changes = project_diversion(world,strategy.preferred_airport)
-    groups = [g for g in projected.groups if g.status not in ("confirmed","scheduled")]
+    groups = [g for g in projected.groups if g.status not in ("confirmed","scheduled") and (scope_group_ids is None or g.id in scope_group_ids)]
     options = {g.id:itinerary_options(projected,g) for g in groups}
     resources = {r.id:r for r in projected.resources}
-    initial_used = inventory_used(projected,True)
-    initial_cost = sum(o.itinerary.total_cost for o in active_offers(projected,True))
+    fixed = fixed_offers(projected,scope_group_ids)
+    fixed_ids = {offer.id for offer in fixed}
+    initial_used = Counter({r.id: sum(item.quantity for item in projected.reservations if item.resource_id==r.id and item.offer_id in fixed_ids and item.status in ("held","proposed","accepted","confirmed")) for r in projected.resources})
+    initial_cost = sum(o.itinerary.total_cost for o in fixed)
     weights={k:max(0,min(100,float(strategy.weights.get(k,1)))) for k in ("arrival","cost","stability")}
     old_routes={o.group_id:tuple(l.resource_id for l in o.itinerary.legs) for o in active_offers(projected) if o.status=="held"}
     def route_changed(group_id,itin):
@@ -307,7 +325,7 @@ def build_candidate(world: World, strategy: Strategy) -> Plan:
     arrival = sum(a.itinerary.arrival*next(g.size for g in groups if g.id==a.group_id) for a in best)/pax if pax else 0
     return Plan(id=f"plan-{strategy.id}",strategy=strategy,allocations=best,exceptions=exception,recovered_passengers=pax,
         total_cost=round(sum(a.itinerary.total_cost for a in best),2),average_arrival=round(arrival,2),scenario_changes=changes,
-        validation=validate_allocations(projected,best),latency_ms=round((time.perf_counter()-started)*1000,2))
+        validation=validate_allocations(projected,best,scope_group_ids=scope_group_ids),latency_ms=round((time.perf_counter()-started)*1000,2))
 
 
 def default_strategies(world: World) -> list[Strategy]:

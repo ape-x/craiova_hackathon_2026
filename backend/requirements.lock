@@ -13,10 +13,14 @@ certifi==2026.10.23
     # via
     #   httpcore
     #   httpx
+cffi==2.1.1
+    # via timezonefinder
 click==8.5.0
     # via uvicorn
 fastapi==0.162.0
     # via -r requirements.txt
+flatbuffers==25.12.19
+    # via timezonefinder
 h11==0.16.0
     # via
     #   httpcore
@@ -31,8 +35,12 @@ idna==3.20
     # via
     #   anyio
     #   httpx
+numpy==2.5.4
+    # via timezonefinder
 opentelemetry-api==1.45.2
     # via fastapi
+pycparser==3.12 ; implementation_name != 'PyPy'
+    # via cffi
 pydantic==2.14.2
     # via
     #   -r requirements.txt
@@ -52,6 +60,12 @@ pyyaml==6.0.3
     # via uvicorn
 starlette==1.10.0
     # via fastapi
+timezonefinder==9.2.0
+    # via -r requirements.txt
+timezonefinder-data==4.2026.5
+    # via
+    #   -r requirements.txt
+    #   timezonefinder
 typing-extensions==4.16.0
     # via
     #   anyio
@@ -67,6 +81,8 @@ typing-inspection==0.4.4
     #   fastapi
     #   pydantic
     #   pydantic-settings
+tzdata==2026.6
+    # via -r requirements.txt
 uvicorn==0.54.0
     # via -r requirements.txt
 uvloop==0.23.0 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'

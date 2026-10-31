@@ -132,7 +132,7 @@ class TravelProvider(RealDataProvider):
                 items = await self.flight_offers(request) if request.kind == "flight" else await self.ground_offers(request)
         except ProviderError as exc:
             state = "sandbox" if exc.code == "sandbox" else "not_configured" if exc.code == "not_configured" else "error"
-            return {"state": state, "source": source, "items": [], "message": str(exc)}
+            return {"state": state, "source": source, "items": [], "message": str(exc), "code": exc.code}
         return {"state": "ready", "source": source, "items": items, "message": None}
 
     def _credentials(self, source: str) -> str:

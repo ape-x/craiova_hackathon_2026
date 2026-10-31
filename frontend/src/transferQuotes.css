@@ -1,0 +1,120 @@
+.transfer-quotes {
+  margin-top: 24px;
+  padding: 22px 0 0;
+  border-top: 1px solid var(--line);
+}
+.transfer-toggle {
+  margin-bottom: 10px;
+}
+#uk-transfer-panel {
+  padding-bottom: 22px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.transfer-heading,
+.transfer-heading h3,
+.transfer-vehicle-heading,
+.transfer-submit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.transfer-heading {
+  flex-wrap: wrap;
+}
+.transfer-heading h3 {
+  justify-content: flex-start;
+  margin: 0;
+  font-size: 14px;
+}
+.transfer-heading h3 svg {
+  color: var(--cyan);
+}
+.transfer-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+  margin: 12px 0;
+}
+.transfer-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+.transfer-fields .field {
+  min-width: 0;
+  margin: 8px 0;
+}
+.transfer-fields input {
+  width: 100%;
+  min-width: 0;
+}
+.transfer-submit {
+  margin-top: 8px;
+}
+.transfer-submit button {
+  white-space: nowrap;
+}
+.transfer-receipt {
+  display: grid;
+  gap: 5px;
+  padding-top: 20px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.transfer-receipt strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.transfer-vehicle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.transfer-vehicle {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 13px;
+  background: var(--surface);
+  min-width: 0;
+}
+.transfer-vehicle-heading {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.transfer-price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 15px;
+  flex-wrap: wrap;
+}
+.transfer-price strong {
+  color: var(--text);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.transfer-price span,
+.transfer-vehicle p {
+  color: var(--muted);
+  font-size: 10px;
+}
+.transfer-vehicle p {
+  margin: 9px 0 0;
+}
+@media (max-width: 580px) {
+  .transfer-fields,
+  .transfer-vehicle-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .transfer-submit {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+}

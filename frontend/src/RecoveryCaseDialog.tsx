@@ -21,6 +21,7 @@ import {
 } from './recoveryCase';
 import { passengerSourceLabel } from './liveData';
 import './recoveryCase.css';
+import RecoveryJobPanel from './RecoveryJobPanel';
 
 type ActionKind = 'create' | 'bind' | 'refresh';
 export default function RecoveryCaseDialog({
@@ -53,6 +54,7 @@ export default function RecoveryCaseDialog({
   const [refreshingFlight, setRefreshingFlight] = useState(false);
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [jobSubmissionPending, setJobSubmissionPending] = useState(false);
   const [uncertain, setUncertain] = useState<{ error: TransportError; kind: ActionKind } | null>(
     null,
   );
@@ -63,7 +65,7 @@ export default function RecoveryCaseDialog({
   const generation = useRef(0);
   const mounted = useRef(true);
   const running = useRef(false);
-  const locked = busy || Boolean(uncertain);
+  const locked = busy || Boolean(uncertain) || jobSubmissionPending;
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
   const close = useCallback(() => {
@@ -306,6 +308,14 @@ export default function RecoveryCaseDialog({
         incident ? (
           <>
             <CaseSummary incident={incident} world={world} />
+            <RecoveryJobPanel
+              key={incident.id}
+              world={world}
+              incident={incident}
+              disabled={busy || Boolean(uncertain)}
+              onRefresh={onRefresh}
+              onMutationPending={setJobSubmissionPending}
+            />
             <div className="case-actions">
               <button
                 className="secondary-button"

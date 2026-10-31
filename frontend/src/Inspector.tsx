@@ -24,6 +24,7 @@ import { observationInfo } from './observation';
 import { AirportWeatherStatus } from './WeatherStatus';
 import { airportWeatherState } from './weather';
 import { passengerSourceLabel } from './liveData';
+import { isAirportNode, locationKindLabel } from './locationNodes';
 
 export function ItineraryView({
   offer,
@@ -579,7 +580,7 @@ export default function Inspector({
     world.resources.filter((item) => !item.available).length +
     world.airports.filter((item) =>
       world.mode === 'live'
-        ? item.kind !== 'station' && item.operational_status === 'closed'
+        ? isAirportNode(item) && item.operational_status === 'closed'
         : !item.available,
     ).length;
   const title = showLog
@@ -757,20 +758,26 @@ export default function Inspector({
           <>
             <div className="entity-heading">
               <div
-                className={`entity-icon ${airport.kind === 'station' || (world.mode === 'live' && airport.operational_status === 'unknown') || airport.available ? 'cyan' : 'red'}`}
+                className={`entity-icon ${!isAirportNode(airport) || (world.mode === 'live' && airport.operational_status === 'unknown') || airport.available ? 'cyan' : 'red'}`}
               >
-                {airport.kind === 'station' ? <BusFront size={22} /> : <Plane size={22} />}
+                {airport.kind === 'hotel' ? (
+                  <BedDouble size={22} />
+                ) : airport.kind === 'station' ? (
+                  <BusFront size={22} />
+                ) : (
+                  <Plane size={22} />
+                )}
               </div>
               <div>
                 <span className="eyebrow">
-                  {airport.kind === 'station' ? 'COACH STATION' : 'AIRPORT'} ·{' '}
+                  {locationKindLabel(airport).toUpperCase()} ·{' '}
                   {world.mode === 'live' ? 'REFERENCE LOCATION' : 'SCENARIO STATUS'}
                 </span>
                 <h3>
-                  {airport.code}{' '}
+                  {airport.kind === 'hotel' ? airport.name : airport.code}{' '}
                   <span
                     className={
-                      airport.kind === 'station' ||
+                      !isAirportNode(airport) ||
                       (world.mode === 'live' && airport.operational_status === 'unknown')
                         ? 'muted'
                         : airport.available && !airportWeatherState(airport).restricted
@@ -778,18 +785,20 @@ export default function Inspector({
                           : 'text-red'
                     }
                   >
-                    {airport.kind === 'station'
-                      ? 'Supplier stop'
-                      : world.mode === 'live' && airport.operational_status === 'unknown'
-                        ? 'Status unknown'
-                        : airport.available
-                          ? airportWeatherState(airport).restricted
-                            ? 'Weather restricted'
-                            : 'Operational'
-                          : 'Unavailable'}
+                    {airport.kind === 'hotel'
+                      ? 'Property location'
+                      : airport.kind === 'station'
+                        ? 'Supplier stop'
+                        : world.mode === 'live' && airport.operational_status === 'unknown'
+                          ? 'Status unknown'
+                          : airport.available
+                            ? airportWeatherState(airport).restricted
+                              ? 'Weather restricted'
+                              : 'Operational'
+                            : 'Unavailable'}
                   </span>
                 </h3>
-                <span>{airport.name}</span>
+                <span>{airport.kind === 'hotel' ? airport.code : airport.name}</span>
               </div>
             </div>
             <div className="fact-list">
@@ -800,25 +809,33 @@ export default function Inspector({
                   {Math.abs(airport.lon).toFixed(3)}° {airport.lon >= 0 ? 'E' : 'W'}
                 </b>
               </span>
-              {world.mode === 'simulation' && airport.kind !== 'station' && (
+              {world.mode === 'simulation' && isAirportNode(airport) && (
                 <span>
                   Diversion eligibility{' '}
                   <b>{airport.diversion_eligible ? 'Eligible in scenario' : 'Not eligible'}</b>
                 </span>
               )}
             </div>
-            {world.mode === 'simulation' && <AirportWeatherStatus airport={airport} />}
+            {world.mode === 'simulation' && isAirportNode(airport) && (
+              <AirportWeatherStatus airport={airport} />
+            )}
             <p className="muted small">
-              {airport.kind === 'station'
-                ? 'This is the supplier’s actual coach stop. Transfer to or from an airport must be verified separately.'
-                : world.mode === 'live'
-                  ? 'Airport geography is reference data. Operational availability requires a verified source.'
-                  : 'Airport conditions belong to this simulation. Observed flight positions remain unchanged.'}
+              {airport.kind === 'hotel'
+                ? 'This is the accommodation provider’s property location. Room availability comes from a specific quoted offer; transport to the property must be verified separately.'
+                : airport.kind === 'station'
+                  ? 'This is the supplier’s actual coach stop. Transfer to or from an airport must be verified separately.'
+                  : world.mode === 'live'
+                    ? 'Airport geography is reference data. Operational availability requires a verified source.'
+                    : 'Airport conditions belong to this simulation. Observed flight positions remain unchanged.'}
             </p>
-            <button className="secondary-button full" onClick={onScenario}>
-              {world.mode === 'live' ? 'Manage verified node data' : 'Change airport availability'}{' '}
-              <ArrowRight size={14} />
-            </button>
+            {(world.mode === 'live' || isAirportNode(airport)) && (
+              <button className="secondary-button full" onClick={onScenario}>
+                {world.mode === 'live'
+                  ? 'Manage verified node data'
+                  : 'Change airport availability'}{' '}
+                <ArrowRight size={14} />
+              </button>
+            )}
           </>
         ) : null}
         {!showLog && observation && provenance && (

@@ -9,6 +9,7 @@ import { MANIFEST_TEMPLATE, inspectManifest, utcInputToIso } from './liveData';
 import { addCalendarDays, bucharestDate } from './realData';
 import './liveData.css';
 import LiveTravelSearch from './LiveTravelSearch';
+import { isAirportNode, locationKindLabel } from './locationNodes';
 
 type Tab = 'search' | 'generate' | 'passengers' | 'transport' | 'hotels' | 'confirm';
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -612,17 +613,17 @@ export default function LiveDataDialog({
             </div>
             <datalist id="live-transport-nodes">
               {world.airports
-                .filter((node) => transport.kind === 'bus' || node.kind !== 'station')
+                .filter((node) => transport.kind === 'bus' || isAirportNode(node))
                 .map((node) => (
                   <option key={node.id} value={node.id}>
-                    {node.name} · {node.kind === 'station' ? 'coach station' : 'airport'}
+                    {node.name} · {locationKindLabel(node)}
                   </option>
                 ))}
             </datalist>
             {transport.kind === 'bus' && (
               <p className="field-hint">
-                Use the actual station node IDs shown after importing a coach quote. An
-                airport-to-station shuttle must be separately confirmed by an operator.
+                Use the actual airport, station or hotel property node IDs. A transfer between those
+                locations must be separately confirmed by an operator.
               </p>
             )}
             <Evidence value={transport} onChange={transportChange} />

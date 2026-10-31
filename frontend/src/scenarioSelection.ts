@@ -1,8 +1,11 @@
 import type { Airport } from './types';
+import { isAirportNode } from './locationNodes';
 
 /** Keep the rendered option and submitted destination in sync after a live airport closure. */
 export function diversionChoice(airports: Airport[], requestedId: string) {
-  const eligible = airports.filter((airport) => airport.available && airport.diversion_eligible);
+  const eligible = airports.filter(
+    (airport) => isAirportNode(airport) && airport.available && airport.diversion_eligible,
+  );
   return {
     airports: eligible,
     selectedId: eligible.some((airport) => airport.id === requestedId)

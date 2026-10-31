@@ -32,6 +32,7 @@ import WorkspaceSummary from './WorkspaceSummary';
 import ScenarioDialog from './ScenarioDialog';
 import LiveDataDialog from './LiveDataDialog';
 import RecoveryCaseDialog from './RecoveryCaseDialog';
+import { locationKindLabel } from './locationNodes';
 import { WeatherNetworkOverlay } from './WeatherStatus';
 import { Brand, Dot, Modal, Tag } from './ui';
 import ThemeToggle from './ThemeToggle';
@@ -413,8 +414,12 @@ function Operations() {
       <LoadingPage />
     );
   const live = world.mode === 'live';
+  const mapSelectionId = live
+    ? (world.resources.find((resource) => resource.id === selectedId && resource.kind === 'hotel')
+        ?.origin ?? selectedId)
+    : selectedId;
   const homeAirport =
-    world.airports.find((airport) => airport.id === selectedId) ?? world.airports[0];
+    world.airports.find((airport) => airport.id === mapSelectionId) ?? world.airports[0];
   const geographic = live || mapStyle === 'geographic';
   const mapWorld = live
     ? { ...world, resources: [], groups: [], offers: [], reservations: [] }
@@ -429,7 +434,9 @@ function Operations() {
         mode={world.mode}
         locationLabel={
           homeAirport
-            ? `${homeAirport.code} recovery operations`
+            ? homeAirport.kind === 'hotel'
+              ? `${homeAirport.name} · accommodation`
+              : `${homeAirport.code} recovery operations`
             : live
               ? 'Live recovery operations'
               : 'Simulation workspace'
@@ -518,7 +525,7 @@ function Operations() {
                 <GoogleMaps3D
                   world={mapWorld}
                   mode={mode}
-                  selectedId={selectedId}
+                  selectedId={mapSelectionId}
                   onSelect={select}
                   apiKey={config.google_maps_api_key ?? ''}
                   onClose={() => setMapStyle('architectural')}
@@ -1037,7 +1044,7 @@ function SearchDialog({
     ...world.airports.map((item) => ({
       id: item.id,
       name: item.name,
-      type: 'Airport',
+      type: locationKindLabel(item),
     })),
     ...world.resources.map((item) => ({
       id: item.id,

@@ -13,6 +13,18 @@ const airport = (id: string, available = true, eligible = true): Airport => ({
 });
 
 describe('live diversion choices', () => {
+  it('excludes hotels and coach stations even if a malformed node advertises diversion eligibility', () => {
+    const choice = diversionChoice(
+      [
+        { ...airport('HOTEL'), kind: 'hotel' },
+        { ...airport('STOP'), kind: 'station' },
+        airport('OTP'),
+      ],
+      'HOTEL',
+    );
+    expect(choice.airports.map((node) => node.id)).toEqual(['OTP']);
+    expect(choice.selectedId).toBe('OTP');
+  });
   it('keeps the operator selection while that airport is eligible', () => {
     const choice = diversionChoice([airport('OTP'), airport('SBZ')], 'SBZ');
     expect(choice.selectedId).toBe('SBZ');

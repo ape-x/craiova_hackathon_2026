@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .airport_catalog import lookup_airport
+from .hotel_location import coordinate_timezone, property_zone
 from .providers.base import ProviderError
 from .providers.real_data import RealDataProvider
 
@@ -39,7 +40,8 @@ class RealDataRequest(BaseModel):
 
     @model_validator(mode="after")
     def valid_trip(self):
-        today = local_today()
+        airport = lookup_airport(self.airport_code)
+        today = datetime.now(property_zone(coordinate_timezone(airport["lat"], airport["lon"]))).date()
         if self.airport_code == self.destination_code:
             raise ValueError("Origin and destination must be different airports")
         if self.checkin < today or self.checkout > today + timedelta(days=500):

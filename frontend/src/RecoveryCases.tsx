@@ -79,10 +79,10 @@ export function CaseSummary({ incident, world }: { incident: RecoveryIncident; w
         available seats, rooms or bookings.
       </p>
       {incident.flight ? (
-        <>
-          <span className="eyebrow">FLIGHT CONTEXT · FLIGHTRADAR24</span>
+        <details className="case-flight-context">
+          <summary>Flight context · Flightradar24</summary>
           <FlightFacts flight={incident.flight} />
-        </>
+        </details>
       ) : (
         <p className="case-source-warning">
           Flight context has expired. The operator’s case remains recorded; provider facts are

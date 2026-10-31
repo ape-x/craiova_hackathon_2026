@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .airport_catalog import lookup_airport
+from .hotel_location import coordinate_timezone, property_zone
 
 
 class TravelSearchRequest(BaseModel):
@@ -34,7 +35,8 @@ class TravelSearchRequest(BaseModel):
 
     @model_validator(mode="after")
     def valid_journey(self):
-        today = datetime.now(ZoneInfo("Europe/Bucharest")).date()
+        airport = lookup_airport(self.origin_code)
+        today = datetime.now(property_zone(coordinate_timezone(airport["lat"],airport["lon"]))).date()
         if self.origin_code == self.destination_code:
             raise ValueError("Origin and destination must differ")
         if not today <= self.departure_date <= today + timedelta(days=330):

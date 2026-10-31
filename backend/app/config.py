@@ -1,7 +1,7 @@
 from typing import Literal
 from pathlib import Path
 from urllib.parse import urlsplit
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     distribusion_api_key: str = Field(default="", repr=False)
     distribusion_environment: Literal["sandbox", "live"] = "sandbox"
     distribusion_offers_enabled: bool = False
+    apl_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
 
     @property
     def production(self):

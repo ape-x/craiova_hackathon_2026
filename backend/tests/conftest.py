@@ -28,6 +28,7 @@ def pytest_configure(config):
         "LITEAPI_API_KEY": "", "LITEAPI_ENVIRONMENT": "sandbox", "HOTEL_OFFERS_PROVIDER": "auto",
         "DUFFEL_ACCESS_TOKEN": "", "DUFFEL_ENVIRONMENT": "sandbox", "FLIGHT_OFFERS_PROVIDER": "auto",
         "DISTRIBUSION_API_KEY": "", "DISTRIBUSION_ENVIRONMENT": "sandbox", "DISTRIBUSION_OFFERS_ENABLED": "false",
+        "APL_API_KEY": "",
         "OPERATOR_TOKEN": "", "ENVIRONMENT": "test", "OPERATION_MODE": "simulation",
         "DATABASE_PATH": str(Path(_temporary.name) / "import-only.sqlite3"),
         "PUBLIC_BASE_URL": "http://localhost:5173",

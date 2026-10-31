@@ -12,7 +12,7 @@ adds inventory, holds rooms, reserves seats or modifies the recovery scenario.
 | Nearby hotels | OpenStreetMap through Overpass | Named accommodation records within 20 km, addresses/contacts when supplied, and straight-line distance from the airport. No room count or price is inferred. |
 | Airport transfer route | OSRM using OpenStreetMap | Road distance and estimated driving time for a car profile. It is not a scheduled coach service, vehicle quote or live-traffic measurement. |
 | Hotel room offers | Booking.com Demand API 3.3, when configured | Full-stay prices returned for the selected dates, adults and rooms, joined with property names from the details endpoint. No booking is placed. |
-| Alternative hotel room offers | Nuitee / LiteAPI, when configured for live use | The lowest validated offer per hotel for all requested rooms and adults. Property-payable charges may be additional; no prebooking or payment is performed. |
+| Hotel room offers | Nuitee / LiteAPI, preferred by automatic selection when configured for live use | A validated offer per hotel for all requested rooms and adults, preferring complete mandatory costs. Supplier booking amount and additional mandatory fees remain separately visible; no prebooking or payment is performed. |
 
 **Compare hotel prices** opens the public Momondo hotel search and provides a
 copyable summary of the airport, dates, guests and rooms. The search summary is
@@ -105,6 +105,33 @@ returned nine validated EUR offers in the browser. No room was booked.
 Road estimates never establish coach availability, fares, vehicle accessibility
 or suitability of a road for a coach.
 
+## Mandatory prices and physical hotel connections
+
+LiteAPI's exact booking amount remains unchanged. Included fees are not added
+again. Excluded mandatory fees are counted once for each quoted room occupancy;
+they are not multiplied again by nights or guests. Explicit `null` or empty
+`taxesAndFees` means the supplier states that taxes are included. An absent or
+incomplete disclosure, or fees in another currency, leaves the mandatory EUR
+total unknown. Such quotes remain visible but cannot enter a fully budgeted
+recovery plan. The budget allowance rounds complete EUR totals upward to cents;
+it does not claim a payment date or supplier charge rounding policy.
+
+Imported hotels have their own physical location, using the property's supplier
+coordinates. Missing rate coordinates are requested from LiteAPI's matching
+hotel-details record. The property is never placed at the search airport.
+A complete itinerary must contain independently sourced connections to and from
+that location; no shuttle, fare or vehicle capacity is inferred from a room quote.
+
+Stay timestamps are explicit operator-confirmed inputs. Their calendar dates
+are checked in the actual property's time zone, including daylight-saving
+changes. Offline lookup uses pinned `timezonefinder` 9.2.0,
+`timezonefinder-data` 4.2026.5 and IANA `tzdata` 2026.6. No Google Time Zone API
+or extra API key is required. The geographic boundaries come from
+[timezone-boundary-builder](https://github.com/evansiroky/timezone-boundary-builder)
+and [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), under
+ODbL; the lookup library is MIT licensed. These are reference geography and
+clock rules, not evidence of hotel availability.
+
 ## Official references
 
 - [Overpass public-server guidance](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html)
@@ -118,5 +145,6 @@ or suitability of a road for a coach.
 - [Booking 3.3 OpenAPI](https://developers.booking.com/_bundle/demand/docs/open-api/3.3/demand-api.json?download)
 - [Nuitee / LiteAPI account access](https://docs.liteapi.travel/docs/getting-a-sandbox-key)
 - [LiteAPI hotel rates](https://docs.liteapi.travel/reference/post_hotels-rates)
+- [LiteAPI hotel details](https://docs.liteapi.travel/reference/get_data-hotel)
 - [LiteAPI usage terms](https://docs.liteapi.travel/reference/api-pricing-usage-costs)
 - [KAYAK affiliate access, including Momondo](https://affiliates.kayak.com/)

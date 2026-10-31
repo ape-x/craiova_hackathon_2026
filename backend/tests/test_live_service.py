@@ -35,6 +35,7 @@ class Provider:
         if self.error:
             raise self.error
         return [{"id": "hotel-real-id", "name": "Supplier hotel", "provider": "liteapi",
+                 "latitude": 44.31, "longitude": 23.80,
                  "provider_offer_id": f"quoted-offer-{self.calls}", "currency": "EUR", "total_price": "176.45",
                  "checkin": query.checkin.isoformat(), "checkout": query.checkout.isoformat(),
                  "adults": query.adults, "rooms": query.rooms, "quoted_at": datetime.now(timezone.utc).isoformat(),
@@ -132,6 +133,12 @@ async def test_hotel_import_is_bound_to_group_exact_amount_and_actual_expiry_onl
     assert resource["external_offer_id"] == "quoted-offer-1"
     assert resource["provenance"]["room_rates"][0]["room_name"] == "Supplier room"
     assert resource["accessible"] is False
+    node = next(item for item in result["world"]["airports"] if item["id"] == resource["origin"])
+    assert node["kind"] == "hotel" and node["diversion_eligible"] is False
+    assert node["lat"] == 44.31 and node["lon"] == 23.80
+    assert resource["origin"] == resource["destination"] != "CRA"
+    assert resource["provenance"]["property_location"]["timezone"] == "Europe/Bucharest"
+    assert resource["provenance"]["ground_connections_verified"] is False
     assert (await ops.hotels(request))["replayed"] and ops.real_data.provider.calls == 1
     replacement = await ops.hotels(hotel_request(ops, idempotency_key="hotel-refresh-123"))
     assert len(replacement["world"]["resources"]) == 1
@@ -243,7 +250,57 @@ def test_hotel_stay_times_require_confirmation_and_matching_dates(ops):
     with pytest.raises(ValidationError):
         hotel_request(ops, stay_times_confirmed=False)
     with pytest.raises(ValidationError):
-        hotel_request(ops, checkin_at=now())
+        hotel_request(ops, checkin_at=now()-timedelta(days=3))
+    valid = hotel_request(ops)
+    with pytest.raises(ValidationError, match="whole-minute"):
+        hotel_request(ops, checkin_at=valid.checkin_at.replace(second=59))
+
+
+@pytest.mark.asyncio
+async def test_hotel_stay_uses_property_zone_instead_of_bucharest(ops):
+    ops.manifest(manifest_request(ops))
+    alter_hotel_quotes(ops, lambda quotes: quotes[0].update(latitude=51.47, longitude=-0.45))
+    checkin = (now()+timedelta(days=1)).replace(hour=23, minute=30, second=0)
+    checkout = checkin+timedelta(days=1)
+    result = await ops.hotels(hotel_request(ops, airport_code="LHR", checkin=checkin.date(),
+        checkout=checkout.date(), checkin_at=checkin, checkout_at=checkout))
+    assert result["world"]["resources"][0]["provenance"]["property_location"]["timezone"] == "Europe/London"
+
+
+@pytest.mark.asyncio
+async def test_hotel_dates_must_match_the_actual_property_zone(ops):
+    ops.manifest(manifest_request(ops))
+    checkin = (now()+timedelta(days=1)).replace(hour=23, minute=30, second=0)
+    checkout = checkin+timedelta(days=1)
+    before = ops.store.read().model_dump_json()
+    with pytest.raises(DomainError, match="property's local time zone"):
+        await ops.hotels(hotel_request(ops, checkin=checkin.date(), checkout=checkout.date(),
+            checkin_at=checkin, checkout_at=checkout))
+    assert ops.store.read().model_dump_json() == before
+
+
+@pytest.mark.asyncio
+async def test_property_location_change_does_not_move_existing_itineraries(ops):
+    ops.manifest(manifest_request(ops))
+    await ops.hotels(hotel_request(ops))
+    before = ops.store.read().model_dump_json()
+    alter_hotel_quotes(ops, lambda quotes: quotes[0].update(latitude=44.32))
+    with pytest.raises(DomainError, match="property location changed"):
+        await ops.hotels(hotel_request(ops, idempotency_key="new-location-attempt"))
+    assert ops.store.read().model_dump_json() == before
+
+
+@pytest.mark.asyncio
+async def test_missing_rate_coordinates_resolve_from_matching_supplier_property(ops):
+    ops.manifest(manifest_request(ops))
+    alter_hotel_quotes(ops, lambda quotes: quotes[0].pop("latitude"))
+    async def metadata(hotel_id):
+        assert hotel_id == "hotel-real-id"
+        return {"latitude": 44.33, "longitude": 23.81}
+    ops.real_data.provider.hotel_location = metadata
+    result = await ops.hotels(hotel_request(ops))
+    node = next(item for item in result["world"]["airports"] if item["kind"] == "hotel")
+    assert node["lat"] == 44.33 and node["lon"] == 23.81
 
 
 def attach_proposal(ops):

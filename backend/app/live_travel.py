@@ -97,81 +97,96 @@ class LiveTravel:
             quote = next((q for q in cached["result"]["items"] if q["id"] == request.offer_id), None)
             if quote is None or quote.get("mode") != "live" or quote.get("passengers") != group.size:
                 raise DomainError(422, "The selected live quote does not cover this passenger group")
-            now = datetime.now(timezone.utc)
-            try:
-                expires = aware(quote["expires_at"]) if quote.get("expires_at") else None
-                quoted = aware(quote["quoted_at"])
-                price = Decimal(quote["total_price"])
-                departure_time,arrival_time=aware(quote["departure_at"]),aware(quote["arrival_at"])
-                if quote["origin"]!=cached["query"]["origin_code"] or quote["destination"]!=cached["query"]["destination_code"] or quote["origin"]==quote["destination"]:
-                    raise ValueError("Route differs from query")
-                if not all(isinstance(quote[k],str) and quote[k].strip() for k in ("provider","provider_offer_id")):
-                    raise ValueError("Missing identity")
-            except (KeyError,ValueError,TypeError,InvalidOperation) as exc:
-                raise DomainError(502,"Provider quote is incomplete or does not match the search") from exc
-            if (expires and expires <= now) or not 0 <= (now-quoted).total_seconds() <= 120:
-                raise DomainError(409, "The selected quote is stale; search again")
-            if quote.get("currency") != "EUR":
-                raise DomainError(422, "Only EUR quotes can be planned; no exchange rate is inferred")
-            if not price.is_finite() or not 0 <= price <= 1000000:
-                raise DomainError(422, "Provider returned an invalid total price")
-            origin, destination = quote["origin"], quote["destination"]
-            refs = []
-            if cached["kind"]=="bus":
-                try:
-                    stations=[quote["segments"][0]["departure_station"],quote["segments"][-1]["arrival_station"]]
-                    codes=[]
-                    for station in stations:
-                        code="ST-"+hashlib.sha256((quote["provider"]+str(station["id"])).encode()).hexdigest()[:16].upper()
-                        lat,lon=station["latitude"],station["longitude"]
-                        if type(lat) not in (int,float) or type(lon) not in (int,float) or not math.isfinite(lat+lon) or not -90<=lat<=90 or not -180<=lon<=180 or not isinstance(station["name"],str) or not station["name"].strip():
-                            raise ValueError("Invalid station")
-                        codes.append(code)
-                        if not any(a.id==code for a in [*world.airports,*refs]):
-                            refs.append(Airport(id=code,code=code,name=station["name"],lat=lat,lon=lon,available=False,kind="station"))
-                    origin,destination=codes
-                    if origin==destination:
-                        raise ValueError("Same departure and arrival station")
-                except (KeyError,IndexError,TypeError,ValueError) as exc:
-                    raise DomainError(502,"Coach quote is missing its real departure or arrival station") from exc
-            else:
-                for code in (origin, destination):
-                    airport = lookup_airport(code)
-                    if airport is None:
-                        raise DomainError(422, "Provider quote does not map to known endpoint airports")
-                    existing=next((a for a in world.airports if a.id==airport["code"]),None)
-                    if existing and existing.operational_status=="closed":
-                        raise DomainError(409,"A confirmed airport closure prevents this flight import")
-                    if existing is None:
-                        refs.append(Airport(id=airport["code"], code=airport["code"], name=airport["name"],
-                            lat=airport["lat"], lon=airport["lon"], available=False))
-            if len(world.airports)+len(refs)>MAX_AIRPORTS:
-                raise DomainError(422,"Operation location limit reached")
-            epoch = aware(world.epoch)
-            departure = math.floor((departure_time-epoch).total_seconds()/60)
-            arrival = math.ceil((arrival_time-epoch).total_seconds()/60)
-            if departure < world.sim_time or arrival <= departure or arrival > 7*1440:
-                raise DomainError(422, "Provider schedule is past or outside the seven-day planning horizon")
-            identity = "Q-" + hashlib.sha256((quote["provider"]+quote["provider_offer_id"]+group.id).encode()).hexdigest()[:24].upper()
-            if any(r.id == identity for r in world.resources):
-                return {"resource_ids": [identity], "already_imported": True}
-            if len(world.resources) >= MAX_RESOURCES:
-                raise DomainError(422, "Resource limit reached")
-            resource = Resource(id=identity, kind=cached["kind"], name=quote.get("name") or quote["provider"],
-                origin=origin, destination=destination, departure=departure, arrival=arrival,
-                capacity=group.size, accessible=quote.get("accessibility_confirmed") is True,
-                cost_per_person=0, source=quote["provider"], provenance=quote,
-                valid_until=expires.isoformat() if expires else None,
-                eligible_group_ids=[group.id], quote_total_cost=float(price),
-                external_offer_id=quote["provider_offer_id"], capacity_scope="quoted_request",
-                requires_revalidation=True, status="quoted")
-            world.airports.extend(refs)
-            if resource.kind == "flight":
-                for airport in world.airports:
-                    if airport.id in (origin, destination):
-                        airport.available = True
-            world.resources.append(resource)
+            result = append_travel_quote(world, quote, cached["query"], group, cached["kind"])
+            if result.get("already_imported"):
+                return result
+            identity = result["resource_ids"][0]
+            resource = next(item for item in world.resources if item.id == identity)
             audit(world, "provider_quote_imported", "Imported a group-specific travel quote; no seat is held or booked.", identity,
                 {"provider": quote["provider"], "group_id": group.id, "source": resource.source})
             return {"resource_ids": [identity]}
         return self.store.mutate("travel-import:"+request.idempotency_key,request.model_dump(mode="json"),request.expected_version,apply)
+
+
+def append_travel_quote(world, quote, query, group, kind):
+    """Validate one sourced quote and append it to an in-memory world only.
+
+    Callers own the atomic commit. No provider requests or reservations occur here.
+    """
+    if quote.get("mode") != "live" or quote.get("passengers") != group.size:
+        raise DomainError(422, "The selected live quote does not cover this passenger group")
+    now = datetime.now(timezone.utc)
+    try:
+        expires = aware(quote["expires_at"]) if quote.get("expires_at") else None
+        quoted = aware(quote["quoted_at"])
+        price = Decimal(quote["total_price"])
+        departure_time,arrival_time=aware(quote["departure_at"]),aware(quote["arrival_at"])
+        if quote["origin"]!=query["origin_code"] or quote["destination"]!=query["destination_code"] or quote["origin"]==quote["destination"]:
+            raise ValueError("Route differs from query")
+        if not all(isinstance(quote[k],str) and quote[k].strip() for k in ("provider","provider_offer_id")):
+            raise ValueError("Missing identity")
+    except (KeyError,ValueError,TypeError,InvalidOperation) as exc:
+        raise DomainError(502,"Provider quote is incomplete or does not match the search") from exc
+    if (expires and expires <= now) or not 0 <= (now-quoted).total_seconds() <= 120:
+        raise DomainError(409, "The selected quote is stale; search again")
+    if quote.get("currency") != "EUR":
+        raise DomainError(422, "Only EUR quotes can be planned; no exchange rate is inferred")
+    if not price.is_finite() or not 0 <= price <= 1000000:
+        raise DomainError(422, "Provider returned an invalid total price")
+    origin, destination = quote["origin"], quote["destination"]
+    refs = []
+    if kind=="bus":
+        try:
+            stations=[quote["segments"][0]["departure_station"],quote["segments"][-1]["arrival_station"]]
+            codes=[]
+            for station in stations:
+                code="ST-"+hashlib.sha256((quote["provider"]+str(station["id"])).encode()).hexdigest()[:16].upper()
+                lat,lon=station["latitude"],station["longitude"]
+                if type(lat) not in (int,float) or type(lon) not in (int,float) or not math.isfinite(lat+lon) or not -90<=lat<=90 or not -180<=lon<=180 or not isinstance(station["name"],str) or not station["name"].strip():
+                    raise ValueError("Invalid station")
+                codes.append(code)
+                if not any(a.id==code for a in [*world.airports,*refs]):
+                    refs.append(Airport(id=code,code=code,name=station["name"],lat=lat,lon=lon,available=False,kind="station"))
+            origin,destination=codes
+            if origin==destination:
+                raise ValueError("Same departure and arrival station")
+        except (KeyError,IndexError,TypeError,ValueError) as exc:
+            raise DomainError(502,"Coach quote is missing its real departure or arrival station") from exc
+    else:
+        for code in (origin, destination):
+            airport = lookup_airport(code)
+            if airport is None:
+                raise DomainError(422, "Provider quote does not map to known endpoint airports")
+            existing=next((a for a in world.airports if a.id==airport["code"]),None)
+            if existing and existing.operational_status=="closed":
+                raise DomainError(409,"A confirmed airport closure prevents this flight import")
+            if existing is None:
+                refs.append(Airport(id=airport["code"], code=airport["code"], name=airport["name"],
+                    lat=airport["lat"], lon=airport["lon"], available=False))
+    if len(world.airports)+len(refs)>MAX_AIRPORTS:
+        raise DomainError(422,"Operation location limit reached")
+    epoch = aware(world.epoch)
+    departure = math.floor((departure_time-epoch).total_seconds()/60)
+    arrival = math.ceil((arrival_time-epoch).total_seconds()/60)
+    if departure < world.sim_time or arrival <= departure or arrival > 7*1440:
+        raise DomainError(422, "Provider schedule is past or outside the seven-day planning horizon")
+    identity = "Q-" + hashlib.sha256((quote["provider"]+quote["provider_offer_id"]+group.id).encode()).hexdigest()[:24].upper()
+    if any(r.id == identity for r in world.resources):
+        return {"resource_ids": [identity], "already_imported": True}
+    if len(world.resources) >= MAX_RESOURCES:
+        raise DomainError(422, "Resource limit reached")
+    resource = Resource(id=identity, kind=kind, name=quote.get("name") or quote["provider"],
+        origin=origin, destination=destination, departure=departure, arrival=arrival,
+        capacity=group.size, accessible=quote.get("accessibility_confirmed") is True,
+        cost_per_person=0, source=quote["provider"], provenance=quote,
+        valid_until=expires.isoformat() if expires else None,
+        eligible_group_ids=[group.id], quote_total_cost=float(price),
+        external_offer_id=quote["provider_offer_id"], capacity_scope="quoted_request",
+        requires_revalidation=True, status="quoted")
+    world.airports.extend(refs)
+    if resource.kind == "flight":
+        for airport in world.airports:
+            if airport.id in (origin, destination):
+                airport.available = True
+    world.resources.append(resource)
+    return {"resource_ids": [identity]}

@@ -1,4 +1,5 @@
 import type { Airport, AirportWeather, World } from './types';
+import { isAirportNode } from './locationNodes';
 
 export const WEATHER_LABELS: Record<AirportWeather['condition'], string> = {
   clear: 'Clear',
@@ -34,7 +35,7 @@ export function airportWeatherState(airport: Airport) {
 export function weatherAirports(world: Pick<World, 'mode' | 'airports'>): Airport[] {
   if (world.mode !== 'simulation') return [];
   return world.airports
-    .filter((airport) => airport.weather != null)
+    .filter((airport) => isAirportNode(airport) && airport.weather != null)
     .sort((a, b) => {
       const difference =
         Number(airportWeatherState(b).restricted) - Number(airportWeatherState(a).restricted);

@@ -3,6 +3,9 @@ import type {
   FlightLookup,
   IncidentInput,
   IncidentResult,
+  RecoveryJob,
+  RecoveryJobInput,
+  RecoveryJobResponse,
   MutationResult,
   ScenarioChange,
   World,
@@ -79,6 +82,22 @@ export const api = {
   logout: () => request('/auth/logout', {}),
   lookupFlight: (input: { flight_number: string; date_utc: string }, signal?: AbortSignal) =>
     request<FlightLookup>('/flights/lookup', input, signal),
+  recoveryJobs: (incidentId: string, signal?: AbortSignal) =>
+    request<{ jobs: RecoveryJob[] }>(
+      `/incidents/${encodeURIComponent(incidentId)}/recovery-jobs`,
+      undefined,
+      signal,
+    ),
+  startRecoveryJob: (world: World, incidentId: string, input: RecoveryJobInput) =>
+    request<RecoveryJobResponse>(`/incidents/${encodeURIComponent(incidentId)}/recovery-jobs`, {
+      ...input,
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
+  cancelRecoveryJob: (jobId: string) =>
+    request<RecoveryJobResponse>(`/recovery-jobs/${encodeURIComponent(jobId)}/cancel`, {
+      idempotency_key: key(),
+    }),
   createIncident: (world: World, input: IncidentInput) =>
     request<IncidentResult>('/incidents', {
       ...input,

@@ -7,7 +7,7 @@ export interface AirportWeather {
   departure_allowed: boolean;
 }
 export interface Airport {
-  kind?: 'airport' | 'station';
+  kind?: 'airport' | 'station' | 'hotel';
   id: string;
   code: string;
   name: string;
@@ -243,6 +243,79 @@ export interface IncidentInput {
 }
 export interface IncidentResult extends MutationResult {
   incident_id: string;
+}
+export type RecoveryJobStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'blocked'
+  | 'failed'
+  | 'cancelled'
+  | 'needs_review'
+  | 'unknown_outcome';
+export type RecoveryJobStage =
+  | 'queued'
+  | 'validating'
+  | 'planning_queries'
+  | 'searching_flights'
+  | 'evaluating'
+  | 'deciding'
+  | 'applying'
+  | 'finished';
+export interface RecoveryJobInput {
+  group_ids: string[];
+  objective: 'balanced' | 'fastest' | 'lowest_cost';
+  modes: ResourceKind[];
+  max_provider_calls: number;
+  instructions: string;
+}
+export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions'> {
+  id: string;
+  incident_id: string;
+  status: RecoveryJobStatus;
+  stage: RecoveryJobStage;
+  message: string;
+  created_at: string;
+  updated_at: string;
+  cancel_requested: boolean;
+  source_version: number;
+  applied_version: number | null;
+  calls_dispatched: number;
+  steps: {
+    id: string;
+    stage: RecoveryJobStage;
+    provider: string | null;
+    status: 'dispatched' | 'succeeded' | 'failed' | 'unknown' | 'skipped';
+    started_at: string | null;
+    finished_at: string | null;
+    group_ids: string[];
+    message: string;
+    quote_count: number;
+  }[];
+  gaps: { code: string; message: string; group_ids: string[] }[];
+  result: null | {
+    decision_id: string;
+    plan_id: string;
+    recovered_passengers: number;
+    exception_passengers: number;
+    offer_ids: string[];
+    resource_ids: string[];
+    source_counts: Record<string, number>;
+    waits?: {
+      group_id: string;
+      location_id: string;
+      from_at: string;
+      to_at: string;
+      duration_minutes: number;
+      timezone: string | null;
+      overnight: boolean | null;
+      accommodation_included: false;
+    }[];
+  };
+}
+export interface RecoveryJobResponse {
+  job: RecoveryJob;
+  replayed?: boolean;
 }
 export interface AppConfig {
   ai_configured?: boolean;

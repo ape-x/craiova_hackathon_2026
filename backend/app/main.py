@@ -27,6 +27,8 @@ from .live_data import ManifestImport, ManualResourceInput, PassengerGenerationI
 from .live_service import LiveOperations, HotelQuoteImport, ExternalConfirmation
 from .live_travel import LiveTravel, LiveTravelSearch, TravelQuoteImport
 from .providers.travel import TravelProvider
+from .recovery_jobs import RecoveryJobs, RecoveryJobRequest, RecoveryCancellation
+from .ground_transfers import GroundTransfers, create_transfer_router
 from .incidents import FlightContextSelection, FlightLookupRequest, IncidentCreate, IncidentGroupBinding, IncidentService
 from .service import RecoveryService
 from .store import DomainError, Store, utcnow
@@ -90,6 +92,8 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     live=LiveOperations(store,service,real_data)
     travel_provider=TravelProvider(settings)
     travel=LiveTravel(store,travel_provider)
+    jobs=RecoveryJobs(settings,store,service,travel_provider,ai)
+    ground_transfers=GroundTransfers(settings)
     login_attempts=defaultdict(deque)
     # Reserve worst-case credit cost in the persistent shared request ledger;
     # restarting or adding a worker cannot replenish the paid provider budget.
@@ -123,11 +127,13 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         task=asyncio.create_task(flight_loop())
+        jobs.start_worker()
         yield
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
-        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose())
+        await jobs.aclose()
+        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose(),ground_transfers.aclose())
 
     app=FastAPI(title="Airport Recovery Live",version="0.1.0",lifespan=lifespan,docs_url=None if settings.production else "/docs",redoc_url=None,openapi_url=None if settings.production else "/openapi.json")
     app.state.store,app.state.service,app.state.settings=store,service,settings
@@ -135,6 +141,8 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     app.state.live=live
     app.state.travel=travel
     app.state.incidents=incidents
+    app.state.jobs=jobs
+    app.state.ground_transfers=ground_transfers
     app.add_middleware(CORSMiddleware,allow_origins=settings.origins,allow_credentials=True,allow_methods=["GET","POST","DELETE"],allow_headers=["Content-Type","Authorization","Last-Event-ID"])
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[h.strip() for h in settings.allowed_hosts.split(",")])
     app.add_middleware(BodySizeLimit,max_bytes=settings.max_request_bytes)
@@ -165,6 +173,8 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     def operator(request: Request):
         if not authenticated(request):
             raise DomainError(401,"Operator authentication required")
+
+    app.include_router(create_transfer_router(ground_transfers,operator))
 
     @app.middleware("http")
     async def security_headers(request,call_next):
@@ -301,6 +311,22 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     @app.post("/api/incidents/{incident_id}/refresh-flight",dependencies=[Depends(operator)])
     def incident_refresh(incident_id: str,body: FlightContextSelection):
         return incidents.refresh(incident_id,body)
+
+    @app.post("/api/incidents/{incident_id}/recovery-jobs",dependencies=[Depends(operator)],status_code=202)
+    def recovery_job_start(incident_id: str,body: RecoveryJobRequest):
+        return jobs.start(incident_id,body)
+
+    @app.get("/api/incidents/{incident_id}/recovery-jobs",dependencies=[Depends(operator)])
+    def recovery_job_list(incident_id: str):
+        return jobs.list(incident_id)
+
+    @app.get("/api/recovery-jobs/{job_id}",dependencies=[Depends(operator)])
+    def recovery_job_get(job_id: str):
+        return jobs.get(job_id)
+
+    @app.post("/api/recovery-jobs/{job_id}/cancel",dependencies=[Depends(operator)])
+    def recovery_job_cancel(job_id: str,body: RecoveryCancellation):
+        return jobs.cancel(job_id,body)
 
     @app.post("/api/live/import-passengers",dependencies=[Depends(operator)])
     def import_passengers(body: ManifestImport):

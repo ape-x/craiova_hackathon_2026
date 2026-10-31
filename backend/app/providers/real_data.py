@@ -408,6 +408,26 @@ class RealDataProvider:
             raise ProviderError("Connect a hotel-rate provider to view prices and availability.", provider="Hotel rates", code="not_configured")
         return await self._booking_offers(airport, request)
 
+    async def hotel_location(self, hotel_id: str) -> dict:
+        """Fetch missing property geography, never substitute the nearby airport."""
+        source = "Nuitee / LiteAPI"
+        key = secret_value(self.settings.liteapi_api_key)
+        if self.hotel_offer_provider != "liteapi" or self.liteapi_sandbox or not key.startswith("prod_"):
+            raise ProviderError("Production hotel metadata is not configured.", provider=source, code="not_configured")
+        _opaque_id(hotel_id, required=True)
+        payload = await self._request("GET", "https://api.liteapi.travel/v3.0/data/hotel", source,
+            headers={"X-API-Key": key}, params={"hotelId": hotel_id})
+        try:
+            data = payload["data"]
+            if payload.get("error") or data["id"] != hotel_id:
+                raise ValueError("Property identity changed")
+            location = data["location"]
+            return {"latitude": _number(location["latitude"], -90, 90),
+                    "longitude": _number(location["longitude"], -180, 180),
+                    "location_source": source, "location_retrieved_at": datetime.now(timezone.utc).isoformat()}
+        except (ValueError, TypeError, KeyError) as exc:
+            raise _invalid(source) from exc
+
     async def _liteapi_offers(self, airport: dict, request: Any) -> list[dict]:
         source = "Nuitee / LiteAPI"
         if not self.liteapi_configured:

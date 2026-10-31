@@ -8,16 +8,18 @@ Problema inițială și cerințele pasagerilor pot fi ipoteze introduse de echip
 
 1. Deschide **Start recovery**, caută numărul de zbor și selectează exact cursa Flightradar24. Data căutării este ziua UTC a primei observări, nu neapărat data locală a plecării.
 2. Înregistrează incidentul și leagă grupurile afectate. Datele inițiale pot proveni dintr-un manifest sau din cerințe de planificare introduse explicit. Grupurile trebuie să indice același zbor original; operațiunile existente sunt păstrate.
-3. Caută zboruri, autocare și cazare pentru grup, dată și destinație. Fiecare cotație păstrează furnizorul, prețul, condițiile și expirarea.
-4. Importă cotațiile relevante și completează serviciile confirmate de operator, cu sursa lor.
+3. Din caz, pornește căutarea pentru grupurile selectate și stabilește limita de apeluri. Sol Ultrafast alege căutări eligibile, sunt cerute cotații reale de zbor, iar Decisions selectează dintre planurile validate. Alocările celorlalte grupuri sunt păstrate.
+4. Verifică sursele, propunerile și cerințele rămase fără soluție. Cazarea și legăturile terestre pot fi căutate separat și completate prin cotații importate sau servicii documentate de operator.
 5. Descrie condițiile prin voce sau text. AI-ul propune strategii; backendul verifică fezabilitatea și alocările.
 6. Pasagerul acceptă sau refuză o propunere. Acceptarea înregistrează preferința. Confirmarea rezervării necesită referințele externe pentru fiecare segment.
 
-Căutarea furnizorilor este în prezent explicită. Replanificarea compară inventarul importat; nu creează automat bilete, camere sau transport. Cotațiile pot expira, iar o ofertă de preț nu rezervă locuri.
+Căutările pe incident păstrează progresul și fiecare apel într-un registru persistent. Repetarea aceleiași cereri nu retrimite apelurile. Un rezultat necunoscut după întrerupere necesită o încercare nouă, explicită; nu este reluat automat. Căutarea automată acoperă momentan zborurile și inventarul deja documentat. Lipsa legăturilor până la hotel sau stație rămâne vizibilă. Cotațiile pot expira și nu rezervă locuri.
 
 Incidentul reprezintă o condiție raportată de operator și nu modifică statusul furnizat de Flightradar24. Un aeroport declarat indisponibil este exclus și din segmentele intermediare ale zborurilor propuse grupurilor afectate. Grupurile cu rezervări deja confirmate necesită tratare separată de operator. Contextul de zbor are retenție limitată și se poate reîmprospăta numai pentru aceeași cursă; exporturile și backupurile omit datele temporare ale furnizorului.
 
 Costul cazării păstrează separat cotația furnizorului și taxele obligatorii suplimentare. Taxele incluse nu sunt adăugate încă o dată. Cotațiile cu taxe lipsă sau fără conversie verificată în EUR sunt vizibile, dar nu intră în planuri cu buget complet calculat.
+
+Hotelurile au pozițiile reale ale proprietăților și fusurile orare calculate din acele coordonate. O noapte de cazare nu implică un transfer gratuit până la aeroport. Timpul de așteptare este afișat separat; trecerea peste miezul nopții nu inventează automat o cerință de cazare în modul live.
 
 ## Rulare locală: o singură aplicație
 
@@ -47,6 +49,7 @@ Pentru dezvoltare și verificări locale sunt necesare Python 3.12 și Node.js 2
 | `LITEAPI_API_KEY`, `LITEAPI_ENVIRONMENT=live` | Cotații Nuitee pentru cazare și zboruri, conform accesului contului |
 | `DUFFEL_ACCESS_TOKEN`, `DUFFEL_ENVIRONMENT=live` | Furnizor alternativ pentru zboruri |
 | `DISTRIBUSION_API_KEY`, `DISTRIBUSION_ENVIRONMENT=live` | Autocare; necesită și activarea fluxului Offers |
+| `APL_API_KEY` | Cotații Airport Pickups London pentru transferuri în UK, în GBP per vehicul; fără comandă sau rezervare |
 | `PUBLIC_BASE_URL`, `OPERATOR_TOKEN` | URL accesibil pasagerilor și autentificarea operatorilor |
 
 Prezența unei chei înseamnă configurare, nu acces verificat. Conturile sandbox nu furnizează inventar live. Căutările nu efectuează plăți sau rezervări. [Configurare și limite](docs/live-mode.md), [date geografice și hoteliere](docs/real-data.md), [cereri către furnizori](backend/app/providers/README.md).

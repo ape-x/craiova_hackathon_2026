@@ -17,6 +17,7 @@ import { Dot, Tag } from './ui';
 import { observationInfo } from './observation';
 import RealDataDialog from './RealDataDialog';
 import RecoveryCases from './RecoveryCases';
+import { isAirportNode, locationKindLabel } from './locationNodes';
 
 const tabs = [
   { id: 'flight', name: 'Flights', Icon: Plane },
@@ -89,14 +90,16 @@ export default function ResourceRail({
           .map((airport) => (
             <button
               key={airport.id}
-              title={`${airport.kind === 'station' ? 'Coach station' : 'Airport'} · ${airport.code} · ${airport.name}`}
+              title={`${locationKindLabel(airport)} · ${airport.code} · ${airport.name}`}
               className={`airport-row ${selectedId === airport.id || (!selectedId && airport.code === 'CRA') ? 'selected' : ''}`}
               onClick={() => {
                 onSelect(airport.id);
-                onMode(airport.code === 'CRA' ? 'airport' : 'region');
+                onMode(airport.kind === 'hotel' || airport.code === 'CRA' ? 'airport' : 'region');
               }}
             >
-              {airport.kind === 'station' ? (
+              {airport.kind === 'hotel' ? (
+                <BedDouble size={17} />
+              ) : airport.kind === 'station' ? (
                 <BusFront size={17} />
               ) : (
                 <Plane
@@ -110,10 +113,12 @@ export default function ResourceRail({
                 />
               )}
               <span>
-                <strong>{airport.code}</strong>
-                <span className="muted"> / {airport.name}</span>
+                <strong>{airport.kind === 'hotel' ? airport.name : airport.code}</strong>
+                {airport.kind !== 'hotel' && <span className="muted"> / {airport.name}</span>}
               </span>
-              {airport.kind === 'station' ? (
+              {airport.kind === 'hotel' ? (
+                <Tag>HOTEL</Tag>
+              ) : airport.kind === 'station' ? (
                 <Tag>STATION</Tag>
               ) : world.mode === 'live' && airport.operational_status === 'unknown' ? (
                 <Tag>UNKNOWN</Tag>
@@ -139,7 +144,7 @@ export default function ResourceRail({
       </button>
       {showRealData && (
         <RealDataDialog
-          airports={world.airports.filter((node) => node.kind !== 'station')}
+          airports={world.airports.filter(isAirportNode)}
           selectedId={selectedId}
           onClose={closeRealData}
         />

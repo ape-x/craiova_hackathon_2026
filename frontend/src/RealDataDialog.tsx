@@ -13,8 +13,10 @@ import {
 } from 'lucide-react';
 import { request } from './api';
 import type { Airport } from './types';
+import { isAirportNode } from './locationNodes';
 import { Modal, Tag } from './ui';
 import HotelOfferPrice from './HotelOfferPrice';
+import TransferQuotes from './TransferQuotes';
 import {
   addCalendarDays,
   bucharestDate,
@@ -63,7 +65,7 @@ function SourceStatus({ section }: { section: RealDataSection<unknown> }) {
   );
 }
 export default function RealDataDialog({
-  airports,
+  airports: nodes,
   selectedId,
   onClose,
 }: {
@@ -71,6 +73,7 @@ export default function RealDataDialog({
   selectedId: string | null;
   onClose: () => void;
 }) {
+  const airports = nodes.filter(isAirportNode);
   const today = bucharestDate();
   const [query, setQuery] = useState<RealDataQuery>(() => {
     const origin =
@@ -92,6 +95,7 @@ export default function RealDataDialog({
   const [result, setResult] = useState<RealDataResult | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showTransfers, setShowTransfers] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle');
   const copyGeneration = useRef(0);
   const currentRequest = useRef<AbortController | null>(null);
@@ -179,6 +183,20 @@ export default function RealDataDialog({
           provider is connected.
         </p>
       </div>
+      <button
+        type="button"
+        className="secondary-button transfer-toggle"
+        aria-expanded={showTransfers}
+        aria-controls="uk-transfer-panel"
+        onClick={() => setShowTransfers((visible) => !visible)}
+      >
+        {showTransfers ? 'Hide UK transfer quotes' : 'Check UK transfer prices'}
+      </button>
+      {showTransfers && (
+        <div id="uk-transfer-panel">
+          <TransferQuotes />
+        </div>
+      )}
       <form
         className="real-data-form"
         onSubmit={(event) => {

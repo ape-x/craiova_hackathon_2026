@@ -3,6 +3,7 @@ import { ArrowRight, BusFront, Plane, SlidersHorizontal, TriangleAlert } from 'l
 import type { EventType, ScenarioChange, World } from './types';
 import { Modal, Tag } from './ui';
 import { diversionChoice } from './scenarioSelection';
+import { isAirportNode } from './locationNodes';
 const options: {
   type: EventType;
   name: string;
@@ -106,7 +107,7 @@ export default function ScenarioDialog({
   const targets =
     option.scope === 'airport'
       ? world.airports
-          .filter((item) => ['CRA', 'OTP', 'SBZ'].includes(item.code))
+          .filter((item) => isAirportNode(item) && ['CRA', 'OTP', 'SBZ'].includes(item.code))
           .map((item) => ({ id: item.id, label: `${item.code} · ${item.name}` }))
       : option.scope === 'group'
         ? world.groups.map((item) => ({

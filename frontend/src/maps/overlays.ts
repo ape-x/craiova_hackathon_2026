@@ -1,5 +1,6 @@
 import type { Airport, Observation, SceneMode, World } from '../types';
 import { airportWeatherState } from '../weather';
+import { isAirportNode } from '../locationNodes';
 import { parkedPoint, passengerPoint, resourcePoint, sceneHeading, scenePoint } from './placement';
 export { resourcePoint } from './placement';
 import type { Camera, GeoPoint } from './contracts';
@@ -103,28 +104,31 @@ export function buildOverlays(
   const markers: GeoMarker[] = world.airports.map((airport) => ({
     id: airport.id,
     label:
-      airport.kind === 'station'
-        ? `${airport.code} · COACH STATION`
-        : world.mode === 'live'
-          ? `${airport.code}${airport.operational_status === 'unknown' ? ' · STATUS UNKNOWN' : airport.operational_status === 'closed' ? ' · CLOSED' : ''}`
-          : `${airport.code}${!airport.available ? ' · CLOSED IN SIM' : airportWeatherState(airport).weatherRestricted ? ' · WEATHER RESTRICTED' : ''}`,
+      airport.kind === 'hotel'
+        ? `${airport.name} · HOTEL`
+        : airport.kind === 'station'
+          ? `${airport.code} · COACH STATION`
+          : world.mode === 'live'
+            ? `${airport.code}${airport.operational_status === 'unknown' ? ' · STATUS UNKNOWN' : airport.operational_status === 'closed' ? ' · CLOSED' : ''}`
+            : `${airport.code}${!airport.available ? ' · CLOSED IN SIM' : airportWeatherState(airport).weatherRestricted ? ' · WEATHER RESTRICTED' : ''}`,
     title:
-      airport.kind === 'station'
-        ? `${airport.name}. Coach station location supplied by the transport provider.`
-        : world.mode === 'live'
-          ? `${airport.name}. Reference airport location. Operational status: ${airport.operational_status ?? 'unknown'}.`
-          : `${airport.name}. Airport availability is simulated.${airport.weather ? ` ${airportWeatherState(airport).condition}. Landings ${airportWeatherState(airport).landingAllowed ? 'allowed' : 'blocked'}; departures ${airportWeatherState(airport).departureAllowed ? 'allowed' : 'blocked'}.` : ''}`,
+      airport.kind === 'hotel'
+        ? `${airport.name}. Property coordinates supplied by the accommodation provider; room availability depends on the quoted offer.`
+        : airport.kind === 'station'
+          ? `${airport.name}. Coach station location supplied by the transport provider.`
+          : world.mode === 'live'
+            ? `${airport.name}. Reference airport location. Operational status: ${airport.operational_status ?? 'unknown'}.`
+            : `${airport.name}. Airport availability is simulated.${airport.weather ? ` ${airportWeatherState(airport).condition}. Landings ${airportWeatherState(airport).landingAllowed ? 'allowed' : 'blocked'}; departures ${airportWeatherState(airport).departureAllowed ? 'allowed' : 'blocked'}.` : ''}`,
     point: world.mode === 'live' ? pointOf(airport) : scenePoint(airport, 0, 51, 28),
-    color:
-      airport.kind === 'station'
-        ? COLORS.muted
-        : world.mode === 'live'
-          ? airport.operational_status === 'closed'
-            ? COLORS.unavailable
-            : COLORS.muted
-          : airportWeatherState(airport).restricted
-            ? COLORS.unavailable
-            : COLORS.scenario,
+    color: !isAirportNode(airport)
+      ? COLORS.muted
+      : world.mode === 'live'
+        ? airport.operational_status === 'closed'
+          ? COLORS.unavailable
+          : COLORS.muted
+        : airportWeatherState(airport).restricted
+          ? COLORS.unavailable
+          : COLORS.scenario,
     observed: false,
     selected: selectedId === airport.id,
   }));
@@ -286,9 +290,9 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
       altitudeMode: 'ABSOLUTE',
     };
   const airport = world.airports.find((a) => a.id === selectedId);
-  if (airport && mode === 'airport')
+  if (airport && (mode === 'airport' || airport.kind === 'hotel'))
     return {
-      center: scenePoint(airport, 0, 45),
+      center: world.mode === 'live' ? pointOf(airport) : scenePoint(airport, 0, 45),
       range: 650,
       tilt: 58,
       heading: sceneHeading(airport ?? home) + 12,
@@ -304,7 +308,9 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
       altitudeMode: 'RELATIVE_TO_GROUND',
     };
   if (mode === 'region') {
-    const regional = world.airports.filter((a) => a.diversion_eligible || a.id === 'CRA');
+    const regional = world.airports.filter(
+      (a) => isAirportNode(a) && (a.diversion_eligible || a.id === 'CRA'),
+    );
     const points = regional.length ? regional.map(pointOf) : [fallback];
     return {
       center: {
