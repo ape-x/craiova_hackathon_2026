@@ -62,15 +62,28 @@ def evidence():
 
 
 def manifest_request(ops, *, group_id="REAL-GROUP", passenger_prefix="ACTUAL", **changes):
+    anchor = now()
     text = io.StringIO(newline="")
     writer = csv.DictWriter(text, fieldnames=MANIFEST_COLUMNS)
     writer.writeheader()
     for i in range(2):
         writer.writerow({"passenger_id": f"{passenger_prefix}-{i}", "group_id": group_id, "name": f"Imported person {i}",
             "origin": "CRA", "destination": "OTP", "original_flight_id": "ACTUAL-FLIGHT",
-            "ready_at": (now()+timedelta(minutes=30)).isoformat(), "deadline": (now()+timedelta(days=3)).isoformat(),
+            "ready_at": (anchor+timedelta(minutes=30)).isoformat(), "deadline": (anchor+timedelta(days=3)).isoformat(),
             "group_budget_eur": "500.00", "accessible": "false", "priority": "2", "is_adult": "true"})
     return ManifestImport(**({"expected_version": ops.store.read().version, "idempotency_key": "manifest-import-123", "csv_text": text.getvalue(), **evidence()} | changes))
+
+
+def test_manifest_fixture_keeps_shared_group_dates_when_clock_advances(ops, monkeypatch):
+    anchor = now()
+    ticks = iter(anchor + timedelta(seconds=step) for step in range(10))
+    monkeypatch.setitem(manifest_request.__globals__, "now", lambda: next(ticks))
+    request = manifest_request(ops)
+    records = list(csv.DictReader(io.StringIO(request.csv_text)))
+    assert len({row["ready_at"] for row in records}) == 1
+    assert len({row["deadline"] for row in records}) == 1
+    ops.manifest(request)
+    assert ops.store.read().groups[0].size == 2
 
 
 def resource_request(ops, **changes):
