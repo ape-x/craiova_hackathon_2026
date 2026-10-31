@@ -22,6 +22,8 @@ import { activeOffer, availableUnits, formatCost, formatTime } from './api';
 import type { AppConfig, Decision, Offer, PassengerGroup, Resource, World } from './types';
 import { Dot, Tag } from './ui';
 import { observationInfo } from './observation';
+import { AirportWeatherStatus } from './WeatherStatus';
+import { airportWeatherState } from './weather';
 
 export function ItineraryView({ offer }: { offer: Offer }) {
   return (
@@ -127,7 +129,12 @@ export function deriveResourceImpact(world: World, resource: Resource) {
   if (!affectedGroups.length) return null;
   const routes = new Map<
     string,
-    { ids: string[]; kind: Resource['kind']; passengers: number; confirmed: number }
+    {
+      ids: string[];
+      kind: Resource['kind'];
+      passengers: number;
+      confirmed: number;
+    }
   >();
   let offered = 0,
     confirmed = 0;
@@ -685,8 +692,18 @@ export default function Inspector({
                 <span className="eyebrow">AIRPORT · SCENARIO STATUS</span>
                 <h3>
                   {airport.code}{' '}
-                  <span className={airport.available ? 'text-mint' : 'text-red'}>
-                    {airport.available ? 'Operational' : 'Unavailable'}
+                  <span
+                    className={
+                      airport.available && !airportWeatherState(airport).restricted
+                        ? 'text-mint'
+                        : 'text-red'
+                    }
+                  >
+                    {airport.available
+                      ? airportWeatherState(airport).restricted
+                        ? 'Weather restricted'
+                        : 'Operational'
+                      : 'Unavailable'}
                   </span>
                 </h3>
                 <span>{airport.name}</span>
@@ -704,6 +721,7 @@ export default function Inspector({
                 <b>{airport.diversion_eligible ? 'Eligible in scenario' : 'Not eligible'}</b>
               </span>
             </div>
+            {world.mode === 'simulation' && <AirportWeatherStatus airport={airport} />}
             <p className="muted small">
               Airport conditions belong to this simulation. Observed flight positions remain
               unchanged.

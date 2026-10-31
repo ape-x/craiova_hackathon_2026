@@ -12,6 +12,7 @@ from .scenario_schema import (
     HORIZON_MINUTES, MAX_AIRPORTS, MAX_GROUPS, MAX_PASSENGERS, MAX_RESOURCES,
 )
 from .store import DomainError
+from .weather import apply_weather_to_flight
 
 
 def identifier(value: str | None) -> str:
@@ -87,6 +88,7 @@ def add_resource(world: World, target: str, value: dict) -> Resource:
     vehicle=identifier(definition.vehicle_id) if definition.vehicle_id is not None else (target if definition.kind=="bus" else None)
     resource=Resource(id=target,**{**definition.model_dump(),"origin":origin,"destination":destination,"vehicle_id":vehicle},
         source="synthetic",status="scheduled" if definition.available else "cancelled" if definition.kind=="flight" else "unavailable")
+    apply_weather_to_flight(world,resource)
     world.resources.append(resource)
     return resource
 
@@ -114,7 +116,7 @@ def add_passengers(world: World, value: dict) -> list[PassengerGroup]:
                 raise DomainError(422,"Airborne passengers must start at the arrival airport with at least 30 minutes after landing")
         elif origin not in (flight.origin,flight.destination):
             raise DomainError(422,"Passenger origin must match the original flight departure or arrival airport")
-        elif origin==flight.destination and flight.available and definition.ready_at<flight.arrival+30:
+        elif origin==flight.destination and (flight.available or flight.status=="weather_held") and definition.ready_at<flight.arrival+30:
             raise DomainError(422,"Incoming passengers must be ready at least 30 minutes after their original flight lands")
     used={item.id for items in (world.airports,world.resources,world.groups) for item in items}
     remaining=definition.passenger_count
@@ -131,7 +133,7 @@ def add_passengers(world: World, value: dict) -> list[PassengerGroup]:
             origin=origin,destination=destination,ready_at=definition.ready_at,deadline=definition.deadline,
             accessible=definition.accessible,budget=round(size*definition.budget_per_person,2),
             original_flight_id=flight_id,priority=definition.priority,
-            status="affected" if flight and flight.status=="needs_diversion" else "scheduled" if origin==destination else "waiting",
+            status="affected" if flight and flight.status in ("needs_diversion","weather_held") else "scheduled" if origin==destination else "waiting",
             token=secrets.token_urlsafe(32)))
         remaining-=size
         index+=1

@@ -7,6 +7,7 @@ import { makeAircraft, PALETTE } from './geometry';
 import Html from './ProjectedHtml';
 import { useSceneAsset } from './lifecycle';
 import { buildNetworkProjection, inIllustratedRegion, regionalPoint } from './networkProjection';
+import { airportWeatherState } from '../weather';
 
 // Real geographic coordinates; the elevation artwork is deliberately illustrative.
 export const geoPoint = regionalPoint;
@@ -285,7 +286,8 @@ export default function Region({
       </Html>
       {airports.map((a) => {
         const pos = byCode.get(a.id)!;
-        const color = a.available ? PALETTE.mint : PALETTE.red;
+        const weather = airportWeatherState(a);
+        const color = weather.restricted ? PALETTE.red : PALETTE.mint;
         return (
           <group
             key={a.id}
@@ -322,7 +324,14 @@ export default function Region({
                   {projection.regional && !inIllustratedRegion(a.lat, a.lon)
                     ? 'Conexiune externă · '
                     : ''}
-                  {a.available ? 'Disponibil' : 'Indisponibil'}
+                  {!a.available
+                    ? 'Indisponibil'
+                    : !weather.landingAllowed
+                      ? 'Aterizări blocate'
+                      : !weather.departureAllowed
+                        ? 'Decolări blocate'
+                        : 'Disponibil'}
+                  {weather.condition ? ` · ${weather.condition}` : ''}
                 </span>
               </button>
             </Html>
@@ -416,11 +425,13 @@ export default function Region({
                 zIndexRange={[14, 0]}
               >
                 <button
-                  className={`scene-tag region-tag ${selected ? 'selected' : ''}`}
+                  className={`scene-tag region-tag region-flight-tag ${selected ? 'selected' : ''}`}
                   style={{ '--tag-color': color } as React.CSSProperties}
                   onClick={() => onSelect(flight.id)}
+                  title={`${flight.name} · ${flight.origin} → ${flight.destination}`}
+                  aria-label={`Inspect ${flight.name}, ${flight.origin} to ${flight.destination}`}
                 >
-                  <strong>{flight.name}</strong>
+                  <strong>{flight.id}</strong>
                   <span>
                     {flight.origin} → {flight.destination} · Simulare
                   </span>

@@ -10,6 +10,7 @@ import math
 import time
 from collections import Counter
 from .models import Allocation, Itinerary, Leg, PassengerGroup, Plan, Resource, Strategy, World
+from .weather import departure_allowed, landing_allowed, passenger_arrival_pending
 
 
 def units(resource: Resource, group: PassengerGroup) -> int:
@@ -53,7 +54,7 @@ def project_diversion(world: World, airport: str | None) -> tuple[World, list[di
     pending = [r for r in projected.resources if r.kind=="flight" and r.status=="needs_diversion"]
     if not pending:
         return projected, changes
-    candidate = next((a for a in world.airports if a.id==airport and a.available and a.diversion_eligible),None)
+    candidate = next((a for a in world.airports if a.id==airport and landing_allowed(a) and a.diversion_eligible),None)
     if not candidate:
         return projected, changes
     for flight in pending:
@@ -76,7 +77,7 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
         return False
     if r.kind == "flight":
         airports = {a.id:a for a in world.airports}
-        if not airports[r.origin].available or not airports[r.destination].available:
+        if not departure_allowed(airports[r.origin]) or not landing_allowed(airports[r.destination]):
             return False
     if r.capacity < units(r,g):
         return False
@@ -84,7 +85,7 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
 
 
 def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Itinerary]:
-    if any(r.id==group.original_flight_id and r.status=="needs_diversion" for r in world.resources):
+    if passenger_arrival_pending(world,group):
         return []
     options = []
     ready = max(world.sim_time, group.ready_at)
@@ -129,6 +130,8 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
         g = groups.get(alloc.group_id)
         if not g:
             errors.append(f"Unknown group {alloc.group_id}"); continue
+        if passenger_arrival_pending(world,g):
+            errors.append(f"{g.id}: original arrival remains unavailable; passengers cannot start an onward journey")
         if g.id in seen_groups:
             errors.append(f"Duplicate allocation for {g.id}")
         seen_groups.add(g.id)
@@ -252,5 +255,5 @@ def build_candidate(world: World, strategy: Strategy) -> Plan:
 def default_strategies(world: World) -> list[Strategy]:
     base = [("balanced","Balanced recovery"),("fastest","Earliest arrival"),("lowest_cost","Lowest cost")]
     pending = any(r.status=="needs_diversion" for r in world.resources)
-    airports = [a.id for a in world.airports if a.available and a.diversion_eligible] if pending else [None]
+    airports = [a.id for a in world.airports if landing_allowed(a) and a.diversion_eligible] if pending else [None]
     return [Strategy(id=f"{objective}-{code}" if code else objective,label=f"{label} via {code}" if code else label,objective=objective,preferred_airport=code) for code in airports for objective,label in base]

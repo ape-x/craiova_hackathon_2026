@@ -67,10 +67,20 @@ class ResourceRoute(ScenarioPayload):
     destination: str = Field(min_length=1, max_length=40)
 
 
+class WeatherDefinition(ScenarioPayload):
+    """Synthetic conditions and explicit operational effects, not flight physics."""
+    condition: Literal["clear", "fog", "storm", "snow", "wind", "rain"]
+    visibility_m: int | None = Field(ge=0, le=100000)
+    wind_kts: float | None = Field(ge=0, le=250)
+    landing_allowed: bool
+    departure_allowed: bool
+
+
 STRUCTURED_PAYLOADS = {
     "airport_added": AirportDefinition,
     "resource_added": ResourceDefinition,
     "passengers_added": PassengerBatchDefinition,
     "resource_schedule": ResourceSchedule,
     "resource_route": ResourceRoute,
+    "airport_weather": WeatherDefinition,
 }

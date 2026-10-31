@@ -208,4 +208,20 @@ describe('regional view after a verified command', () => {
       }),
     ).toBe(false);
   });
+
+  it('reveals a freshly authored network when a command resets and creates the scenario atomically', () => {
+    const next = world({
+      scenario_id: 'fresh',
+      events: [event('reset', 'scenario_reset'), event('weather', 'airport_weather', 'LIS')],
+      airports: [{ id: 'LIS' } as World['airports'][number]],
+    });
+    expect(commandNeedsRegionalView(world(), { world: next, applied: true })).toBe(true);
+    expect(commandNeedsRegionalView(world(), { world: next, applied: false })).toBe(false);
+    expect(
+      commandNeedsRegionalView(world(), {
+        world: world({ scenario_id: 'empty', events: [event('reset', 'scenario_reset')] }),
+        applied: true,
+      }),
+    ).toBe(false);
+  });
 });

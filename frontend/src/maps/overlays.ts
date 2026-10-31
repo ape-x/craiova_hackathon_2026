@@ -1,4 +1,5 @@
 import type { Airport, Observation, SceneMode, World } from '../types';
+import { airportWeatherState } from '../weather';
 import { parkedPoint, passengerPoint, resourcePoint, sceneHeading, scenePoint } from './placement';
 export { resourcePoint } from './placement';
 import type { Camera, GeoPoint } from './contracts';
@@ -99,10 +100,10 @@ export function buildOverlays(
 ): { markers: GeoMarker[]; routes: GeoRoute[] } {
   const markers: GeoMarker[] = world.airports.map((airport) => ({
     id: airport.id,
-    label: `${airport.code}${airport.available ? '' : ' · CLOSED IN SIM'}`,
-    title: `${airport.name}. Airport availability is simulated.`,
+    label: `${airport.code}${!airport.available ? ' · CLOSED IN SIM' : airportWeatherState(airport).weatherRestricted ? ' · WEATHER RESTRICTED' : ''}`,
+    title: `${airport.name}. Airport availability is simulated.${airport.weather ? ` ${airportWeatherState(airport).condition}. Landings ${airportWeatherState(airport).landingAllowed ? 'allowed' : 'blocked'}; departures ${airportWeatherState(airport).departureAllowed ? 'allowed' : 'blocked'}.` : ''}`,
     point: scenePoint(airport, 0, 51, 28),
-    color: airport.available ? COLORS.scenario : COLORS.unavailable,
+    color: airportWeatherState(airport).restricted ? COLORS.unavailable : COLORS.scenario,
     observed: false,
     selected: selectedId === airport.id,
   }));
@@ -256,7 +257,13 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
   );
   const observed = observation && observedPoint(observation);
   if (observed)
-    return { center: observed, range: 4000, tilt: 60, heading: 20, altitudeMode: 'ABSOLUTE' };
+    return {
+      center: observed,
+      range: 4000,
+      tilt: 60,
+      heading: 20,
+      altitudeMode: 'ABSOLUTE',
+    };
   const airport = world.airports.find((a) => a.id === selectedId);
   if (airport && mode === 'airport')
     return {

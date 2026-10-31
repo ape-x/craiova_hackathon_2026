@@ -10,8 +10,9 @@ from pydantic import ValidationError
 from .config import Settings
 from .models import Allocation, Decision, Offer, Reservation, ScenarioChange, Strategy, World, canonical_id
 from .scenario_authoring import add_airport, add_passengers, add_resource, airport_reference, validate_route, validate_schedule
-from .scenario_schema import MAX_COMMAND_EVENTS
-from .seed import seed_world
+from .scenario_schema import MAX_COMMAND_EVENTS, WeatherDefinition
+from .weather import apply_weather_to_flight, departure_allowed, landing_allowed
+from .scenario_reset import reset_scenario
 from .solver import active_offers, build_candidate, default_strategies, units, validate_allocations
 from .store import DomainError, Store, audit, utcnow
 
@@ -80,6 +81,11 @@ def shortlist_candidates(candidates,limit=8):
 
 def apply_change(world: World,event: ScenarioChange):
     kind,target,value=event.type,event.target_id,event.value
+    if kind=="airport_weather" and world.mode!="simulation":
+        raise DomainError(409,"Simulation edits are disabled outside simulation mode.")
+    if kind=="scenario_reset":
+        reset_scenario(world,value)
+        return
     impacted_resources=set()
     impacted_groups=set()
     diverted_groups=set()
@@ -111,7 +117,7 @@ def apply_change(world: World,event: ScenarioChange):
             if (departure,arrival)!=(resource.departure,resource.arrival):
                 resource.departure,resource.arrival=departure,arrival
                 impacted_resources.add(resource.id)
-                if resource.kind=="flight" and (resource.available or resource.status=="needs_diversion"):
+                if resource.kind=="flight" and (resource.available or resource.status in ("needs_diversion","weather_held")):
                     for group in world.groups:
                         if group.original_flight_id==resource.id and group.origin==resource.destination:
                             group.ready_at=max(world.sim_time,arrival+30)
@@ -126,12 +132,41 @@ def apply_change(world: World,event: ScenarioChange):
                 impacted_resources.add(resource.id)
                 for group in world.groups:
                     if group.original_flight_id==resource.id:
-                        if group.origin==previous_destination and resource.kind=="flight" and resource.available:
+                        if group.origin==previous_destination and resource.kind=="flight" and (resource.available or resource.status=="weather_held"):
                             group.origin=destination
                             group.ready_at=max(world.sim_time,resource.arrival+30)
                             impacted_groups.add(group.id)
                         if group.status=="scheduled" and group.origin!=group.destination:
                             group.status="waiting"
+        if kind in ("resource_schedule","resource_route") and apply_weather_to_flight(world,resource):
+            impacted_resources.add(resource.id)
+            for group in world.groups:
+                if group.original_flight_id==resource.id and resource.status in ("needs_diversion","weather_held"):
+                    group.status="affected"
+                    if resource.status=="needs_diversion":
+                        diverted_groups.add(group.id)
+    elif kind=="airport_weather":
+        airport=airport_reference(world,target)
+        airport.weather=WeatherDefinition.model_validate(value)
+        for resource in world.resources:
+            if resource.kind!="flight" or airport.id not in (resource.origin,resource.destination):
+                continue
+            if not apply_weather_to_flight(world,resource):
+                continue
+            impacted_resources.add(resource.id)
+            for group in world.groups:
+                if group.original_flight_id!=resource.id:
+                    continue
+                if resource.status=="needs_diversion":
+                    group.status="affected"
+                    diverted_groups.add(group.id)
+                elif resource.status=="weather_held" and group.origin==resource.destination:
+                    group.status="affected"
+                    diverted_groups.add(group.id)
+                elif resource.status=="weather_held" and group.status=="scheduled":
+                    group.status="affected"
+                elif resource.available and group.origin==group.destination and not any(o.group_id==group.id for o in active_offers(world)):
+                    group.status="scheduled"
     elif kind in ("airport_restored","airport_diversion_eligibility"):
         airport=airport_reference(world,target)
         if kind=="airport_restored":
@@ -174,7 +209,7 @@ def apply_change(world: World,event: ScenarioChange):
             if not value:
                 impacted_resources.add(r.id)
         else:
-            if r.kind=="flight" and any(not a.available for a in world.airports if a.id in (r.origin,r.destination)):
+            if r.kind=="flight" and any((a.id==r.destination and not landing_allowed(a)) or (a.id==r.origin and not departure_allowed(a)) for a in world.airports):
                 raise DomainError(409,"This flight still touches an unavailable airport and cannot be restored; choose an eligible diversion if it is airborne")
             r.available=True
             r.status="scheduled"
@@ -200,11 +235,11 @@ def apply_change(world: World,event: ScenarioChange):
     elif kind=="flight_diverted":
         flight=lookup(world.resources,target,"flight")
         airport=lookup(world.airports,canonical_id(value) if isinstance(value,str) else value,"airport")
-        if flight.kind!="flight" or not airport.available or not airport.diversion_eligible or airport.id==flight.origin:
+        if flight.kind!="flight" or not landing_allowed(airport) or not airport.diversion_eligible or airport.id==flight.origin:
             raise DomainError(422,"Airport is not eligible for this simulated diversion")
         if not flight.departure<=world.sim_time<flight.arrival or (not flight.available and flight.status!="needs_diversion"):
             raise DomainError(409,"Only an airborne flight or a pending airborne diversion can be diverted")
-        if flight.destination==airport.id:
+        if flight.destination==airport.id and flight.available and flight.status!="needs_diversion":
             audit(world,kind,f"{flight.id} already arrives at {airport.id}; existing passenger commitments are unchanged.",flight.id,{"value":airport.id,"source":"simulation","no_change":True})
             return
         flight.destination=airport.id
@@ -253,7 +288,7 @@ def apply_change(world: World,event: ScenarioChange):
     for offer in list(active_offers(world)):
         resources={l.resource_id for l in offer.itinerary.legs}
         if offer.group_id in diverted_groups:
-            invalidate(world,offer,"Arrival airport closed before landing; its passengers require a new diversion and recovery plan.")
+            invalidate(world,offer,"The original arrival is unavailable; its passengers require a new arrival and recovery plan.")
         elif resources & impacted_resources:
             # Availability, reduced capacity and accessibility are relevant dependencies.
             # Do not disturb a non-accessibility-needing party solely for that change.
@@ -424,9 +459,20 @@ class RecoveryService:
             changes=[ScenarioChange.model_validate(e) for e in interpreted.get("events",[])]
         except ValidationError as exc:
             raise DomainError(422,"AI returned an invalid scenario operation; no changes were applied") from exc
+        reset_positions=[i for i,event in enumerate(changes) if event.type=="scenario_reset"]
+        if reset_positions and reset_positions != [0]:
+            raise DomainError(422,"A scenario reset must be the first and only reset in a command; no changes were applied")
         projected=world.model_copy(deep=True)
         for event in changes:
             apply_change(projected,event)
+        # Resetting a scene alone has no recovery decision to make.
+        reset_only=len(changes)==1 and bool(reset_positions)
+        if reset_only or (not projected.groups and not any(r.status=="needs_diversion" for r in projected.resources)):
+            def commit_scene(current):
+                for event in changes:
+                    apply_change(current,event)
+                return {"explanation":interpreted.get("explanation","Updated the synthetic scene."),"focus_id":interpreted.get("focus_id"),"applied":True,"mode":"ai"}
+            return self.store.mutate(key,payload,world.version,commit_scene,request_started=started)
         strategies=[Strategy.model_validate(s) for s in interpreted.get("strategies",[])][:6]
         # Pending diversions must compare every eligible airport; never silently fix a choice.
         if any(r.status=="needs_diversion" for r in projected.resources):
@@ -532,11 +578,5 @@ class RecoveryService:
 
     def reset(self,request):
         def reset_world(world):
-            version=world.version
-            replacement=seed_world()
-            for field in World.model_fields:
-                if field!="version":
-                    setattr(world,field,getattr(replacement,field))
-            world.version=version
-            audit(world,"scenario_reset","Operator reset synthetic scenario; old passenger links are invalidated.")
+            reset_scenario(world,"seed")
         return self.store.mutate("reset:"+request.idempotency_key,request.model_dump(),request.expected_version,reset_world)
