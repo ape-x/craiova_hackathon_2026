@@ -53,6 +53,7 @@ class Resource(Model):
     valid_until: str | None = None
     eligible_group_ids: list[str] = Field(default_factory=list)
     quote_total_cost: float | None = Field(default=None, ge=0, le=1000000)
+    budget_total_cost: float | None = Field(default=None, ge=0, le=1000000)
     quote_rooms: int | None = Field(default=None, ge=1, le=30)
     requires_revalidation: bool = False
     external_offer_id: str | None = None
@@ -78,6 +79,7 @@ class PassengerGroup(Model):
     source: str = "synthetic"
     provenance: dict[str, Any] = Field(default_factory=dict)
     adult_count: int | None = Field(default=None, ge=0, le=12)
+    incident_id: str | None = None
 
 
 class Leg(Model):
@@ -178,6 +180,53 @@ class Decision(Model):
     focus_id: str | None = None
 
 
+class FlightAirportReference(Model):
+    iata: str | None = None
+    icao: str | None = None
+    catalog_code: str | None = None
+
+
+class FlightSelection(Model):
+    selection_id: str
+    fr24_id: str
+    flight_number: str | None = None
+    callsign: str | None = None
+    registration: str | None = None
+    aircraft_type: str | None = None
+    origin: FlightAirportReference | None = None
+    intended_destination: FlightAirportReference | None = None
+    actual_destination: FlightAirportReference | None = None
+    first_seen: str | None = None
+    last_seen: str | None = None
+    takeoff_at: str | None = None
+    landed_at: str | None = None
+    flight_ended: bool | None = None
+    status: Literal["tracking", "ended", "unknown"] = "unknown"
+    freshness: Literal["current", "stale", "historical", "unknown"] = "unknown"
+
+
+class IncidentFlightReference(Model):
+    lookup_id: str
+    selection_id: str
+
+
+class RecoveryIncident(Model):
+    id: str
+    created_at: str
+    source: Literal["operator_report"] = "operator_report"
+    kind: Literal["destination_unavailable", "flight_disruption"]
+    description: str
+    requested_flight_number: str
+    date_utc: str
+    flight_ref: IncidentFlightReference
+    unavailable_airport_code: str | None = None
+    group_ids: list[str] = Field(default_factory=list)
+    status: Literal["needs_passenger_data", "open"] = "needs_passenger_data"
+    # Hydrated from a bounded cache; never stored in operational snapshots.
+    flight: FlightSelection | None = None
+    flight_context_state: Literal["available", "expired"] = "expired"
+
+
 class World(Model):
     scenario_id: str
     version: int = 1
@@ -191,6 +240,7 @@ class World(Model):
     groups: list[PassengerGroup]
     offers: list[Offer] = Field(default_factory=list)
     reservations: list[Reservation] = Field(default_factory=list)
+    incidents: list[RecoveryIncident] = Field(default_factory=list)
     events: list[AuditEvent] = Field(default_factory=list)
     decisions: list[Decision] = Field(default_factory=list)
     observations: list[dict[str, Any]] = Field(default_factory=list)

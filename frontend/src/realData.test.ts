@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import HotelOfferPrice from './HotelOfferPrice';
 import {
   addCalendarDays,
   bucharestDate,
@@ -18,6 +21,60 @@ const query: RealDataQuery = {
   adults: 2,
   rooms: 1,
 };
+describe('hotel price disclosure', () => {
+  const offer: RealHotelOffer = {
+    id: 'hotel-quote',
+    name: 'Hotel',
+    total_price: '100.00',
+    currency: 'EUR',
+    url: null,
+    pricing: {
+      booking_total: { amount: '100.00', currency: 'EUR' },
+      excluded_fee_totals: [{ amount: '12.00', currency: 'EUR' }],
+      mandatory_total: { amount: '112.00', currency: 'EUR' },
+      status: 'complete',
+      unresolved_reasons: [],
+      payment_timing: 'unconfirmed',
+    },
+  };
+  it('shows mandatory total and supplier quote separately without claiming a payment amount', () => {
+    const html = renderToStaticMarkup(createElement(HotelOfferPrice, { offer }));
+    expect(html).toContain('112.00');
+    expect(html).toContain('Total including mandatory fees');
+    expect(html).toContain('Quoted stay:');
+    expect(html).toContain('Additional mandatory fees:');
+    expect(html).toContain('Payment timing is unconfirmed');
+    expect(html).not.toContain('Due now');
+  });
+  it('does not combine currencies or present an incomplete quote as a verified total', () => {
+    const incomplete = {
+      ...offer,
+      pricing: {
+        ...offer.pricing!,
+        status: 'incomplete' as const,
+        mandatory_total: null,
+        excluded_fee_totals: [{ amount: '30.00', currency: 'PLN' }],
+        unresolved_reasons: ['unsupported_budget_currency'],
+      },
+    };
+    const html = renderToStaticMarkup(createElement(HotelOfferPrice, { offer: incomplete }));
+    expect(html).toContain('Supplier quote');
+    expect(html).toContain('PLN');
+    expect(html).toContain('Mandatory total requires verification');
+    expect(html).toContain('A sourced currency conversion is required');
+    expect(html).not.toContain('unsupported_budget_currency');
+    expect(html).not.toContain('Total including mandatory fees');
+    expect(html).not.toContain('130.00');
+  });
+  it('keeps legacy quotes visibly unverified for mandatory fees', () => {
+    const html = renderToStaticMarkup(
+      createElement(HotelOfferPrice, { offer: { ...offer, pricing: null } }),
+    );
+    expect(html).toContain('Supplier quote');
+    expect(html).toContain('Mandatory total requires verification');
+    expect(html).not.toContain('Total including mandatory fees');
+  });
+});
 describe('real-data request boundaries', () => {
   it('uses the Bucharest day and advances over month/year boundaries', () => {
     expect(bucharestDate(new Date('2026-10-30T22:30:00Z'))).toBe('2026-10-31');

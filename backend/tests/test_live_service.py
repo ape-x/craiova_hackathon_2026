@@ -1,5 +1,6 @@
 """Live operational mutations use source data and never call booking APIs."""
 import asyncio
+import copy
 import csv
 import io
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,7 @@ from app.live_service import ExternalConfirmation, HotelQuoteImport, LiveOperati
 from app.models import AcceptRequest, Itinerary, Leg, Offer, Reservation
 from app.providers.base import ProviderError
 from app.service import RecoveryService
+from app.solver import resource_cost
 from app.store import DomainError, Store
 
 
@@ -36,6 +38,9 @@ class Provider:
                  "provider_offer_id": f"quoted-offer-{self.calls}", "currency": "EUR", "total_price": "176.45",
                  "checkin": query.checkin.isoformat(), "checkout": query.checkout.isoformat(),
                  "adults": query.adults, "rooms": query.rooms, "quoted_at": datetime.now(timezone.utc).isoformat(),
+                 "pricing": {"booking_total": {"amount": "176.45", "currency": "EUR"}, "excluded_fee_totals": [],
+                             "mandatory_total": {"amount": "176.45", "currency": "EUR"}, "status": "complete",
+                             "unresolved_reasons": [], "payment_timing": "unconfirmed"},
                  "expires_at": None, "room_rates": [{"room_name": "Supplier room"}]}]
 
 
@@ -122,6 +127,7 @@ async def test_hotel_import_is_bound_to_group_exact_amount_and_actual_expiry_onl
     assert resource["source"] == "Nuitee / LiteAPI"
     assert resource["eligible_group_ids"] == ["REAL-GROUP"]
     assert resource["quote_total_cost"] == 176.45 and resource["quote_rooms"] == resource["capacity"] == 1
+    assert resource["budget_total_cost"] == 176.45
     assert resource["valid_until"] is None and resource["requires_revalidation"] is True
     assert resource["external_offer_id"] == "quoted-offer-1"
     assert resource["provenance"]["room_rates"][0]["room_name"] == "Supplier room"
@@ -130,6 +136,86 @@ async def test_hotel_import_is_bound_to_group_exact_amount_and_actual_expiry_onl
     replacement = await ops.hotels(hotel_request(ops, idempotency_key="hotel-refresh-123"))
     assert len(replacement["world"]["resources"]) == 1
     assert replacement["world"]["resources"][0]["external_offer_id"] == "quoted-offer-2"
+
+
+def alter_hotel_quotes(ops, change):
+    original = ops.real_data.provider.offers
+    async def offers(airport, query):
+        quotes = await original(airport, query)
+        change(quotes)
+        return quotes
+    ops.real_data.provider.offers = offers
+
+
+@pytest.mark.asyncio
+async def test_hotel_budget_includes_extra_fees_while_supplier_quote_stays_exact(ops):
+    ops.manifest(manifest_request(ops))
+    def change(quotes):
+        quote = quotes[0]
+        quote["total_price"] = "176.4501"
+        quote["pricing"].update(
+            booking_total={"amount": "176.4501", "currency": "EUR"},
+            excluded_fee_totals=[{"amount": "5.0001", "currency": "EUR"}],
+            mandatory_total={"amount": "181.4502", "currency": "EUR"},
+        )
+    alter_hotel_quotes(ops, change)
+    result = await ops.hotels(hotel_request(ops))
+    resource = ops.store.read().resources[0]
+    assert resource.quote_total_cost == 176.4501
+    assert resource.budget_total_cost == 181.46
+    assert resource_cost(resource, ops.store.read().groups[0]) == 181.46
+    assert resource.provenance["total_price"] == "176.4501"
+    assert resource.provenance["pricing"]["mandatory_total"]["amount"] == "181.4502"
+    assert result["skipped_incomplete_pricing"] == 0
+    assert resource.booking_status == "unbooked"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["fees_not_disclosed", "excluded_fee_amount_missing", "unsupported_budget_currency"])
+async def test_incomplete_hotel_pricing_cannot_change_inventory_or_create_budgeted_options(ops, reason):
+    ops.manifest(manifest_request(ops))
+    def change(quotes):
+        quotes[0]["pricing"].update(status="incomplete", mandatory_total=None, unresolved_reasons=[reason])
+    alter_hotel_quotes(ops, change)
+    before = ops.store.read().model_dump_json()
+    with pytest.raises(DomainError, match="unresolved mandatory costs") as error:
+        await ops.hotels(hotel_request(ops))
+    assert error.value.status == 422
+    assert ops.store.read().model_dump_json() == before
+
+
+@pytest.mark.asyncio
+async def test_hotel_import_reports_skipped_incomplete_quotes_without_losing_complete_options(ops):
+    ops.manifest(manifest_request(ops))
+    def change(quotes):
+        incomplete = copy.deepcopy(quotes[0])
+        incomplete["id"] = "hotel-with-unresolved-fees"
+        incomplete["provider_offer_id"] = "opaque-other-offer"
+        incomplete["pricing"].update(status="incomplete", mandatory_total=None, unresolved_reasons=["fees_not_disclosed"])
+        quotes.insert(0, incomplete)
+    alter_hotel_quotes(ops, change)
+    result = await ops.hotels(hotel_request(ops))
+    assert len(result["world"]["resources"]) == 1
+    assert result["world"]["resources"][0]["provenance"]["id"] == "hotel-real-id"
+    assert result["skipped_incomplete_pricing"] == 1
+    assert "Skipped 1 quotes with unresolved mandatory costs" in result["explanation"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", [
+    lambda quote: quote.pop("pricing"),
+    lambda quote: quote["pricing"].update(mandatory_total={"amount": "5.00", "currency": "EUR"}),
+    lambda quote: quote["pricing"].update(mandatory_total={"amount": "176.45", "currency": "RON"}),
+    lambda quote: quote["pricing"].update(status="incomplete"),
+])
+async def test_hotel_import_rejects_missing_or_inconsistent_normalized_pricing_atomically(ops, change):
+    ops.manifest(manifest_request(ops))
+    alter_hotel_quotes(ops, lambda quotes: change(quotes[0]))
+    before = ops.store.read().model_dump_json()
+    with pytest.raises(DomainError) as error:
+        await ops.hotels(hotel_request(ops))
+    assert error.value.status == 502
+    assert ops.store.read().model_dump_json() == before
 
 
 @pytest.mark.asyncio

@@ -27,6 +27,7 @@ from .live_data import ManifestImport, ManualResourceInput, PassengerGenerationI
 from .live_service import LiveOperations, HotelQuoteImport, ExternalConfirmation
 from .live_travel import LiveTravel, LiveTravelSearch, TravelQuoteImport
 from .providers.travel import TravelProvider
+from .incidents import FlightContextSelection, FlightLookupRequest, IncidentCreate, IncidentGroupBinding, IncidentService
 from .service import RecoveryService
 from .store import DomainError, Store, utcnow
 
@@ -81,8 +82,9 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     access_logger=logging.getLogger("uvicorn.access")
     if not any(isinstance(item,RedactAccessPaths) for item in access_logger.filters):
         access_logger.addFilter(RedactAccessPaths())
-    store=Store(settings.database_path,settings.observation_retention_seconds,settings.operation_mode)
-    ai,flights,voice=AIProvider(settings),FlightProvider(settings),VoiceProvider(settings)
+    store=Store(settings.database_path,settings.observation_retention_seconds,settings.operation_mode,settings.fr24_result_limit*8)
+    ai,flights,voice=AIProvider(settings),FlightProvider(settings,usage_store=store),VoiceProvider(settings)
+    incidents=IncidentService(settings,store,flights)
     real_data=RealDataService(settings)
     service=RecoveryService(settings,store,ai if ai.configured else None)
     live=LiveOperations(store,service,real_data)
@@ -91,7 +93,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     login_attempts=defaultdict(deque)
     # Reserve worst-case credit cost in the persistent shared request ledger;
     # restarting or adding a worker cannot replenish the paid provider budget.
-    poll_request_limit=min(settings.fr24_max_requests,settings.fr24_max_credits//(settings.fr24_result_limit*8))
+    poll_request_limit=settings.fr24_max_requests
 
     async def flight_loop():
         while True:
@@ -102,24 +104,20 @@ def create_app(settings: Settings | None=None) -> FastAPI:
                 await asyncio.sleep(1)
                 continue
             if flights.configured and await asyncio.to_thread(store.control,"traffic_running",False):
-                if await asyncio.to_thread(store.acquire_poll,settings.flight_poll_seconds,poll_request_limit):
-                    try:
-                        observations=await flights.fetch()
-                        await asyncio.to_thread(store.set_observations,observations,{"state":"connected","source":"Flightradar24","updated_at":utcnow().isoformat(),"environment":settings.fr24_environment})
-                    except ProviderError as exc:
+                try:
+                    observations=await flights.fetch()
+                    await asyncio.to_thread(store.set_observations,observations,{"state":"connected","source":"Flightradar24","updated_at":utcnow().isoformat(),"environment":settings.fr24_environment})
+                except ProviderError as exc:
+                    if exc.code!="poll_interval":
                         old=await asyncio.to_thread(store.read)
                         await asyncio.to_thread(store.set_observations,old.observations,{"state":"error","message":str(exc),"code":exc.code,"updated_at":utcnow().isoformat()})
                         if exc.code in ("budget_exhausted","http_401","http_403","http_429"):
                             await asyncio.to_thread(store.set_control,"traffic_running",False)
-                    except Exception:
-                        logging.getLogger(__name__).exception("Observation polling stopped after an unexpected failure")
-                        await asyncio.to_thread(store.set_control,"traffic_running",False)
-                        old=await asyncio.to_thread(store.read)
-                        await asyncio.to_thread(store.set_observations,old.observations,{"state":"error","message":"Observation polling stopped after an internal error; inspect server logs.","updated_at":utcnow().isoformat()})
-                elif await asyncio.to_thread(store.poll_usage)>=poll_request_limit:
+                except Exception:
+                    logging.getLogger(__name__).exception("Observation polling stopped after an unexpected failure")
                     await asyncio.to_thread(store.set_control,"traffic_running",False)
                     old=await asyncio.to_thread(store.read)
-                    await asyncio.to_thread(store.set_observations,old.observations,{"state":"budget_exhausted","message":"Session-wide shared request budget exhausted. No further calls are made.","updated_at":utcnow().isoformat()})
+                    await asyncio.to_thread(store.set_observations,old.observations,{"state":"error","message":"Observation polling stopped after an internal error; inspect server logs.","updated_at":utcnow().isoformat()})
             await asyncio.sleep(1)
 
     @asynccontextmanager
@@ -136,6 +134,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     app.state.real_data=real_data
     app.state.live=live
     app.state.travel=travel
+    app.state.incidents=incidents
     app.add_middleware(CORSMiddleware,allow_origins=settings.origins,allow_credentials=True,allow_methods=["GET","POST","DELETE"],allow_headers=["Content-Type","Authorization","Last-Event-ID"])
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[h.strip() for h in settings.allowed_hosts.split(",")])
     app.add_middleware(BodySizeLimit,max_bytes=settings.max_request_bytes)
@@ -236,7 +235,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
             "google_maps_api_key":settings.google_maps_api_key,"public_base_url":settings.public_base_url,
             "hold_ttl_seconds":settings.hold_ttl_seconds,"models":{"reasoning":settings.openai_model,"decision":settings.openai_decision_model,"voice":settings.openai_voice_model},
             "traffic_running":store.control("traffic_running",False),"traffic_requests_used":store.poll_usage(),"traffic_request_budget":poll_request_limit,
-            "traffic_credit_budget":settings.fr24_max_credits,"traffic_credits_reserved":store.poll_usage()*settings.fr24_result_limit*8,
+            "traffic_credit_budget":settings.fr24_max_credits,"traffic_credits_reserved":store.fr24_credits_reserved(),
             "observation_retention_seconds":settings.observation_retention_seconds,
             "real_data":{"hotels":"Google Places" if real_data.provider.google_configured else "OpenStreetMap",
                          "transport":"Google Routes" if real_data.provider.google_configured else "OSRM / OpenStreetMap",
@@ -286,6 +285,22 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     @app.post("/api/real-data/search",dependencies=[Depends(operator)])
     async def search_real_data(body: RealDataRequest):
         return await real_data.search(body)
+
+    @app.post("/api/flights/lookup",dependencies=[Depends(operator)])
+    async def flight_lookup(body: FlightLookupRequest):
+        return await incidents.lookup(body)
+
+    @app.post("/api/incidents",dependencies=[Depends(operator)])
+    def incident_create(body: IncidentCreate):
+        return incidents.create(body)
+
+    @app.post("/api/incidents/{incident_id}/groups",dependencies=[Depends(operator)])
+    def incident_groups(incident_id: str,body: IncidentGroupBinding):
+        return incidents.bind(incident_id,body)
+
+    @app.post("/api/incidents/{incident_id}/refresh-flight",dependencies=[Depends(operator)])
+    def incident_refresh(incident_id: str,body: FlightContextSelection):
+        return incidents.refresh(incident_id,body)
 
     @app.post("/api/live/import-passengers",dependencies=[Depends(operator)])
     def import_passengers(body: ManifestImport):
@@ -376,8 +391,8 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     def traffic_start():
         if not flights.configured:
             raise DomainError(503,"Flightradar24 API key is not configured. No observed traffic is available.")
-        if store.poll_usage()>=poll_request_limit:
-            raise DomainError(409,"Shared Flightradar24 request budget exhausted")
+        if store.poll_usage()>=poll_request_limit or store.fr24_credits_reserved()+settings.fr24_result_limit*8>settings.fr24_max_credits:
+            raise DomainError(409,"Shared Flightradar24 request/credit budget exhausted")
         store.set_control("traffic_running",True)
         return {"running":True,"poll_seconds":settings.flight_poll_seconds,"requests_used":store.poll_usage(),"max_requests":poll_request_limit}
 

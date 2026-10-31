@@ -1,4 +1,12 @@
-import type { AppConfig, MutationResult, ScenarioChange, World } from './types';
+import type {
+  AppConfig,
+  FlightLookup,
+  IncidentInput,
+  IncidentResult,
+  MutationResult,
+  ScenarioChange,
+  World,
+} from './types';
 
 export class ApiError extends Error {
   constructor(
@@ -69,6 +77,32 @@ export const api = {
   world: (signal?: AbortSignal) => request<World>('/world', undefined, signal),
   login: (token: string) => request('/auth/login', { token }),
   logout: () => request('/auth/logout', {}),
+  lookupFlight: (input: { flight_number: string; date_utc: string }, signal?: AbortSignal) =>
+    request<FlightLookup>('/flights/lookup', input, signal),
+  createIncident: (world: World, input: IncidentInput) =>
+    request<IncidentResult>('/incidents', {
+      ...input,
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
+  bindIncidentGroups: (world: World, incidentId: string, groupIds: string[]) =>
+    request<IncidentResult>(`/incidents/${encodeURIComponent(incidentId)}/groups`, {
+      group_ids: groupIds,
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
+  refreshIncidentFlight: (
+    world: World,
+    incidentId: string,
+    lookupId: string,
+    selectionId: string,
+  ) =>
+    request<IncidentResult>(`/incidents/${encodeURIComponent(incidentId)}/refresh-flight`, {
+      lookup_id: lookupId,
+      selection_id: selectionId,
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
   event: (world: World, change: ScenarioChange) =>
     request<MutationResult>('/events', {
       ...change,
@@ -152,6 +186,12 @@ export function downloadSession(world: World) {
     ...world,
     observations: [],
     observation_export: 'External observations omitted from portable audit',
+    incidents: (world.incidents ?? []).map(({ flight: _flight, ...incident }) => ({
+      ...incident,
+      flight: null,
+      flight_context_state: 'expired',
+    })),
+    incident_flight_export: 'Transient provider flight context omitted from portable audit',
     groups: world.groups.map(({ token: _token, ...group }) => group),
   };
   const url = URL.createObjectURL(

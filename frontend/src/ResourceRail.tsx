@@ -16,6 +16,7 @@ import type { World, ResourceKind, SceneMode } from './types';
 import { Dot, Tag } from './ui';
 import { observationInfo } from './observation';
 import RealDataDialog from './RealDataDialog';
+import RecoveryCases from './RecoveryCases';
 
 const tabs = [
   { id: 'flight', name: 'Flights', Icon: Plane },
@@ -30,6 +31,7 @@ export default function ResourceRail({
   onMode,
   onScenario,
   onLiveData,
+  onRecoveryCase,
 }: {
   world: World;
   selectedId: string | null;
@@ -37,6 +39,7 @@ export default function ResourceRail({
   onMode: (mode: SceneMode) => void;
   onScenario: () => void;
   onLiveData: () => void;
+  onRecoveryCase?: (id: string | null) => void;
 }) {
   const [tab, setTab] = useState<ResourceKind | 'groups'>('flight');
   const [query, setQuery] = useState('');
@@ -70,6 +73,9 @@ export default function ResourceRail({
           <SlidersHorizontal size={16} />
         </button>
       </div>
+      {world.mode === 'live' && onRecoveryCase && (
+        <RecoveryCases world={world} onOpen={onRecoveryCase} />
+      )}
       <div className="airports-list">
         {world.airports
           .filter(

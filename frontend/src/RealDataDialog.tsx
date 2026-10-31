@@ -14,10 +14,10 @@ import {
 import { request } from './api';
 import type { Airport } from './types';
 import { Modal, Tag } from './ui';
+import HotelOfferPrice from './HotelOfferPrice';
 import {
   addCalendarDays,
   bucharestDate,
-  formatOfferPrice,
   formatRetrievedAt,
   hotelSearchDetails,
   liveHotelOffers,
@@ -456,17 +456,15 @@ export default function RealDataDialog({
                     {result.criteria.rooms === 1 ? 'room' : 'rooms'}
                   </span>
                 </div>
-                <strong className="real-offer-price">
-                  {formatOfferPrice(offer.total_price, offer.currency)}
-                </strong>
+                <HotelOfferPrice offer={offer} />
                 <ExternalLink href={offer.url}>View offer</ExternalLink>
               </article>
             ))}
             {offers.length > 0 && (
               <p className="real-data-boundary">
-                Prices cover the requested stay and rooms. Additional charges payable at the
-                property may apply. Review final charges and conditions with the supplier before
-                booking.
+                Quotes cover the requested stay and rooms. Mandatory fees are shown separately when
+                disclosed by the supplier. Unresolved charges prevent a complete planning total.
+                Availability and final booking conditions require supplier confirmation.
               </p>
             )}
           </section>

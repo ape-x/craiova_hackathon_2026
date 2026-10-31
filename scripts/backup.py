@@ -13,6 +13,8 @@ def without_observations(response):
     if isinstance(result.get("world"), dict):
         world = {**result["world"], "observations": []}
         world["provider_status"] = {key: value for key, value in world.get("provider_status", {}).items() if key != "flights"}
+        if "incidents" in world:
+            world["incidents"] = [{**case, "flight": None, "flight_context_state": "expired"} for case in world["incidents"]]
         result["world"] = world
     result.pop("observations", None)
     return result
@@ -42,6 +44,8 @@ try:
             destination.execute("PRAGMA secure_delete=ON")
             if "observations" in tables:
                 destination.execute("DELETE FROM observations")
+            if "flight_lookups" in tables:
+                destination.execute("DELETE FROM flight_lookups")
             # Old snapshots may predate startup migration or the separate cache
             # table. Sanitize only the copy, preserving all operational fields.
             for table, identifier, column, is_response in (

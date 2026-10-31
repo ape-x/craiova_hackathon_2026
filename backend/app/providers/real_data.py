@@ -92,6 +92,62 @@ def _quoted_money(value: Any) -> dict:
     return {"amount": format(amount, "f"), "currency": value["currency"]}
 
 
+def _fee_money(value: dict) -> dict:
+    """Missing fee components remain unknown; malformed components fail closed."""
+    raw, currency = value.get("amount"), value.get("currency")
+    amount = None
+    if raw is not None:
+        # Reuse strict amount parsing without inferring the fee's real currency.
+        amount = _quoted_money({"amount": raw, "currency": "EUR"})["amount"]
+    if currency is not None and (not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3}", currency)):
+        raise ValueError("Invalid fee currency")
+    return {"amount": amount, "currency": currency}
+
+
+def _liteapi_pricing(amount: Decimal, room_rates: list[dict]) -> dict:
+    """Aggregate the supplier's full-stay rates, never nights or guest counts.
+
+    The official JSON guide says excluded fees are payable at the property;
+    included taxes and commission already belong to the booking amount.
+    https://docs.liteapi.travel/docs/hotel-rates-api-json-data-structure
+    """
+    totals = [rate["booking_total"] for rate in room_rates]
+    if all(total is not None for total in totals):
+        if any(total["currency"] != "EUR" for total in totals) or sum((Decimal(total["amount"]) for total in totals), Decimal(0)) != amount:
+            raise ValueError("Offer total disagrees with room totals")
+    elif any(total is not None and total["currency"] != "EUR" for total in totals):
+        raise ValueError("Room total currency disagrees with offer")
+    excluded: dict[str, Decimal] = {}
+    reasons = set()
+    for rate in room_rates:
+        if rate["fees_disclosure"] == "missing":
+            reasons.add("fees_not_disclosed")
+        for fee in rate["taxes_and_fees"]:
+            if fee["included"]:
+                continue
+            if fee["amount"] is None:
+                reasons.add("excluded_fee_amount_missing")
+            if fee["currency"] is None:
+                reasons.add("excluded_fee_currency_missing")
+            if fee["amount"] is None or fee["currency"] is None:
+                continue
+            currency = fee["currency"]
+            excluded[currency] = excluded.get(currency, Decimal(0)) + Decimal(fee["amount"])
+            if currency != "EUR":
+                reasons.add("unsupported_budget_currency")
+    mandatory = amount + excluded.get("EUR", Decimal(0))
+    if mandatory > 1_000_000 or any(total > 1_000_000 for total in excluded.values()):
+        raise ValueError("Invalid aggregate mandatory cost")
+    return {
+        "booking_total": {"amount": format(amount, "f"), "currency": "EUR"},
+        "excluded_fee_totals": [{"amount": format(total, "f"), "currency": currency} for currency, total in sorted(excluded.items())],
+        "mandatory_total": None if reasons else {"amount": format(mandatory, "f"), "currency": "EUR"},
+        "status": "incomplete" if reasons else "complete", "unresolved_reasons": sorted(reasons),
+        # A search is not a payment. Payment timing belongs to the checkout flow.
+        "payment_timing": "unconfirmed",
+    }
+
+
 def _quote_context(request: Any, provider: str, observed_at: str) -> dict:
     return {
         "provider": provider, "provider_offer_id": None,
@@ -131,15 +187,30 @@ def _liteapi_room_terms(rate: dict) -> dict:
     retail = rate.get("retailRate", {})
     if not isinstance(retail, dict):
         raise ValueError("Invalid room price")
-    fees = retail.get("taxesAndFees", [])
+    booking_total = None
+    if "total" in retail:
+        totals = retail["total"]
+        if not isinstance(totals, list) or len(totals) != 1:
+            raise ValueError("Invalid room total")
+        booking_total = _quoted_money(totals[0])
+    # Nuitee explicitly documents null as all fees included. An absent field
+    # has no such guarantee and must not silently become zero excluded fees.
+    disclosure = "missing" if "taxesAndFees" not in retail else "all_included"
+    fees = retail.get("taxesAndFees")
+    if fees is None:
+        fees = []
     if not isinstance(fees, list) or len(fees) > 100:
         raise ValueError("Invalid room fees")
-    additional_fees = []
+    additional_fees, normalized_fees = [], []
     for fee in fees:
         if not isinstance(fee, dict) or type(fee.get("included")) is not bool:
             raise ValueError("Unknown fee inclusion")
-        if fee["included"] is False:
-            additional_fees.append({**_quoted_money(fee), "description": _terms_text(fee.get("description"))})
+        normalized = {"included": fee["included"], **_fee_money(fee), "description": _terms_text(fee.get("description"))}
+        normalized_fees.append(normalized)
+        if fee["included"] is False and normalized["amount"] is not None and normalized["currency"] is not None:
+            additional_fees.append({key: value for key, value in normalized.items() if key != "included"})
+    if normalized_fees:
+        disclosure = "itemized"
     return {
         "rate_id": _opaque_id(rate.get("rateId")),
         "occupancy_number": rate["occupancyNumber"], "adults": rate["adultCount"], "children": [],
@@ -147,6 +218,7 @@ def _liteapi_room_terms(rate: dict) -> dict:
         "refundable": refundable, "cancellation_penalties": cancellations,
         "cancellation_remarks": cancellation_remarks,
         "remarks": _terms_text(rate.get("remarks")), "additional_fees": additional_fees,
+        "booking_total": booking_total, "fees_disclosure": disclosure, "taxes_and_fees": normalized_fees,
     }
 
 
@@ -424,24 +496,29 @@ class RealDataProvider:
                             amount += self._liteapi_amount(totals[0])
                         if amount > 1_000_000:
                             raise ValueError("Invalid aggregate room price")
-                        candidates.append((amount, offer))
-                        continue
-                    # Current OpenAPI uses an array; the official guide uses an object.
-                    if isinstance(price, list):
-                        if len(price) != 1:
-                            raise ValueError("Ambiguous offer currency")
-                        price = price[0]
-                    amount = self._liteapi_amount(price)
-                    candidates.append((amount, offer))
-                amount, selected = min(candidates, key=lambda candidate: candidate[0])
-                room_rates = [_liteapi_room_terms(rate) for rate in sorted(selected["rates"], key=lambda rate: rate["occupancyNumber"])]
+                    else:
+                        # Current OpenAPI uses an array; the official guide uses an object.
+                        if isinstance(price, list):
+                            if len(price) != 1:
+                                raise ValueError("Ambiguous offer currency")
+                            price = price[0]
+                        amount = self._liteapi_amount(price)
+                    room_rates = [_liteapi_room_terms(rate) for rate in sorted(rates, key=lambda rate: rate["occupancyNumber"])]
+                    pricing = _liteapi_pricing(amount, room_rates)
+                    candidates.append((amount, offer, room_rates, pricing))
+                # Prefer a fully costed quote. A lower base price with unknown
+                # extras cannot be called the cheapest mandatory-cost option.
+                amount, selected, room_rates, pricing = min(candidates, key=lambda candidate: (
+                    candidate[3]["status"] != "complete",
+                    Decimal(candidate[3]["mandatory_total"]["amount"]) if candidate[3]["mandatory_total"] else candidate[0],
+                ))
                 refundable = False if any(rate["refundable"] is False for rate in room_rates) else True if all(rate["refundable"] is True for rate in room_rates) else None
                 result.append({
                     **_quote_context(request, "liteapi", observed_at),
                     "id": hotel_id, "name": names[hotel_id], "total_price": format(amount, "f"), "currency": "EUR", "url": None,
                     "provider_offer_id": selected["offerId"], "occupancies": occupancies,
                     "guest_nationality": getattr(self.settings, "liteapi_guest_nationality", "RO"),
-                    "refundable": refundable, "room_rates": room_rates,
+                    "refundable": refundable, "room_rates": room_rates, "pricing": pricing,
                     **locations.get(hotel_id, {}),
                 })
             return result

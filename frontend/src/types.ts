@@ -45,6 +45,7 @@ export interface Resource {
   capacity_scope?: 'quoted_request' | 'operator_confirmed';
 }
 export interface PassengerGroup {
+  incident_id?: string | null;
   id: string;
   name: string;
   size: number;
@@ -165,6 +166,7 @@ export interface Observation {
   [key: string]: unknown;
 }
 export interface World {
+  incidents?: RecoveryIncident[];
   scenario_id: string;
   version: number;
   epoch: string;
@@ -182,6 +184,65 @@ export interface World {
   observations: Observation[];
   stats: Record<string, number>;
   provider_status: Record<string, unknown>;
+}
+export interface FlightAirportReference {
+  iata: string | null;
+  icao: string | null;
+  catalog_code: string | null;
+}
+export interface FlightSelection {
+  selection_id: string;
+  fr24_id: string;
+  flight_number: string | null;
+  callsign: string | null;
+  registration: string | null;
+  aircraft_type: string | null;
+  origin: FlightAirportReference | null;
+  intended_destination: FlightAirportReference | null;
+  actual_destination: FlightAirportReference | null;
+  first_seen: string | null;
+  last_seen: string | null;
+  takeoff_at: string | null;
+  landed_at: string | null;
+  flight_ended: boolean | null;
+  status: 'tracking' | 'ended' | 'unknown';
+  freshness: 'current' | 'stale' | 'historical' | 'unknown';
+}
+export interface FlightLookup {
+  state: 'ready' | 'no_match' | 'not_configured' | 'error';
+  lookup_id: string | null;
+  queried_at: string;
+  expires_at: string | null;
+  source: 'Flightradar24';
+  cached: boolean;
+  matches: FlightSelection[];
+  message: string | null;
+}
+export interface RecoveryIncident {
+  id: string;
+  created_at: string;
+  source: 'operator_report';
+  kind: 'destination_unavailable' | 'flight_disruption';
+  description: string;
+  requested_flight_number: string;
+  date_utc: string;
+  flight_ref: { lookup_id: string; selection_id: string };
+  unavailable_airport_code: string | null;
+  group_ids: string[];
+  status: 'needs_passenger_data' | 'open';
+  flight: FlightSelection | null;
+  flight_context_state: 'available' | 'expired';
+}
+export interface IncidentInput {
+  lookup_id: string;
+  selection_id: string;
+  kind: RecoveryIncident['kind'];
+  description: string;
+  unavailable_airport_code?: string;
+  affected_group_ids: string[];
+}
+export interface IncidentResult extends MutationResult {
+  incident_id: string;
 }
 export interface AppConfig {
   ai_configured?: boolean;

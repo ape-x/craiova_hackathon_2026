@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
-from .models import AuditEvent, World
+from .models import AuditEvent, FlightSelection, World
 from .seed import seed_world, empty_live_world
 
 
@@ -71,7 +71,7 @@ class Store:
     Every itinerary's resource holds and idempotency result commit in one transaction.
     No model/network call is ever performed under this lock.
     """
-    def __init__(self, path: str, observation_retention_seconds: int=3600, operation_mode: str | None=None):
+    def __init__(self, path: str, observation_retention_seconds: int=3600, operation_mode: str | None=None, legacy_fr24_credits_per_request: int=40):
         if operation_mode not in (None,"live","simulation"):
             raise ValueError("Unknown operation mode")
         self.path = path
@@ -87,8 +87,14 @@ class Store:
             CREATE TABLE IF NOT EXISTS controls (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS request_claims (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, owner TEXT NOT NULL, expires REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS world_archives (id TEXT PRIMARY KEY, archived_at TEXT NOT NULL, mode TEXT NOT NULL, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS flight_lookups (id TEXT PRIMARY KEY, query_key TEXT NOT NULL, select_until REAL NOT NULL, retain_until REAL NOT NULL, data TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS flight_lookup_query ON flight_lookups(query_key);
             """)
             conn.execute("BEGIN IMMEDIATE")
+            if not conn.execute("SELECT 1 FROM controls WHERE key='fr24_credits_reserved'").fetchone():
+                previous_usage=conn.execute("SELECT count FROM leases WHERE name='fr24'").fetchone()
+                credits=(previous_usage[0] if previous_usage else 0)*legacy_fr24_credits_per_request
+                conn.execute("INSERT INTO controls VALUES('fr24_credits_reserved',?)",(json.dumps(credits),))
             existing=conn.execute("SELECT data FROM world WHERE id=1").fetchone()
             if not existing:
                 world=empty_live_world() if operation_mode=="live" else seed_world()
@@ -139,9 +145,14 @@ class Store:
         return hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest()
 
     def _load(self,conn):
+        conn.execute("DELETE FROM flight_lookups WHERE retain_until<=?",(utcnow().timestamp(),))
         world=World.model_validate_json(conn.execute("SELECT data FROM world WHERE id=1").fetchone()[0])
         if world.mode=="live":
             world.sim_time=max(0,int((utcnow()-datetime.fromisoformat(world.epoch)).total_seconds()//60))
+        for incident in world.incidents:
+            match=self._incident_flight(conn,incident.flight_ref.lookup_id,incident.flight_ref.selection_id)
+            incident.flight=FlightSelection.model_validate(match) if match else None
+            incident.flight_context_state="available" if match else "expired"
         return world
 
     def _save_audit(self,conn,world):
@@ -161,6 +172,8 @@ class Store:
         if isinstance(result.get("world"),dict):
             world={**result["world"],"observations":[]}
             world["provider_status"]={k:v for k,v in world.get("provider_status",{}).items() if k!="flights"}
+            if "incidents" in world:
+                world["incidents"]=[{**case,"flight":None,"flight_context_state":"expired"} for case in world["incidents"]]
             result["world"]=world
         result.pop("observations",None)
         return result
@@ -221,6 +234,10 @@ class Store:
             response["world"].setdefault("provider_status",{}).pop("flights",None)
             if status:
                 response["world"]["provider_status"]["flights"]=status
+            for incident in response["world"].get("incidents",[]):
+                ref=incident["flight_ref"]
+                match=self._incident_flight(conn,ref["lookup_id"],ref["selection_id"])
+                incident.update(flight=match,flight_context_state="available" if match else "expired")
         decisions=response.get("world",{}).get("decisions",[])+([response["decision"]] if response.get("decision") else [])
         for decision in decisions:
             timing=conn.execute("SELECT value FROM controls WHERE key=?",("decision_timings:"+decision["id"],)).fetchone()
@@ -347,6 +364,74 @@ class Store:
                     logging.getLogger(__name__).warning("Decision committed, but timing telemetry could not be persisted",exc_info=True)
             return response
 
+    @staticmethod
+    def _freshen_flight(match):
+        match={**match}
+        if match.get("flight_ended") is True:
+            match["freshness"]="historical"
+        elif match.get("last_seen"):
+            age=(utcnow()-datetime.fromisoformat(match["last_seen"].replace("Z","+00:00"))).total_seconds()
+            match["freshness"]="current" if -60<=age<=120 else "stale"
+        else:
+            match["freshness"]="unknown"
+        return match
+
+    def _incident_flight(self,conn,lookup_id,selection_id):
+        row=conn.execute("SELECT data FROM flight_lookups WHERE id=? AND retain_until>?",(lookup_id,utcnow().timestamp())).fetchone()
+        if not row:
+            return None
+        match=next((item for item in json.loads(row[0])["matches"] if item["selection_id"]==selection_id),None)
+        return self._freshen_flight(match) if match else None
+
+    def cached_flight_lookup(self,query_key):
+        with self.connect() as conn:
+            row=conn.execute("SELECT data FROM flight_lookups WHERE query_key=? AND select_until>? AND retain_until>? ORDER BY select_until DESC LIMIT 1",(query_key,utcnow().timestamp(),utcnow().timestamp())).fetchone()
+            if not row:
+                return None
+            result=json.loads(row[0])
+            result["matches"]=[self._freshen_flight(item) for item in result["matches"]]
+            return {**result,"cached":True}
+
+    def save_flight_lookup(self,query_key,result):
+        now=utcnow().timestamp()
+        select_until=datetime.fromisoformat(result["expires_at"]).timestamp()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DELETE FROM flight_lookups WHERE retain_until<=?",(now,))
+            conn.execute("INSERT INTO flight_lookups VALUES(?,?,?,?,?)",(result["lookup_id"],query_key,select_until,now+self.observation_retention_seconds,json.dumps(result)))
+            conn.execute("DELETE FROM flight_lookups WHERE id IN (SELECT id FROM flight_lookups ORDER BY retain_until DESC LIMIT -1 OFFSET 128)")
+
+    def selected_flight(self,lookup_id,selection_id,*,fresh=True):
+        # Read-only: safe to use while mutate holds the writer transaction.
+        with self.connect() as conn:
+            row=conn.execute("SELECT data,select_until,retain_until FROM flight_lookups WHERE id=?",(lookup_id,)).fetchone()
+            if not row or row[2]<=utcnow().timestamp() or (fresh and row[1]<=utcnow().timestamp()):
+                raise DomainError(409,"Flight context expired. Look up the flight again before selecting or refreshing it.")
+            result=json.loads(row[0])
+            match=next((item for item in result["matches"] if item["selection_id"]==selection_id),None)
+            if not match:
+                raise DomainError(422,"Selected flight does not belong to this lookup")
+            return result,self._freshen_flight(match)
+
+    def reserve_fr24_request(self,interval,max_requests,max_credits,credits):
+        """Reserve worst-case credits before I/O; unknown outcomes keep the charge."""
+        now=utcnow().timestamp()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row=conn.execute("SELECT expires,count FROM leases WHERE name='fr24'").fetchone()
+            count=row[1] if row else 0
+            used=json.loads(conn.execute("SELECT value FROM controls WHERE key='fr24_credits_reserved'").fetchone()[0])
+            if count>=max_requests or used+credits>max_credits:
+                return "budget_exhausted"
+            if row and row[0]>now:
+                return "poll_interval"
+            conn.execute("INSERT INTO leases VALUES('fr24',?,?) ON CONFLICT(name) DO UPDATE SET expires=excluded.expires,count=excluded.count",(now+interval,count+1))
+            conn.execute("UPDATE controls SET value=? WHERE key='fr24_credits_reserved'",(json.dumps(used+credits),))
+            return None
+
+    def fr24_credits_reserved(self):
+        return self.control("fr24_credits_reserved",0)
+
     def set_observations(self,observations,status):
         retained,bounded=self._retained_observations(observations,status)
         with self.connect() as conn:
@@ -357,6 +442,7 @@ class Store:
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             observations,_=self._current_observations(conn)
+            conn.execute("DELETE FROM flight_lookups WHERE retain_until<=?",(utcnow().timestamp(),))
             return len(observations)
 
     def acquire_poll(self,interval: int,max_requests: int) -> bool:

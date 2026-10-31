@@ -84,6 +84,8 @@ class RealDataService:
                     return {"state": "sandbox", "mode": "sandbox", "source": source, "fetched_at": None, "cached": False, "message": str(exc), "items": []}
                 return {"state": "error", "source": source, "fetched_at": None, "cached": False, "message": str(exc), "items": []}
             result = {"state": "ready", "source": source, "fetched_at": datetime.now(ZoneInfo("UTC")).isoformat(), "cached": False, "message": None, "items": items}
+            if name == "hotel_offers" and any(item.get("pricing", {}).get("status") == "incomplete" for item in items):
+                result["message"] = "Some supplier quotes have unresolved mandatory costs. They remain visible but cannot be imported as fully budgeted options."
             if ttl > 0:
                 self._cache[key] = (time.monotonic() + ttl, copy.deepcopy(result))
                 while len(self._cache) > 64:

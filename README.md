@@ -6,13 +6,18 @@ Problema inițială și cerințele pasagerilor pot fi ipoteze introduse de echip
 
 ## Fluxul operațional
 
-1. Introdu cerințele pasagerilor sau importă un manifest.
-2. Caută zboruri, autocare și cazare pentru grup, dată și destinație. Fiecare cotație păstrează furnizorul, prețul, condițiile și expirarea.
-3. Importă cotațiile relevante și completează serviciile confirmate de operator, cu sursa lor.
-4. Descrie condițiile prin voce sau text. AI-ul propune strategii; backendul verifică fezabilitatea și alocările.
-5. Pasagerul acceptă sau refuză o propunere. Acceptarea înregistrează preferința. Confirmarea rezervării necesită referințele externe pentru fiecare segment.
+1. Deschide **Start recovery**, caută numărul de zbor și selectează exact cursa Flightradar24. Data căutării este ziua UTC a primei observări, nu neapărat data locală a plecării.
+2. Înregistrează incidentul și leagă grupurile afectate. Datele inițiale pot proveni dintr-un manifest sau din cerințe de planificare introduse explicit. Grupurile trebuie să indice același zbor original; operațiunile existente sunt păstrate.
+3. Caută zboruri, autocare și cazare pentru grup, dată și destinație. Fiecare cotație păstrează furnizorul, prețul, condițiile și expirarea.
+4. Importă cotațiile relevante și completează serviciile confirmate de operator, cu sursa lor.
+5. Descrie condițiile prin voce sau text. AI-ul propune strategii; backendul verifică fezabilitatea și alocările.
+6. Pasagerul acceptă sau refuză o propunere. Acceptarea înregistrează preferința. Confirmarea rezervării necesită referințele externe pentru fiecare segment.
 
 Căutarea furnizorilor este în prezent explicită. Replanificarea compară inventarul importat; nu creează automat bilete, camere sau transport. Cotațiile pot expira, iar o ofertă de preț nu rezervă locuri.
+
+Incidentul reprezintă o condiție raportată de operator și nu modifică statusul furnizat de Flightradar24. Un aeroport declarat indisponibil este exclus și din segmentele intermediare ale zborurilor propuse grupurilor afectate. Grupurile cu rezervări deja confirmate necesită tratare separată de operator. Contextul de zbor are retenție limitată și se poate reîmprospăta numai pentru aceeași cursă; exporturile și backupurile omit datele temporare ale furnizorului.
+
+Costul cazării păstrează separat cotația furnizorului și taxele obligatorii suplimentare. Taxele incluse nu sunt adăugate încă o dată. Cotațiile cu taxe lipsă sau fără conversie verificată în EUR sunt vizibile, dar nu intră în planuri cu buget complet calculat.
 
 ## Rulare locală: o singură aplicație
 

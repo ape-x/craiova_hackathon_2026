@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import hashlib
 from datetime import date, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -19,6 +19,37 @@ from .real_data import RealDataRequest
 from .scenario_schema import MAX_RESOURCES
 from .solver import units, validate_allocations
 from .store import DomainError, audit, utcnow
+
+
+def _hotel_budget_total(quote: dict, booking_amount: Decimal) -> Decimal | None:
+    """Only reconciled, complete EUR totals can support a hard EUR budget."""
+    pricing = quote.get("pricing")
+    if not isinstance(pricing, dict) or pricing.get("status") not in ("complete", "incomplete"):
+        raise ValueError("Missing normalized hotel pricing")
+    if pricing["status"] == "incomplete":
+        if pricing.get("mandatory_total") is not None:
+            raise ValueError("Incomplete pricing cannot have a mandatory total")
+        return None
+
+    def money(value):
+        if not isinstance(value, dict) or value.get("currency") != "EUR" or not isinstance(value.get("amount"), str):
+            raise ValueError("Invalid mandatory cost currency or amount")
+        amount = Decimal(value["amount"])
+        if not amount.is_finite() or not 0 <= amount <= 1_000_000:
+            raise ValueError("Invalid mandatory cost")
+        return amount
+
+    if pricing.get("unresolved_reasons") != [] or money(pricing.get("booking_total")) != booking_amount:
+        raise ValueError("Unreconciled booking amount")
+    fees = pricing.get("excluded_fee_totals")
+    if not isinstance(fees, list) or len(fees) > 1:
+        raise ValueError("Invalid EUR excluded fee total")
+    mandatory = money(pricing.get("mandatory_total"))
+    if mandatory != booking_amount + sum((money(fee) for fee in fees), Decimal(0)):
+        raise ValueError("Mandatory total disagrees with booking amount and excluded fees")
+    # Keep the supplier's exact decimal amount in pricing/provenance. Solver
+    # cents are a conservative allowance, never a claim about the actual charge.
+    return mandatory.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
 
 
 class HotelQuoteImport(Mutation):
@@ -194,6 +225,7 @@ class LiveOperations:
             raise DomainError(503, "Choose the live Nuitee / LiteAPI supplier to import complete hotel quotes")
         quotes = await self.real_data.provider.offers({"code": airport["code"], "name": airport["name"], "latitude": airport["lat"], "longitude": airport["lon"]}, query)
         resources = self._quote_resources(world, request, group, quotes, departure, arrival)
+        skipped = len(quotes) - len(resources)
 
         def apply(current):
             self._hotel_context(current, request)
@@ -208,8 +240,11 @@ class LiveOperations:
             current.airports.extend(_new_airports(current, [request.airport_code]))
             current.resources.extend(resources)
             audit(current, "live-hotel-quotes", "Imported supplier hotel quotes for the selected group; no booking or room hold was made.", group.id,
-                  {"resource_ids": [resource.id for resource in resources], "rooms": request.rooms, "supplier": "Nuitee / LiteAPI"})
-            return {"applied": True, "explanation": f"Imported {len(resources)} supplier hotel quotes. They require revalidation before booking.", "focus_id": group.id}
+                  {"resource_ids": [resource.id for resource in resources], "rooms": request.rooms, "supplier": "Nuitee / LiteAPI", "skipped_incomplete_pricing": skipped})
+            explanation = f"Imported {len(resources)} supplier hotel quotes. They require revalidation before booking."
+            if skipped:
+                explanation += f" Skipped {skipped} quotes with unresolved mandatory costs."
+            return {"applied": True, "explanation": explanation, "focus_id": group.id, "skipped_incomplete_pricing": skipped}
         return self.store.mutate("live-hotels:" + request.idempotency_key, request.model_dump(), world.version, apply, request_started=started)
 
     @staticmethod
@@ -233,19 +268,24 @@ class LiveOperations:
                 expires_at = aware(quote["expires_at"]) if quote.get("expires_at") is not None else None
                 if expires_at is not None and expires_at <= utcnow():
                     raise ValueError("Expired supplier quote")
+                budget_total = _hotel_budget_total(quote, amount)
             except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
                 raise DomainError(502, "Supplier returned an incomplete, mismatched or stale hotel quote") from exc
             seen.add(hotel_id)
+            if budget_total is None:
+                continue
             local_id = "HQ-" + hashlib.sha256((group.id + "|" + hotel_id + "|" + reference).encode()).hexdigest()[:28].upper()
             resources.append(Resource(id=local_id, kind="hotel", name=name[:140], origin=request.airport_code,
                 destination=request.airport_code, departure=departure, arrival=arrival, capacity=request.rooms,
                 cost_per_person=0, room_capacity=1, accessible=False, source="Nuitee / LiteAPI", status="quoted",
-                eligible_group_ids=[group.id], quote_total_cost=float(amount), quote_rooms=request.rooms,
+                eligible_group_ids=[group.id], quote_total_cost=float(amount), budget_total_cost=float(budget_total), quote_rooms=request.rooms,
                 valid_until=expires_at.isoformat() if expires_at else None, requires_revalidation=True,
                 external_offer_id=reference, capacity_scope="quoted_request", provenance={
                     **copy.deepcopy(quote), "checkin_at": request.checkin_at.isoformat(), "checkout_at": request.checkout_at.isoformat(),
                     "stay_times_source": "operator_confirmed", "stay_times_confirmed": True,
                 }))
+        if quotes and not resources:
+            raise DomainError(422, "Hotel quotes have unresolved mandatory costs; review the supplier price breakdown before importing a fully budgeted option")
         return resources
 
     def confirm(self, offer_id: str, request: ExternalConfirmation):

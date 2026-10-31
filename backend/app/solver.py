@@ -11,6 +11,7 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 from .models import Allocation, Itinerary, Leg, PassengerGroup, Plan, Resource, Strategy, World
+from .airport_catalog import lookup_airport
 from .weather import departure_allowed, landing_allowed, passenger_arrival_pending
 
 
@@ -21,7 +22,7 @@ def units(resource: Resource, group: PassengerGroup) -> int:
 
 
 def resource_cost(resource: Resource, group: PassengerGroup) -> float:
-    return round(resource.quote_total_cost if resource.quote_total_cost is not None else resource.cost_per_person*units(resource,group),2)
+    return round(resource.budget_total_cost if resource.budget_total_cost is not None else resource.quote_total_cost if resource.quote_total_cost is not None else resource.cost_per_person*units(resource,group),2)
 
 
 def live_resource_current(resource: Resource) -> bool:
@@ -96,6 +97,23 @@ def project_diversion(world: World, airport: str | None) -> tuple[World, list[di
     return projected, changes
 
 
+def resource_blocked_by_incident(world: World, resource: Resource, group: PassengerGroup) -> bool:
+    if world.mode!="live" or resource.kind!="flight" or not group.incident_id:
+        return False
+    incident=next((item for item in world.incidents if item.id==group.incident_id),None)
+    if not incident or not incident.unavailable_airport_code:
+        return False
+    points={resource.origin,resource.destination}
+    segments=resource.provenance.get("segments",[])
+    if isinstance(segments,list):
+        for segment in segments:
+            if isinstance(segment,dict):
+                points.update(value for value in (segment.get("origin"),segment.get("destination")) if isinstance(value,str))
+    if incident.unavailable_airport_code in points:
+        return True
+    return any((lookup_airport(point) or {}).get("code")==incident.unavailable_airport_code for point in points if len(point)==4)
+
+
 def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str, minute: int, used_ids: set[str]) -> bool:
     if world.mode=="live":
         if r.eligible_group_ids and g.id not in r.eligible_group_ids:
@@ -103,6 +121,13 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
         if g.status!="confirmed" and not live_resource_current(r):
             return False
         if g.status=="confirmed" and r.source=="synthetic":
+            return False
+        if g.status!="confirmed" and r.kind=="hotel" and r.source=="Nuitee / LiteAPI":
+            pricing=r.provenance.get("pricing",{})
+            mandatory=pricing.get("mandatory_total") if isinstance(pricing,dict) else None
+            if r.budget_total_cost is None or not isinstance(pricing,dict) or pricing.get("status")!="complete" or not isinstance(mandatory,dict) or mandatory.get("currency")!="EUR":
+                return False
+        if resource_blocked_by_incident(world,r,g):
             return False
     if not r.available or r.id in used_ids or r.origin != current or r.departure < minute:
         return False

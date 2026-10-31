@@ -224,7 +224,7 @@ def liteapi_data(amount="321.4501", *, rooms=2):
     return {"sandbox": False, "hotels": [{"id": "lp123", "name": "Provider hotel"}], "data": [{
         "hotelId": "lp123", "roomTypes": [{
             "offerId": "unused-booking-offer", "offerRetailRate": {"amount": amount, "currency": "EUR"},
-            "rates": [{"occupancyNumber": index+1, "adultCount": count, "childCount": 0}
+            "rates": [{"occupancyNumber": index+1, "adultCount": count, "childCount": 0, "retailRate": {"taxesAndFees": None}}
                       for index, count in enumerate([3, 2][:rooms])],
         }],
     }]}
@@ -415,6 +415,10 @@ async def test_liteapi_preserves_selected_quote_identity_terms_and_unknown_expir
         "cancellation_remarks": ["Cancellation penalty applies after deadline."],
         "remarks": "Payment at the property.",
         "additional_fees": [{"amount": "9.7001", "currency": "RON", "description": "Local tax payable at hotel"}],
+        "booking_total": None, "fees_disclosure": "itemized", "taxes_and_fees": [
+            {"included": True, "amount": "20.00", "currency": "EUR", "description": "Included tax"},
+            {"included": False, "amount": "9.7001", "currency": "RON", "description": "Local tax payable at hotel"},
+        ],
     }
     assert quote["room_rates"][1]["rate_id"] == "rate-two"
 
@@ -432,3 +436,137 @@ async def test_liteapi_rejects_unusable_terms_instead_of_dropping_them(terms):
         provider = RealDataProvider(settings(liteapi_api_key="prod_test", liteapi_environment="live"), client=client)
         with pytest.raises(ProviderError, match="invalid response"):
             await provider.offers({"latitude": 44.3, "longitude": 23.8}, search(adults=5, rooms=2))
+
+
+async def _hotel_quote(data):
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=data))) as client:
+        provider = RealDataProvider(settings(liteapi_api_key="prod_test", liteapi_environment="live"), client=client)
+        return (await provider.offers({"latitude": 44.3, "longitude": 23.8}, search(adults=5, rooms=2, checkout=local_today()+timedelta(days=3))))[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fees", [None, []])
+async def test_liteapi_documented_included_only_fees_preserve_exact_booking_total(fees):
+    data = liteapi_data()
+    for rate in data["data"][0]["roomTypes"][0]["rates"]:
+        rate["retailRate"]["taxesAndFees"] = fees
+    quote = await _hotel_quote(data)
+    assert quote["total_price"] == "321.4501"
+    assert quote["pricing"] == {
+        "booking_total": {"amount": "321.4501", "currency": "EUR"}, "excluded_fee_totals": [],
+        "mandatory_total": {"amount": "321.4501", "currency": "EUR"}, "status": "complete",
+        "unresolved_reasons": [], "payment_timing": "unconfirmed",
+    }
+    assert all(rate["fees_disclosure"] == "all_included" for rate in quote["room_rates"])
+    assert "due_now" not in json.dumps(quote)
+
+
+@pytest.mark.asyncio
+async def test_liteapi_mandatory_cost_adds_excluded_fees_once_per_occupancy_not_per_guest_or_night():
+    data = liteapi_data("221.00")
+    rates = data["data"][0]["roomTypes"][0]["rates"]
+    for rate, amount in zip(rates, ("100.00", "121.00")):
+        rate["remarks"] = "Local tax: 7 EUR payable at the property."
+        rate["retailRate"] = {"total": [{"amount": amount, "currency": "EUR"}], "taxesAndFees": [
+            {"included": True, "amount": "12.00", "currency": "EUR", "description": "Already in the total"},
+            {"included": False, "amount": "7.00", "currency": "EUR", "description": "Local tax"},
+        ]}
+    quote = await _hotel_quote(data)
+    assert quote["total_price"] == "221.00"
+    assert quote["pricing"]["excluded_fee_totals"] == [{"amount": "14.00", "currency": "EUR"}]
+    assert quote["pricing"]["mandatory_total"] == {"amount": "235.00", "currency": "EUR"}
+    assert [rate["booking_total"]["amount"] for rate in quote["room_rates"]] == ["100.00", "121.00"]
+
+
+@pytest.mark.asyncio
+async def test_liteapi_missing_fee_disclosure_remains_visible_with_incomplete_budget_warning():
+    data = liteapi_data()
+    data["data"][0]["roomTypes"][0]["rates"][0]["retailRate"].pop("taxesAndFees")
+    def respond(request):
+        return httpx.Response(200, json=data) if request.url.host == "api.liteapi.travel" else handler(request)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        service = RealDataService(settings(liteapi_api_key="prod_test", liteapi_environment="live"), client=client)
+        result = (await service.search(search(adults=5, rooms=2)))["hotel_offers"]
+    assert result["state"] == "ready" and "unresolved mandatory costs" in result["message"]
+    quote = result["items"][0]
+    assert quote["total_price"] == "321.4501"
+    assert quote["pricing"]["mandatory_total"] is None and quote["pricing"]["status"] == "incomplete"
+    assert quote["pricing"]["unresolved_reasons"] == ["fees_not_disclosed"]
+    assert quote["room_rates"][0]["fees_disclosure"] == "missing"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field,explicit_null", [("amount", False), ("amount", True), ("currency", False), ("currency", True)])
+async def test_liteapi_missing_excluded_fee_component_never_becomes_zero(field, explicit_null):
+    data = liteapi_data()
+    fee = {"included": False, "amount": "9.70", "currency": "EUR", "description": "Property tax"}
+    if explicit_null:
+        fee[field] = None
+    else:
+        fee.pop(field)
+    data["data"][0]["roomTypes"][0]["rates"][0]["retailRate"]["taxesAndFees"] = [fee]
+    quote = await _hotel_quote(data)
+    assert quote["pricing"]["mandatory_total"] is None
+    assert quote["pricing"]["unresolved_reasons"] == [f"excluded_fee_{field}_missing"]
+    assert quote["room_rates"][0]["taxes_and_fees"][0][field] is None
+    assert quote["pricing"]["excluded_fee_totals"] == []
+
+
+@pytest.mark.asyncio
+async def test_liteapi_mixed_currency_extras_keep_exact_amounts_without_unsourced_conversion():
+    data = liteapi_data()
+    data["data"][0]["roomTypes"][0]["rates"][0]["retailRate"]["taxesAndFees"] = [
+        {"included": False, "amount": "9.7001", "currency": "RON"},
+        {"included": False, "amount": "1.2002", "currency": "EUR"},
+    ]
+    quote = await _hotel_quote(data)
+    assert quote["pricing"]["excluded_fee_totals"] == [
+        {"amount": "1.2002", "currency": "EUR"}, {"amount": "9.7001", "currency": "RON"},
+    ]
+    assert quote["pricing"]["mandatory_total"] is None
+    assert quote["pricing"]["unresolved_reasons"] == ["unsupported_budget_currency"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fees", [
+    {}, "unknown", [{"included": "false"}], [{"included": False, "amount": True, "currency": "EUR"}],
+    [{"included": False, "amount": "NaN", "currency": "EUR"}],
+    [{"included": False, "amount": "-1", "currency": "EUR"}],
+    [{"included": False, "amount": "1", "currency": "eur"}],
+])
+async def test_liteapi_malformed_fee_data_is_not_treated_as_no_extra_cost(fees):
+    data = liteapi_data()
+    data["data"][0]["roomTypes"][0]["rates"][0]["retailRate"]["taxesAndFees"] = fees
+    with pytest.raises(ProviderError, match="invalid response"):
+        await _hotel_quote(data)
+
+
+@pytest.mark.asyncio
+async def test_liteapi_offer_total_must_reconcile_with_all_supplied_occupancy_totals():
+    data = liteapi_data("100.00")
+    for rate in data["data"][0]["roomTypes"][0]["rates"]:
+        rate["retailRate"]["total"] = [{"amount": "60.00", "currency": "EUR"}]
+    with pytest.raises(ProviderError, match="invalid response"):
+        await _hotel_quote(data)
+
+
+@pytest.mark.asyncio
+async def test_liteapi_selects_lowest_complete_mandatory_total_instead_of_lowest_base():
+    data = liteapi_data("99.00")
+    offers = data["data"][0]["roomTypes"]
+    unknown = offers[0]
+    unknown["offerId"] = "unknown-fees"
+    unknown["rates"][0]["retailRate"].pop("taxesAndFees")
+    expensive_total = json.loads(json.dumps(unknown))
+    expensive_total["offerId"] = "low-base-high-extras"
+    expensive_total["offerRetailRate"]["amount"] = "100.00"
+    expensive_total["rates"][0]["retailRate"]["taxesAndFees"] = [{"included": False, "amount": "100.00", "currency": "EUR"}]
+    complete = json.loads(json.dumps(unknown))
+    complete["offerId"] = "lowest-mandatory-cost"
+    complete["offerRetailRate"]["amount"] = "150.00"
+    complete["rates"][0]["retailRate"]["taxesAndFees"] = None
+    offers.extend([expensive_total, complete])
+    quote = await _hotel_quote(data)
+    assert quote["provider_offer_id"] == "lowest-mandatory-cost"
+    assert quote["total_price"] == "150.00"
+    assert quote["pricing"]["mandatory_total"] == {"amount": "150.00", "currency": "EUR"}

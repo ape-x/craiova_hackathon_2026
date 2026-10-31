@@ -1,4 +1,12 @@
-import { Activity, ChevronDown, HelpCircle, PanelLeft, Search, Settings2 } from 'lucide-react';
+import {
+  Activity,
+  ChevronDown,
+  HelpCircle,
+  PanelLeft,
+  Plus,
+  Search,
+  Settings2,
+} from 'lucide-react';
 import { Brand, Dot } from './ui';
 import ThemeToggle from './ThemeToggle';
 import type { World } from './types';
@@ -14,6 +22,7 @@ interface Props {
   onSettings: () => void;
   onLog: () => void;
   onHelp: () => void;
+  onStartRecovery?: () => void;
 }
 
 export default function WorkspaceHeader(props: Props) {
@@ -37,6 +46,17 @@ export default function WorkspaceHeader(props: Props) {
         <strong>{props.locationLabel}</strong>
       </div>
       <div className="header-actions">
+        {props.mode === 'live' && props.onStartRecovery && (
+          <button
+            className="primary-button start-recovery-header"
+            onClick={props.onStartRecovery}
+            aria-label="Start recovery"
+            title="Start recovery"
+          >
+            <Plus size={15} />
+            <span>Start recovery</span>
+          </button>
+        )}
         <ThemeToggle />
         <span className="sync-status" role="status">
           <Dot tone={props.connected ? 'mint' : 'amber'} />

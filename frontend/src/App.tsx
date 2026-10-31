@@ -31,6 +31,7 @@ import WorkspaceHeader from './WorkspaceHeader';
 import WorkspaceSummary from './WorkspaceSummary';
 import ScenarioDialog from './ScenarioDialog';
 import LiveDataDialog from './LiveDataDialog';
+import RecoveryCaseDialog from './RecoveryCaseDialog';
 import { WeatherNetworkOverlay } from './WeatherStatus';
 import { Brand, Dot, Modal, Tag } from './ui';
 import ThemeToggle from './ThemeToggle';
@@ -136,8 +137,9 @@ function Operations() {
   const [showLog, setShowLog] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [modal, setModal] = useState<
-    'scenario' | 'settings' | 'search' | 'help' | 'reset' | 'live-data' | null
+    'scenario' | 'settings' | 'search' | 'help' | 'reset' | 'live-data' | 'recovery-case' | null
   >(null);
+  const [recoveryCaseId, setRecoveryCaseId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const [operation, setOperation] = useState('');
@@ -171,6 +173,10 @@ function Operations() {
   const [mobilePanel, setMobilePanel] = useState<'map' | 'resources' | 'inspector'>('map');
   const [plannerMode, setPlannerMode] = useState<'ai' | 'solver' | null>(null);
   const closeModal = useCallback(() => setModal(null), []);
+  const openRecoveryCase = useCallback((id: string | null) => {
+    setRecoveryCaseId(id);
+    setModal('recovery-case');
+  }, []);
   const chosenMode = plannerMode ?? (config.ai_configured ? 'ai' : 'solver');
   const select = useCallback((id: string) => {
     setSelectedId(id);
@@ -435,6 +441,7 @@ function Operations() {
         onSearch={() => setModal('search')}
         onSettings={() => setModal('settings')}
         onHelp={() => setModal('help')}
+        onStartRecovery={() => openRecoveryCase(null)}
         onLog={() => {
           setShowLog((value) => !value);
           setMobilePanel('inspector');
@@ -468,6 +475,7 @@ function Operations() {
           onMode={setMode}
           onScenario={showScenario}
           onLiveData={() => setModal('live-data')}
+          onRecoveryCase={openRecoveryCase}
         />
         <main className="map-workspace" aria-label="Operational 3D view">
           <WorkspaceSummary
@@ -839,6 +847,20 @@ function Operations() {
       )}
       {modal === 'live-data' && (
         <LiveDataDialog world={world} onClose={closeModal} onApplied={applyResult} />
+      )}
+      {modal === 'recovery-case' && live && (
+        <RecoveryCaseDialog
+          key={`${world.scenario_id}:${recoveryCaseId ?? 'new'}`}
+          world={world}
+          incidentId={recoveryCaseId}
+          onApplied={applyResult}
+          onRefresh={refresh}
+          onClose={closeModal}
+          onManageData={(id) => {
+            setRecoveryCaseId(id);
+            setModal('live-data');
+          }}
+        />
       )}
       {modal === 'scenario' && !live && (
         <ScenarioDialog

@@ -38,12 +38,25 @@ export interface GroundRoute {
   traffic: 'live' | 'none';
   vehicle_profile: 'driving';
 }
+export interface SupplierMoney {
+  amount: string;
+  currency: string;
+}
+export interface HotelPricing {
+  booking_total: SupplierMoney;
+  excluded_fee_totals: SupplierMoney[];
+  mandatory_total: SupplierMoney | null;
+  status: 'complete' | 'incomplete';
+  unresolved_reasons: string[];
+  payment_timing: 'unconfirmed';
+}
 export interface RealHotelOffer {
   id: string;
   name: string;
   total_price: string;
   currency: string;
   url: string | null;
+  pricing?: HotelPricing | null;
 }
 export interface RealDataResult {
   airport: { code: string; name: string; latitude: number; longitude: number };
