@@ -30,6 +30,8 @@ const world = {
       available: true,
     },
   ],
+  groups: [{ id: 'G001', name: 'Family', size: 4, origin: 'CRA', status: 'waiting' }],
+  offers: [],
   observations: [{ id: 'a', lat: 44.4, lon: 24, altitude_ft: 10000, heading: 85, mode: 'LIVE' }],
 } as unknown as World;
 
@@ -49,14 +51,14 @@ const flush = async () => {
 
 describe('authored geographic vehicle models', () => {
   it('uses received altitude and heading, with no fabricated pose for incomplete observations', () => {
-    const models = buildModelDescriptors(world, null);
+    const models = buildModelDescriptors(world, null).filter((m) => m.observed);
     expect(models).toHaveLength(1);
     expect(models[0]).toMatchObject({
       observed: true,
       options: {
         src: MODEL_URLS.aircraft,
         position: { lat: 44.4, lng: 24, altitude: 3048 },
-        orientation: { heading: 85, tilt: 0, roll: 0 },
+        orientation: { heading: 85, tilt: 270, roll: 0 },
         altitudeMode: 'ABSOLUTE',
       },
     });
@@ -66,31 +68,31 @@ describe('authored geographic vehicle models', () => {
       { ...world.observations[0], id: 'b', heading: undefined },
       { ...world.observations[0], id: 'c', heading: -1 },
     ];
-    expect(buildModelDescriptors(snapshot, null)).toHaveLength(0);
+    expect(buildModelDescriptors(snapshot, null).filter((m) => m.observed)).toHaveLength(0);
   });
 
-  it('caps observed models at 20, prioritizes the selected aircraft and only adds a selected simulated vehicle', () => {
+  it('caps observations at 20 and keeps the whole simulated scene without requiring selection', () => {
     const snapshot = structuredClone(world);
     snapshot.observations = Array.from({ length: 35 }, (_, index) => ({
       ...world.observations[0],
       id: `a${index}`,
     }));
-    const observed = buildModelDescriptors(snapshot, 'a34');
+    const observed = buildModelDescriptors(snapshot, 'a34').filter((m) => m.observed);
     expect(observed).toHaveLength(20);
     expect(observed[0].id).toBe('a34');
     const bus = buildModelDescriptors(snapshot, 'B12');
-    expect(bus).toHaveLength(21);
-    expect(bus[20]).toMatchObject({
+    expect(bus).toHaveLength(25);
+    expect(bus.find((m) => m.id === 'B12')!).toMatchObject({
       id: 'B12',
       observed: false,
       options: { src: MODEL_URLS.bus, altitudeMode: 'CLAMP_TO_GROUND' },
     });
-    expect(bus[20].title).toContain('SIMULATED');
-    expect(bus[20].options.orientation.heading).toBeGreaterThan(0);
-    expect(bus[20].options.orientation.heading).toBeLessThan(180);
-    expect(buildModelDescriptors(snapshot, 'F110').at(-1)).toMatchObject({
+    expect(bus.find((m) => m.id === 'B12')!.title).toContain('SIMULATED');
+    expect(bus.find((m) => m.id === 'B12')!.options.orientation.heading).toBeGreaterThan(0);
+    expect(bus.find((m) => m.id === 'B12')!.options.orientation.heading).toBeLessThan(180);
+    expect(buildModelDescriptors(snapshot, 'F110').find((m) => m.id === 'F110')).toMatchObject({
       observed: false,
-      options: { src: MODEL_URLS.aircraft, altitudeMode: 'ABSOLUTE' },
+      options: { src: MODEL_URLS.aircraft, altitudeMode: 'RELATIVE_TO_GROUND' },
     });
   });
 
@@ -152,8 +154,8 @@ describe('authored geographic vehicle models', () => {
       async () => undefined,
     );
     await flush();
-    expect(elements).toHaveLength(2);
-    expect(map.append).toHaveBeenCalledTimes(2);
+    expect(elements).toHaveLength(6);
+    expect(map.append).toHaveBeenCalledTimes(6);
     expect(elements[0].setAttribute).toHaveBeenCalledWith('data-source', 'observed');
     expect(elements[1].setAttribute).toHaveBeenCalledWith('data-source', 'simulation');
     active();

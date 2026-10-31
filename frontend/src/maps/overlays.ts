@@ -1,4 +1,6 @@
-import type { Airport, Observation, Resource, SceneMode, World } from '../types';
+import type { Airport, Observation, SceneMode, World } from '../types';
+import { parkedPoint, passengerPoint, resourcePoint, sceneHeading, scenePoint } from './placement';
+export { resourcePoint } from './placement';
 import type { Camera, GeoPoint } from './contracts';
 
 export const COLORS = {
@@ -84,25 +86,9 @@ export function schematicPath(
     return {
       lat: origin.lat + (destination.lat - origin.lat) * t,
       lng: origin.lng + (destination.lng - origin.lng) * t,
-      altitude: flight ? 300 + Math.sin(t * Math.PI) * 9000 : 10,
+      altitude: flight ? Math.sin(t * Math.PI) * 9000 : 0.5,
     };
   });
-}
-
-export function resourcePoint(resource: Resource, world: World): GeoPoint | null {
-  const origin = world.airports.find((a) => a.id === resource.origin),
-    destination = world.airports.find((a) => a.id === resource.destination);
-  if (!origin) return null;
-  if (!destination || resource.kind === 'hotel' || !resource.available) return pointOf(origin);
-  const progress = Math.max(
-    0,
-    Math.min(
-      1,
-      (world.sim_time - resource.departure) / Math.max(1, resource.arrival - resource.departure),
-    ),
-  );
-  const path = schematicPath(pointOf(origin), pointOf(destination), resource.kind === 'flight');
-  return path[Math.round(progress * (path.length - 1))];
 }
 
 export function buildOverlays(
@@ -115,7 +101,7 @@ export function buildOverlays(
     id: airport.id,
     label: `${airport.code}${airport.available ? '' : ' · CLOSED IN SIM'}`,
     title: `${airport.name}. Airport availability is simulated.`,
-    point: pointOf(airport),
+    point: scenePoint(airport, 0, 51, 28),
     color: airport.available ? COLORS.scenario : COLORS.unavailable,
     observed: false,
     selected: selectedId === airport.id,
@@ -150,7 +136,11 @@ export function buildOverlays(
     drawn.add(key);
     routes.push({
       id: resource.id,
-      path: schematicPath(pointOf(origin), pointOf(destination), resource.kind === 'flight'),
+      path: schematicPath(
+        parkedPoint(resource, world, origin),
+        parkedPoint(resource, world, destination),
+        resource.kind === 'flight',
+      ),
       color: !resource.available
         ? COLORS.unavailable
         : confirmed
@@ -169,21 +159,47 @@ export function buildOverlays(
         id: selectedResource.id,
         label: `${selectedResource.id} · SIM`,
         title: `${selectedResource.id}: illustrative scenario position, not a GPS observation.`,
-        point,
+        point: {
+          ...point,
+          altitude: (point.altitude ?? 0) + (selectedResource.kind === 'flight' ? 18 : 8),
+        },
         color: selectedResource.available ? COLORS.scenario : COLORS.unavailable,
         observed: false,
         selected: true,
       });
   }
+  for (const resource of world.resources) {
+    if (resource.kind === 'hotel' || (resource.available && resource.id !== selectedId)) continue;
+    const point = resourcePoint(resource, world);
+    if (!point) continue;
+    const radius = resource.kind === 'flight' ? 27 : 12;
+    routes.push({
+      id: `selection-${resource.id}`,
+      path: Array.from({ length: 41 }, (_, index) => {
+        const theta = (index / 40) * Math.PI * 2;
+        return {
+          lat: point.lat + (Math.cos(theta) * radius) / 111320,
+          lng:
+            point.lng +
+            (Math.sin(theta) * radius) / (111320 * Math.cos((point.lat * Math.PI) / 180)),
+          altitude: (point.altitude ?? 0) + 0.6,
+        };
+      }),
+      color: resource.available ? COLORS.confirmed : COLORS.unavailable,
+      dashed: false,
+      observed: false,
+      selected: true,
+    });
+  }
   const selectedGroup = world.groups.find((group) => group.id === selectedId);
   if (selectedGroup) {
-    const airport = world.airports.find((a) => a.id === selectedGroup.origin);
-    if (airport)
+    const point = passengerPoint(selectedGroup, world);
+    if (point)
       markers.push({
         id: selectedGroup.id,
         label: `${selectedGroup.name} · SIM`,
         title: `${selectedGroup.size} synthetic passengers; scenario origin, not a physical location.`,
-        point: pointOf(airport),
+        point: { ...point, altitude: (point.altitude ?? 0) + 5 },
         color: selectedGroup.status === 'confirmed' ? COLORS.confirmed : COLORS.scenario,
         observed: false,
         selected: true,
@@ -239,17 +255,25 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
     (o) => String(o.id ?? o.fr24_id ?? '') === selectedId,
   );
   const observed = observation && observedPoint(observation);
-  if (observed) return { center: observed, range: 4000, tilt: 60, heading: 20 };
+  if (observed)
+    return { center: observed, range: 4000, tilt: 60, heading: 20, altitudeMode: 'ABSOLUTE' };
   const airport = world.airports.find((a) => a.id === selectedId);
-  if (airport && mode !== 'region')
-    return { center: pointOf(airport), range: 6500, tilt: 65, heading: 25 };
+  if (airport && mode === 'airport')
+    return {
+      center: scenePoint(airport, 0, 45),
+      range: 650,
+      tilt: 58,
+      heading: sceneHeading(airport ?? home) + 12,
+      altitudeMode: 'RELATIVE_TO_GROUND',
+    };
   const resource = world.resources.find((r) => r.id === selectedId);
   if (resource && mode !== 'region')
     return {
       center: resourcePoint(resource, world) ?? fallback,
-      range: resource.kind === 'flight' ? 3500 : resource.kind === 'bus' ? 1200 : 6500,
+      range: resource.kind === 'flight' ? 550 : resource.kind === 'bus' ? 260 : 650,
       tilt: 60,
-      heading: 25,
+      heading: sceneHeading(world.airports.find((a) => a.id === resource.origin)) + 25,
+      altitudeMode: 'RELATIVE_TO_GROUND',
     };
   if (mode === 'region') {
     const regional = world.airports.filter((a) => a.diversion_eligible || a.id === 'CRA');
@@ -266,11 +290,15 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
     };
   }
   const group = world.groups.find((g) => g.id === selectedId);
-  const groupOrigin = group && world.airports.find((a) => a.id === group.origin);
   return {
-    center: groupOrigin ? pointOf(groupOrigin) : fallback,
-    range: mode === 'passenger' ? 4200 : 8000,
-    tilt: 65,
-    heading: 25,
+    center: group
+      ? (passengerPoint(group, world) ?? fallback)
+      : home
+        ? scenePoint(home, mode === 'passenger' ? -50 : 0, mode === 'passenger' ? 165 : 45)
+        : fallback,
+    range: mode === 'passenger' ? 180 : 650,
+    tilt: 58,
+    heading: sceneHeading(airport ?? home) + 12,
+    altitudeMode: 'RELATIVE_TO_GROUND',
   };
 }

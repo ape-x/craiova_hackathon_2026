@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Globe2, Loader2, RotateCcw, X } from 'lucide-react';
+import { AlertCircle, Building2, Globe2, Loader2, Plane, RotateCcw, Users, X } from 'lucide-react';
 import type { SceneMode, World } from '../types';
 import type { GoogleMapElement, LoadedMaps } from './contracts';
 import { getMapsLoader } from './loader';
 import { buildOverlays, cameraFor, updateObservationTracks } from './overlays';
 import type { ObservationTracks } from './overlays';
-import { buildModelDescriptors } from './models';
-import { mountModelLayer } from './modelLayer';
+import { ALL_MODELS, buildModelDescriptors } from './models';
+import type { ModelVisibility } from './models';
+import { createModelLayer } from './modelLayer';
+import type { ModelLayer } from './modelLayer';
 import { moveCamera } from './camera';
 import { createMapInitialization, overlayFailureMessage } from './initialization';
 import type { MapInitialization, MapLoadingState, OverlayStage } from './initialization';
@@ -43,6 +45,8 @@ export default function GoogleMaps3D({
   const [cameraError, setCameraError] = useState('');
   const [modelError, setModelError] = useState('');
   const [overlayError, setOverlayError] = useState('');
+  const [visibility, setVisibility] = useState<ModelVisibility>(ALL_MODELS);
+  const modelLayer = useRef<ModelLayer | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => setClock(Date.now()), 15000);
@@ -69,8 +73,16 @@ export default function GoogleMaps3D({
       .then((libraries) => {
         if (!initialization.active || !host.current) return;
         libraryLoaded = true;
+        const { altitudeMode: _altitudeMode, ...initialCamera } = cameraFor(
+          current.current.world,
+          current.current.mode,
+          current.current.selectedId,
+        );
         map = new libraries.maps3d.Map3DElement({
-          ...cameraFor(current.current.world, current.current.mode, current.current.selectedId),
+          ...initialCamera,
+          // Constructor centers use MSL. Resolve terrain-relative closeups with
+          // the documented CameraOptions after Google reports a steady map.
+          range: Math.max(6500, initialCamera.range),
           mode: 'SATELLITE',
           defaultUIHidden: false,
         });
@@ -132,11 +144,7 @@ export default function GoogleMaps3D({
               path,
               strokeColor: route.color,
               strokeWidth: route.selected ? 7 : route.observed ? 4 : 2.5,
-              altitudeMode:
-                route.observed ||
-                world.resources.find((resource) => resource.id === route.id)?.kind === 'flight'
-                  ? 'ABSOLUTE'
-                  : 'RELATIVE_TO_GROUND',
+              altitudeMode: route.observed ? 'ABSOLUTE' : 'RELATIVE_TO_GROUND',
               geodesic: true,
               drawsOccludedSegments: true,
               zIndex: route.selected ? 20 : route.observed ? 10 : 1,
@@ -153,9 +161,7 @@ export default function GoogleMaps3D({
             label: marker.label,
             title: marker.title,
             altitudeMode:
-              (marker.observed ||
-                world.resources.find((resource) => resource.id === marker.id)?.kind === 'flight') &&
-              marker.point.altitude !== undefined
+              marker.observed && marker.point.altitude !== undefined
                 ? 'ABSOLUTE'
                 : marker.point.altitude
                   ? 'RELATIVE_TO_GROUND'
@@ -191,20 +197,28 @@ export default function GoogleMaps3D({
   }, [runtime, world, selectedId, clock, state]);
 
   const modelDescriptors = useMemo(
-    () => buildModelDescriptors(world, selectedId),
-    [world, selectedId],
+    () => buildModelDescriptors(world, selectedId, visibility),
+    [world, selectedId, visibility],
   );
+  const currentModels = useRef(modelDescriptors);
+  currentModels.current = modelDescriptors;
   const modelSignature = JSON.stringify(modelDescriptors);
   useEffect(() => {
-    if (!runtime || state !== 'ready' || !runtime.initialization.ready || overlayError) return;
+    if (!runtime || state !== 'ready' || !runtime.initialization.ready) return;
     setModelError('');
-    return mountModelLayer(
-      runtime.map,
-      runtime.maps3d,
-      buildModelDescriptors(current.current.world, current.current.selectedId),
-      setModelError,
+    const layer = createModelLayer(runtime.map, runtime.maps3d, setModelError, undefined, (id) =>
+      current.current.onSelect(id),
     );
-  }, [runtime, state, modelSignature, overlayError]);
+    modelLayer.current = layer;
+    layer.update(currentModels.current);
+    return () => {
+      layer.dispose();
+      if (modelLayer.current === layer) modelLayer.current = null;
+    };
+  }, [runtime, state]);
+  useEffect(() => {
+    modelLayer.current?.update(currentModels.current);
+  }, [modelSignature]);
 
   const camera = useMemo(() => cameraFor(world, mode, selectedId), [world, mode, selectedId]);
   const cameraSignature = JSON.stringify(camera);
@@ -291,9 +305,31 @@ export default function GoogleMaps3D({
               Confirmed in simulator
             </span>
             <small>
-              Links are schematic, not navigation routes. Generic models enlarged: aircraft 2.5× ·
-              bus 4×. 3D building detail depends on coverage.
+              Authored terminal, fleet and families · simulated layout and positions. Links are
+              schematic. Observed aircraft enlarged 2.5×; Google terrain is real.
             </small>
+          </div>
+          <div className="geographic-model-controls" role="group" aria-label="3D object layers">
+            <span>3D OBJECTS</span>
+            {(
+              [
+                ['vehicles', 'Vehicles', Plane],
+                ['passengers', 'Passengers', Users],
+                ['terminal', 'Terminal', Building2],
+              ] as const
+            ).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={visibility[key]}
+                onClick={() =>
+                  setVisibility((previous) => ({ ...previous, [key]: !previous[key] }))
+                }
+              >
+                <Icon size={13} />
+                {label}
+              </button>
+            ))}
           </div>
           <button
             type="button"

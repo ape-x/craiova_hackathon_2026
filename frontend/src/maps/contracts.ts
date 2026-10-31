@@ -9,6 +9,7 @@ export interface Camera {
   range: number;
   tilt: number;
   heading: number;
+  altitudeMode?: 'ABSOLUTE' | 'RELATIVE_TO_GROUND';
 }
 export interface GoogleMapElement extends HTMLElement {
   center: GeoPoint;
@@ -39,7 +40,7 @@ export interface LineOptions {
 }
 export interface Maps3DLibrary {
   Map3DElement: new (
-    options: Camera & {
+    options: Omit<Camera, 'altitudeMode'> & {
       mode: 'SATELLITE' | 'HYBRID';
       defaultUIHidden?: boolean;
       gestureHandling?: string;
@@ -47,15 +48,19 @@ export interface Maps3DLibrary {
   ) => GoogleMapElement;
   Marker3DInteractiveElement: new (options: MarkerOptions) => HTMLElement;
   Polyline3DElement: new (options: LineOptions) => HTMLElement;
-  Model3DElement: new (options: ModelOptions) => HTMLElement;
+  Model3DElement: new (options: ModelOptions) => GoogleModelElement;
+  Model3DInteractiveElement?: new (options: ModelOptions) => GoogleModelElement;
 }
 export interface ModelOptions {
   src: string;
   position: GeoPoint;
   orientation: { heading: number; tilt: number; roll: number };
   scale: number;
-  altitudeMode: 'ABSOLUTE' | 'CLAMP_TO_GROUND';
+  altitudeMode: 'ABSOLUTE' | 'CLAMP_TO_GROUND' | 'RELATIVE_TO_GROUND';
 }
+/** Input types of documented model setters; the layer never reads Google's
+ * normalized getter values (URL, Vector3D and LatLngAltitude objects). */
+export interface GoogleModelElement extends HTMLElement, ModelOptions {}
 export interface MarkerLibrary {
   PinElement: new (options: {
     background: string;

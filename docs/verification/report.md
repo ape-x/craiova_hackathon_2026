@@ -1,6 +1,14 @@
 # Implementation verification — 31 October 2026
 
-This report separates executed tests, bounded real-provider checks and remaining acceptance gates. The application is a synthetic operations simulator. Real Sol Ultrafast interpretation, Decisions selection, GPT-Live transport/closure with synthetic silence and Google geographic rendering have passed. User microphone/delegation, observed traffic, detailed terminal geometry and photographic fidelity remain open.
+This report separates executed tests, bounded real-provider checks and remaining acceptance gates. The application is a synthetic operations simulator. Real Sol Ultrafast interpretation, Decisions selection, GPT-Live transport/closure with synthetic silence and Google geographic rendering have passed. User microphone/delegation, observed traffic, surveyed terminal geometry and photographic fidelity remain open.
+
+## Geographic 3D object correction — 2026-10-31
+
+The frontend passed **63 tests** and strict TypeScript/production build checks, including nine keyed-layer lifecycle tests and nine placement regressions. The unchanged backend previously passed 104 tests. Docker rebuilt and replaced only the web service; the running API and scenario database were preserved. The user's held offers expired normally (world version 29 to 30); no scenario reset or operational mutation was performed by this check.
+
+The Google view now mounts the whole simulated fleet, participating airport terminals and one-to-five-person family assets without requiring a selected resource. Native and geographic views share the stand, bus-bay and family layout. Camera targets use terrain-relative altitude for the simulation and absolute altitude for observations. Exported Y-up GLBs use the documented 270-degree tilt conversion; models retain their DOM identity while poses change. Individual vehicle, passenger and terminal layers can be shown or hidden.
+
+Authorized Chrome inspection on the rebuilt Docker release found **96 model elements** (20 simulated vehicles, four terminals and 72 family groups), with no map warnings. The actual Google renderer visibly displayed upright aircraft, buses, terminal glazing/roof details and family figures. Selecting B12 through the resource panel focused the bus and showed its unavailable status and red ring. `google-models-live.jpg` records the revised CRA commercial-apron registration and visible geometry, with Google attribution. The screenshot excludes voice content and passenger access links. The registration is an authored presentation layout, not a surveyed terminal replica; some photographic vegetation/buildings can still overlap synthetic objects.
 
 ## Publication verification
 
@@ -99,14 +107,14 @@ The container SSE snapshot crossed Caddy in 11.68 ms in one local observation. T
 
 See [evidence publication notes](README.md) for the boundary between public application evidence and private account-console records.
 
-The local Three.js scene is an interactive architectural illustration with original geometry and CC0 surface materials. It is **not a photographic match** to the reference concepts. Google's real satellite imagery and terrain at CRA have now rendered with source-labeled simulation overlays. Detailed terminal photogrammetry, authored GLB alignment/rendering and fidelity to the visual references remain unverified.
+The local Three.js scene is an interactive architectural illustration with original geometry and CC0 surface materials. It is **not a photographic match** to the reference concepts. Google's real satellite imagery and terrain at CRA have now rendered with source-labeled simulation overlays. Authored GLBs now render upright on Google terrain with the revised CRA apron registration. Surveyed terminal photogrammetry and fidelity to the visual references remain unverified.
 
 ## Remaining acceptance gates
 
 - Real GPT-Live microphone session, delegation, playback, interruption and final session close/usage.
 - Authorized FR24 observation with original timestamp, account credits and agreed usage/retention; access will be supplied later by the user.
 - Determine the cause of Google's billing warning and confirm billing health; configure appropriate key restrictions.
-- Verify detailed terminal photogrammetry and GLB orientation/rendering over the real geographic source.
+- Verify surveyed terminal photogrammetry and precise alignment against current airport data; authored GLB rendering/orientation now has browser evidence.
 - Review visual fidelity on the event display.
 - Production host/domain, account budgets and external deployment, if the team chooses to publish.
 

@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { surfaceMaterial, surfaceMeters, surfaceTexture as texture, surfaceUV } from './surfaces';
+import {
+  surfaceMaterial,
+  surfaceMeters,
+  surfaceTexture as texture,
+  surfaceUV,
+} from './surfaces.ts';
+import { gates } from './layout.ts';
+export { gates, busSpots } from './layout.ts';
 
 // All geometry in this file is authored for the simulation, not a surveyed airport.
 export const PALETTE = {
@@ -10,19 +17,6 @@ export const PALETTE = {
   glass: '#233d45',
   white: '#c6cdd1',
 };
-export const gates: [number, number, number][] = [
-  [-73, 0, -48],
-  [2, 0, -48],
-  [77, 0, -48],
-];
-export const busSpots: [number, number, number][] = [
-  [-38, 0, 126],
-  [8, 0, 139],
-  [57, 0, 133],
-  [112, 0, 163],
-  [-89, 0, 152],
-  [-143, 0, 166],
-];
 const rand = (n: number) => {
   const v = Math.sin(n * 127.1 + 311.7) * 43758.5453;
   return v - Math.floor(v);

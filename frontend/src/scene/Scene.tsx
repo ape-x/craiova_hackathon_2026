@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { PassengerGroup, Resource, SceneMode, World } from '../types';
 import { busSpots, gates, makeAircraft, makeAirport, makeBus, PALETTE } from './geometry';
+import { groupPosition } from './layout';
 import Region from './Region';
 import Html, { LabelLayer, LabelOverlay, createLabelStore } from './ProjectedHtml';
 import { useSceneAsset } from './lifecycle';
@@ -29,11 +30,6 @@ const TONES = {
   confirmed: PALETTE.mint,
   scheduled: '#b4c2cd',
 };
-const groupPosition = (index: number): Vec => [
-  -85 + (index % 13) * 5.5,
-  0.2,
-  155 + Math.floor(index / 13) * 4.5,
-];
 
 function Tag({
   id,

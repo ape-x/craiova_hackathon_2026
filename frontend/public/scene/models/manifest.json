@@ -1,12 +1,17 @@
 {
-  "generatedFrom": "frontend/src/scene/geometry.ts",
+  "generatedFrom": [
+    "frontend/src/scene/geometry.ts",
+    "frontend/src/scene/Scene.tsx",
+    "frontend/src/scene/export-models.mjs"
+  ],
   "units": "meters",
   "upAxis": "+Y",
   "forwardAxis": "-Z",
   "models": {
     "aircraft": {
       "url": "/scene/models/aircraft.glb",
-      "bytes": 148096,
+      "bytes": 148136,
+      "sha256": "4e40f22df3db65974ae1391201b3e4b33579045789cdaa2dd44332e7a21f42bc",
       "bounds": {
         "min": [
           -17.096088409423828,
@@ -25,11 +30,18 @@
         "length": 36.79999923706055
       },
       "meshCount": 13,
-      "extensions": []
+      "extensions": [],
+      "nativeAnchor": [
+        0,
+        0,
+        0
+      ],
+      "validation": "GLB2/core-PBR/self-contained/under-2MB/GLTFLoader-roundtrip passed"
     },
     "bus": {
       "url": "/scene/models/bus.glb",
-      "bytes": 52472,
+      "bytes": 52516,
+      "sha256": "6fe42f59ef4249dd5b8629f54225ba7b52d2d1d9712625404e8727b18d935a0e",
       "bounds": {
         "min": [
           -1.7662957906723022,
@@ -48,7 +60,206 @@
         "length": 12.8100004196167
       },
       "meshCount": 10,
-      "extensions": []
+      "extensions": [],
+      "nativeAnchor": [
+        0,
+        0,
+        0
+      ],
+      "validation": "GLB2/core-PBR/self-contained/under-2MB/GLTFLoader-roundtrip passed"
+    },
+    "terminal": {
+      "url": "/scene/models/terminal.glb",
+      "bytes": 934344,
+      "sha256": "73e71490b8b8e59e45f31d1dcdb10e46f1ad9918dcfc54f3d5525bd64647c977",
+      "bounds": {
+        "min": [
+          -110,
+          0,
+          -70.96499633789062
+        ],
+        "max": [
+          110,
+          20.299999237060547,
+          48
+        ]
+      },
+      "dimensions": {
+        "width": 220,
+        "height": 20.299999237060547,
+        "length": 118.96499633789062
+      },
+      "meshCount": 44,
+      "extensions": [],
+      "nativeAnchor": [
+        0,
+        0,
+        51
+      ],
+      "airsideAxis": "-Z",
+      "publicEntranceAxis": "+Z",
+      "containsGround": false,
+      "validation": "GLB2/core-PBR/self-contained/under-2MB/GLTFLoader-roundtrip passed"
+    },
+    "passengers-1": {
+      "url": "/scene/models/passengers-1.glb",
+      "bytes": 24828,
+      "sha256": "9aae23e0cc335b0917f4fac13dda2f967d6cdc0dad68d47be98ff3d88d0b74af",
+      "bounds": {
+        "min": [
+          -0.25999999046325684,
+          5.9604645663569045e-9,
+          -0.25999999046325684
+        ],
+        "max": [
+          0.6850000023841858,
+          1.625,
+          0.25999999046325684
+        ]
+      },
+      "dimensions": {
+        "width": 0.9449999928474426,
+        "height": 1.6249999940395354,
+        "length": 0.5199999809265137
+      },
+      "meshCount": 4,
+      "extensions": [],
+      "nativeAnchor": [
+        0,
+        0,
+        0
+      ],
+      "figureCount": 1,
+      "containsGround": false,
+      "validation": "GLB2/core-PBR/self-contained/under-2MB/GLTFLoader-roundtrip passed"
+    },
+    "passengers-2": {
+      "url": "/scene/models/passengers-2.glb",
+      "bytes": 46376,
+      "sha256": "af8094bab73e471b318ef780d2ad3287b02b902f59c8556375608b49711dfd48",
+      "bounds": {
+        "min": [
+          -0.25999999046325684,
+          5.9604645663569045e-9,
+          -0.25999999046325684
+        ],
+        "max": [
+          2.0850000381469727,
+          1.625,
+          0.25999999046325684
+        ]
+      },
+      "dimensions": {
+        "width": 2.3450000286102295,
+        "height": 1.6249999940395354,
+        "length": 0.5199999809265137
+      },
+      "meshCount": 5,
+      "extensions": [],
+      "nativeAnchor": [
+        0,
+        0,
+        0
+      ],
+      "figureCount": 2,
+      "containsGround": false,
+      "validation": "GLB2/core-PBR/self-contained/under-2MB/GLTFLoader-roundtrip passed"
+    },
+    "passengers-3": {
+      "url": "/scene/models/passengers-3.glb",
+      "bytes": 66924,
+      "sha256": "0df8c324648fd1e80cc062e6fa212b5f66637ff4c903190151f8579b7f1e27ed",
+      "bounds": {
+        "min": [
+          -0.25999999046325684,
+          5.9604645663569045e-9,
+          -0.25999999046325684
+        ],
+        "max": [
+          3.484999895095825,
+          1.625,
+          0.25999999046325684
+        ]
+      },
+      "dimensions": {
+        "width": 3.744999885559082,
+        "height": 1.6249999940395354,
+        "length": 0.5199999809265137
+      },
+      "meshCount": 5,
+      "extensions": [],
+      "nativeAnchor": [
+        0,
+        0,
+        0
+      ],
+      "figureCount": 3,
+      "containsGround": false,
+      "validation": "GLB2/core-PBR/self-contained/under-2MB/GLTFLoader-roundtrip passed"
+    },
+    "passengers-4": {
+      "url": "/scene/models/passengers-4.glb",
+      "bytes": 87468,
+      "sha256": "12bf26aae011dd270162412e7061407e464bd3276c80b605af166ff1d0396382",
+      "bounds": {
+        "min": [
+          -0.25999999046325684,
+          5.9604645663569045e-9,
+          -0.25999999046325684
+        ],
+        "max": [
+          3.484999895095825,
+          1.625,
+          1.7599999904632568
+        ]
+      },
+      "dimensions": {
+        "width": 3.744999885559082,
+        "height": 1.6249999940395354,
+        "length": 2.0199999809265137
+      },
+      "meshCount": 5,
+      "extensions": [],
+      "nativeAnchor": [
+        0,
+        0,
+        0
+      ],
+      "figureCount": 4,
+      "containsGround": false,
+      "validation": "GLB2/core-PBR/self-contained/under-2MB/GLTFLoader-roundtrip passed"
+    },
+    "passengers-5": {
+      "url": "/scene/models/passengers-5.glb",
+      "bytes": 108016,
+      "sha256": "8967ed7442601ee55d0a02b00d64ad92dbfb5138165cca38c500e95b9d42a0b2",
+      "bounds": {
+        "min": [
+          -0.25999999046325684,
+          5.9604645663569045e-9,
+          -0.25999999046325684
+        ],
+        "max": [
+          3.484999895095825,
+          1.625,
+          1.7599999904632568
+        ]
+      },
+      "dimensions": {
+        "width": 3.744999885559082,
+        "height": 1.6249999940395354,
+        "length": 2.0199999809265137
+      },
+      "meshCount": 5,
+      "extensions": [],
+      "nativeAnchor": [
+        0,
+        0,
+        0
+      ],
+      "figureCount": 5,
+      "containsGround": false,
+      "validation": "GLB2/core-PBR/self-contained/under-2MB/GLTFLoader-roundtrip passed"
     }
   }
 }
