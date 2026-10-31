@@ -60,7 +60,11 @@ Pozițiile Flightradar24 au timestamp și sursă. Nu indică disponibilitatea bi
 
 O rută rutieră calculată nu este un vehicul disponibil. Stațiile de autocar păstrează pozițiile reale; transferurile aeroport–stație trebuie obținute separat. Lipsa unui serviciu sau a accesului la furnizor rămâne vizibilă.
 
-Cotațiile APL sunt afișate în GBP per vehicul și rămân separate de inventarul planificabil: nu au durată/sosire verificată sau decontare EUR garantată. Adaptoarele pure Google TRANSIT și ECB au teste offline, dar nu sunt conectate la fluxul operațional. Un orar de transport public fără locuri/tarif complet și un curs valutar de referință nu satisfac automat capacitățile sau bugetul unui itinerar.
+Cotațiile APL păstrează prețul exact în GBP per vehicul și afișează alături o estimare aproximativă în EUR, calculată pe server din cursul ECB. Politica produsului admite aceste estimări pentru comparație, cu sursa și data vizibile și o vechime maximă de trei zile calendaristice, evaluată în Europe/Berlin. Lipsa unui curs utilizabil păstrează cotația GBP și lasă estimarea EUR indisponibilă. Prețul și cursul trebuie reverificate înainte de rezervare; decontarea în EUR nu este garantată.
+
+Estimarea nu adaugă transferul într-un itinerar sau în bugetul EUR. Obținerea unui traseu rutier datat, cu durată/sosire verificabile, și importul opțiunii APL rămân nefinalizate. Adaptorul Google TRANSIT are teste offline, dar nu este conectat la fluxul operațional; un orar fără locuri sau tarif complet nu devine inventar disponibil.
+
+Lista de resurse distinge cotațiile expirate sau cu prospețime necunoscută de inventarul curent. Inspectorul arată ora sursei și fie valabilitatea explicită, fie fereastra locală de 120 de secunde, în UTC. Acest termen local nu este o expirare declarată de furnizor și nu anulează o rezervare înregistrată. Afișarea se actualizează fără apeluri noi către furnizori; backendul decide în continuare eligibilitatea.
 
 ## Decizii și voce
 
@@ -103,7 +107,9 @@ Verificarea vizuală urmărește fluxul complet în browser, la dimensiuni deskt
 
 La 31 octombrie 2026, instanța principală a verificat fluxul real **FR24 → caz → Responses Ultrafast → Nuitee → Decisions → propunere**: două căutări Nuitee au întors 20 de cotații, iar un plan valid a propus o soluție pentru doi adulți, fără excepții și fără modificarea grupului existent din afara selecției. O singură rulare a durat aproximativ 12,1 secunde; aceasta nu este o promisiune de performanță. Pasagerul a acceptat propunerea ca preferință, iar cotația a expirat ulterior în mod normal, fără rezervare la furnizor. Interfața APL a afișat șase cotații reale GBP, fără rezervare.
 
-Versiunea `885b2ac`, livrată pe aceeași instanță, a trecut **761 de teste backend și 188 frontend**, buildul și verificarea formatării. Prin interfață au fost importate nouă cotații hoteliere EUR și cele nouă proprietăți reale din zona LHR, folosind politicile furnizorului; o proprietate a fost exclusă cu motiv explicit. O comandă text în română a pornit apoi căutarea pentru cazul numit, în limita de patru apeluri: o interpretare și trei apeluri ale căutării. Zece cotații Nuitee au produs o propunere pentru doi pasageri, fără excepții; căutarea a durat 7,21 secunde, fără timpul interpretării. Grupul inițial a fost păstrat și nu au fost create rezervări. Un itinerar complet cu hotel și transferuri fizice rămâne de verificat.
+Prin interfață au fost importate nouă cotații hoteliere EUR și cele nouă proprietăți reale din zona LHR, folosind politicile furnizorului; o proprietate a fost exclusă cu motiv explicit. O comandă text în română a pornit apoi căutarea pentru cazul numit, în limita de patru apeluri: o interpretare și trei apeluri ale căutării. Zece cotații Nuitee au produs o propunere pentru doi pasageri, fără excepții; căutarea a durat 7,21 secunde, fără timpul interpretării. Grupul inițial a fost păstrat și nu au fost create rezervări.
+
+Versiunea `fe47825`, livrată pe aceeași instanță, a trecut **775 de teste backend și 203 frontend**, buildul și verificarea formatării; ambele rulări CI au trecut. Interfața reală a afișat cele șase prețuri APL originale împreună cu estimările ECB din 30 octombrie 2026; de exemplu, GBP 76 a apărut alături de aproximativ EUR 91,15, la cursul 1 EUR = 0,83380 GBP. Au fost verificate și etichetele `Validity expired` și `Quote stale`, cu fereastra de 120 de secunde în UTC. Starea existentă a fost păstrată. Importul APL într-un itinerar rămâne nefinalizat, iar un traseu complet cu hotel și transferuri fizice rămâne de verificat.
 
 Google a randat geografia reală, iar probele anterioare au verificat accesul OpenAI și transportul/închiderea unei sesiuni GPT-Live cu sunet sintetic. Acestea nu validează o conversație reală completă, toate modelele 3D sau exploatarea continuă a conturilor. Credențialele, payloadurile FR24, tokenurile pasagerilor și capturile consolelor private nu sunt publicate.
 
@@ -151,6 +157,7 @@ Feedul FR24 are un cache separat: `OBSERVATION_RETENTION_SECONDS=3600` implicit.
 - O sesiune reală GPT-Live cu microfon, delegare, redare, întrerupere și închidere confirmată.
 - Fluxul de poziții FR24 pe hartă, separat de lookup-ul de cursă deja verificat; limitele abonamentului echipei.
 - Un itinerar complet cu hotel și legături fizice verificate; importul hotelier prin interfață este verificat, dar nu dovedește existența unui transfer.
+- Finalizarea și verificarea traseelor rutiere datate și a importului APL în itinerarii; afișarea cotațiilor GBP și a estimărilor ECB este deja verificată.
 - Verificările de facturare Google și restricțiile cheii; fotogrammetria detaliată a terminalului și randarea/alinierea modelelor GLB.
 - Profilul vizual pe ecranul/proiectorul evenimentului și fidelitatea față de mockupurile fotorealiste.
 

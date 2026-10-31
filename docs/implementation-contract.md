@@ -34,7 +34,7 @@ Operator endpoints require operator authentication. Mutations use `expected_vers
 | `POST /api/real-data/search`                                           | Reference hotels/routes and supplier hotel offers; no operational import or booking                                                        |
 | `POST /api/live/hotel-quotes`                                          | Group-specific complete hotel quotes at actual property nodes; sourced stay-policy validation or separately declared property-agreed times |
 | `POST /api/live/travel/search`, `POST /api/live/travel/import`         | Separate dated supplier search and server-held quote import                                                                                |
-| `GET /api/transfers/status`, `POST /api/transfers/quote`               | APL UK price snapshots in GBP per vehicle; no import, booking, duration guarantee or EUR budget conversion                                 |
+| `GET /api/transfers/status`, `POST /api/transfers/quote`               | APL UK price snapshots in exact GBP per vehicle plus dated ECB EUR comparison estimates; no itinerary import, booking or budget allocation |
 | `POST /api/live/offers/{id}/confirm`                                   | Explicit operator booking references for every segment of a real passenger group's proposal                                                |
 | `GET /api/passenger/{token}`                                           | Only the authorized group's data and itinerary                                                                                             |
 | `POST /api/offers/{id}/accept`                                         | Record live passenger preference; no supplier booking                                                                                      |
@@ -75,7 +75,9 @@ Replay of a job-start key returns its current job without another provider call.
 
 Existing request claims can return HTTP503 with `applied:null`, `details.in_progress=true` and `Retry-After`. Clients retain the original serialized payload/key while the result is uncertain. Definitive conflicts unlock editing after refresh; changed payloads receive new keys. Passenger authorization is checked before cached replay, and stale/revoked tokens cannot expose a prior operation.
 
-The planner's EUR budget checks use documented complete costs. Missing mandatory hotel fees or unverified currency conversion prevent a fully calculated budget. APL GBP quotes remain outside allocatable EUR resources. The pure ECB adapter can produce a dated reference estimate and an explicitly requested operator allowance, but neither is a supplier EUR price or guaranteed settlement. It is not integrated into the current planner.
+The planner's EUR budget checks use documented complete costs. Missing mandatory hotel fees or unverified currency conversion prevent a fully calculated budget. APL quotes remain outside allocatable EUR resources. The accepted comparison policy permits dated ECB reference estimates while retaining the original exact GBP price, explicit source/date and revalidation requirements. It does not guarantee EUR settlement or add an allowance to the planner's budget.
+
+Successful APL quote responses now include `fx` with `ready`, `unavailable`, `stale_rate`, `missing_rate` or `not_requested`, source metadata, reference date/assessment and cache status. The explicit app policy allows at most three calendar days of rate age in Europe/Berlin. Each option retains its original `price` and adds `eur_reference_estimate` or null. The server uses Decimal and half-even cent rounding; the browser displays the provided amount without recalculating it. Missing/stale FX preserves GBP, suppresses EUR and shows the reason. No silent fallback rate, automatic fee or guaranteed supplier EUR price is introduced. Dated road-journey sourcing and APL itinerary import remain unfinished.
 
 ## Rendering and source separation
 
@@ -84,6 +86,8 @@ The planner's EUR budget checks use documented complete costs. Missing mandatory
 Google TRANSIT currently has a pure request/response adapter and offline tests only. Stops and schedules do not establish seat availability; incomplete fares remain unknown, and missing walking durations do not pass a walking limit. There is no connected public-transit inventory or automatic booking path.
 
 Passenger itineraries expand validated supplier flight segments and connection waits. Source-local clocks include explicit UTC offsets; missing local clocks use labeled UTC. Source endpoints must reconcile with the epoch and authoritative resource/offer-leg times using departure-floor and arrival-ceiling minute bounds. Invalid calendar dates or inconsistent provenance use the explicitly labeled Europe/Bucharest operations-time summary instead. The passenger arrival summary uses the same validated final segment.
+
+Live resource freshness presentation mirrors `solver.live_resource_current`: explicit `valid_until` must be strictly later than now; only when it is absent can a revalidation-required quote use an aware source `quoted_at` with age from zero through 120 seconds inclusive. Invalid explicit validity does not fall back to source time. Neutral record headings and stale/unknown labels replace ordinary capacity claims when unusable. Inspector source/cutoff times are labeled UTC; the 120-second window is local policy, not supplier expiry. A one-second local clock updates the view without network calls. Unavailable/superseded states retain precedence, recorded booking confirmations remain separate from quote age, and simulation presentation is unchanged. The backend remains authoritative.
 
 ## AI and voice status
 

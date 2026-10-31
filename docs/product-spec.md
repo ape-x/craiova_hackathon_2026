@@ -30,18 +30,19 @@ Contextul FR24 are retenție limitată. Reîmprospătarea unui caz trebuie să p
 
 ## 3. Ce reprezintă fiecare sursă
 
-| Date                             | Sursă și utilizare                                                                  | Limită explicită                                                                        |
-| -------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Cursa și observațiile aeronavei  | Flightradar24, cu sursă și timp                                                     | Nu furnizează inventar de bilete; absența din rezultate nu dovedește anularea           |
-| Incident și condiții             | Raportul operatorului                                                               | Nu constituie o confirmare externă a închiderii aeroportului                            |
-| Grupuri de pasageri              | Manifest importat sau ipoteze de planificare marcate                                | Grupurile generate nu pot primi confirmări reale de rezervare                           |
-| Cotații de zbor                  | Nuitee Flights; adaptor Duffel alternativ, dacă are acces autorizat                 | Disponibilitatea și prețul unei căutări nu sunt locuri reținute                         |
-| Cotații hoteliere                | Nuitee / LiteAPI; adaptor Booking conform accesului contului                        | Date, ocupare și taxe obligatorii; niciun prebook sau plată                             |
-| Proprietăți hoteliere            | Coordonate ale furnizorului, metadate și fus orar derivat                           | Hotelul nu este plasat la aeroport și nu implică un shuttle                             |
-| Transferuri private UK           | Airport Pickups London, GBP per vehicul                                             | Cotații separate; fără durată/sosire verificată, rezervare sau integrare în bugetul EUR |
-| Autocare programate              | Adaptor Distribusion, cu acces de producție separat                                 | Stații reale, vârste explicite și conexiuni până la stații; accesul nu este presupus    |
-| Hartă și rute rutiere            | Google Maps/Places/Routes; surse publice documentate când nu este configurat Google | O rută și o durată estimată nu sunt un vehicul disponibil                               |
-| Transport public și conversie FX | Adaptoare pure Google TRANSIT și ECB, cu teste offline                              | Nu sunt încă fluxuri conectate în produs și nu completează inventarul                   |
+| Date                            | Sursă și utilizare                                                                  | Limită explicită                                                                                                 |
+| ------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Cursa și observațiile aeronavei | Flightradar24, cu sursă și timp                                                     | Nu furnizează inventar de bilete; absența din rezultate nu dovedește anularea                                    |
+| Incident și condiții            | Raportul operatorului                                                               | Nu constituie o confirmare externă a închiderii aeroportului                                                     |
+| Grupuri de pasageri             | Manifest importat sau ipoteze de planificare marcate                                | Grupurile generate nu pot primi confirmări reale de rezervare                                                    |
+| Cotații de zbor                 | Nuitee Flights; adaptor Duffel alternativ, dacă are acces autorizat                 | Disponibilitatea și prețul unei căutări nu sunt locuri reținute                                                  |
+| Cotații hoteliere               | Nuitee / LiteAPI; adaptor Booking conform accesului contului                        | Date, ocupare și taxe obligatorii; niciun prebook sau plată                                                      |
+| Proprietăți hoteliere           | Coordonate ale furnizorului, metadate și fus orar derivat                           | Hotelul nu este plasat la aeroport și nu implică un shuttle                                                      |
+| Transferuri private UK          | Airport Pickups London, GBP per vehicul                                             | Cotații separate; fără durată/sosire verificată, rezervare sau integrare în bugetul EUR                          |
+| Autocare programate             | Adaptor Distribusion, cu acces de producție separat                                 | Stații reale, vârste explicite și conexiuni până la stații; accesul nu este presupus                             |
+| Hartă și rute rutiere           | Google Maps/Places/Routes; surse publice documentate când nu este configurat Google | O rută și o durată estimată nu sunt un vehicul disponibil                                                        |
+| Transport public                | Adaptor pur Google TRANSIT, cu teste offline                                        | Nu este încă un flux conectat în produs și nu completează inventarul                                             |
+| Estimări valutare               | ECB, conectat la afișarea cotațiilor APL                                            | Prețul GBP rămâne original; EUR este aproximativ, cu sursă și dată, fără decontare garantată sau import în buget |
 
 Eșecul unui furnizor configurat rămâne vizibil. Nu este înlocuit cu inventar sintetic sau cu un răspuns AI prestabilit. O cheie prezentă indică configurare; numai verificarea reală demonstrează accesul la operația testată.
 
@@ -80,7 +81,9 @@ Costurile obligatorii ale hotelului sunt separate de suma de bază a furnizorulu
 
 La importul unei cotații hoteliere, serverul poate verifica automat intervalul de check-in și limita de checkout din politica proprietății exacte, în fusul orar derivat din coordonatele sale. Fără o oră finală de check-in publicată, este admisă automat numai ora exactă de început; sosirea târzie nu este presupusă. Politicile incomplete, contradictorii, expirate, cu instrucțiuni speciale sau cu ore locale ambigue exclud proprietatea și păstrează motivul. Operatorul poate declara separat că a convenit orele cu proprietatea; această declarație are proveniență distinctă și nu reprezintă o rezervare. Niciuna dintre căi nu creează un transfer până la hotel.
 
-Bugetele sunt verificate față de costurile documentate ale propunerii, nu față de o plată viitoare garantată. Cotațiile pot expira și necesită revalidare. Prețul APL rămâne în GBP. Un curs ECB, chiar cu o marjă explicită a operatorului, poate descrie numai o estimare sau o alocație de planificare; nu devine preț EUR al furnizorului și nu garantează costul de decontare. Conversia FX nu este conectată la solver.
+Bugetele sunt verificate față de costurile documentate ale propunerii, nu față de o plată viitoare garantată. Cotațiile pot expira și necesită revalidare. Politica produsului admite estimări ECB pentru compararea prețurilor APL: suma exactă în GBP rămâne principală, iar valoarea EUR este explicit aproximativă, cu sursa, data cursului și momentul evaluării. Sunt admise cel mult trei zile calendaristice de vechime în Europe/Berlin. Un curs vechi, lipsă sau indisponibil nu produce o valoare zero și nu ascunde cotația GBP. Estimarea nu este preț EUR al furnizorului și nu garantează decontarea; este necesară revalidarea înainte de rezervare. Conversia FX nu este conectată la solver sau la importul APL în itinerarii.
+
+Resursele cu valabilitate încheiată sau prospețime necunoscută sunt etichetate explicit și nu primesc numărători obișnuite de disponibilitate. În lipsa unei valabilități explicite, cotațiile care necesită revalidare folosesc fereastra locală de 120 de secunde de la ora sursei. Inspectorul arată orele în UTC. Aceste indicii se actualizează fără interogări de furnizor și nu anulează confirmările de rezervare înregistrate; verificarea backend rămâne autoritară.
 
 ## 6. Propunere, preferință și confirmare
 
@@ -149,12 +152,13 @@ La 31 octombrie 2026 au fost observate următoarele rezultate pe instanța princ
 - Identificarea cursei FR24 EK5 DXB→LHR, crearea cazului și legarea unui grup explicit de planificare cu doi adulți.
 - O căutare durabilă a folosit patru apeluri: Responses, două căutări Nuitee paralele și Decisions. Au fost întoarse 20 de cotații și înregistrată o propunere validă pentru doi pasageri, fără excepții; grupul existent din afara selecției a rămas neatins.
 - Circuitul căutării a durat aproximativ 12,1 secunde într-o singură rulare. Nu este o promisiune de latență sau o medie/p95.
-- Interfața APL a afișat șase cotații reale în GBP per vehicul pentru o călătorie UK, fără rezervare sau reținere.
+- Interfața APL a păstrat șase cotații reale în GBP per vehicul și a afișat estimări aproximative în EUR din cursul ECB din 30 octombrie 2026, 1 EUR = 0,83380 GBP. Nu au fost create rezervări, rețineri sau segmente de itinerar din aceste cotații.
 - Importul hotelier prin interfață a adăugat nouă cotații EUR și nouă proprietăți reale din zona LHR, după verificarea automată a politicilor de ședere, fără confirmare suplimentară a operatorului. O proprietate a fost exclusă cu motiv sursat. Un itinerar complet cu hotel și transferuri rămâne de verificat.
 - O comandă text în română a respectat limita de patru apeluri: o interpretare și trei apeluri ale căutării. Zece cotații Nuitee au produs o propunere pentru doi pasageri, fără excepții, păstrând grupul din afara cazului. Căutarea a durat 7,21 secunde fără interpretare, într-o singură observație.
 - Pasagerul a acceptat o propunere reală ca preferință, după care cotația a expirat în mod normal. Nu a fost creată o rezervare la furnizor.
+- Cotațiile vechi de zbor și hotel au fost afișate cu `Validity expired`, respectiv `Quote stale`, iar limita locală de 120 de secunde a fost vizibilă în UTC.
 
-Probele nu demonstrează acoperire universală, disponibilitate viitoare, rezervări reale sau recuperare automată completă cu hotel și transfer. [Raportul detaliat](verification/report.md) menține această separare și rezultatele testelor.
+Probele nu demonstrează acoperire universală, disponibilitate viitoare, rezervări reale sau recuperare automată completă cu hotel și transfer. Traseele rutiere datate și importul APL în itinerarii rămân nefinalizate; estimarea valutară nu le substituie. [Raportul detaliat](verification/report.md) menține această separare și rezultatele testelor.
 
 ## 10. Criterii de acceptare ale fluxului live asistat
 

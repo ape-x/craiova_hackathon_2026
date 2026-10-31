@@ -4,9 +4,9 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 31 October 2026
 
-Release `885b2ac` was deployed to the sole active application at `http://localhost:8080`, preserving the existing operation. It includes the earlier source-exclusion display fix (`1412aff`), reconciled supplier schedules (`769e416`), scoped command bridge (`3ebf215`) and sourced hotel-policy validation.
+Release `fe47825` was deployed to the sole active application at `http://localhost:8080`. It adds ECB reference estimates and includes the preceding quote freshness correction (`3551f03`), reconciled supplier schedules, scoped command bridge and sourced hotel-policy validation. The latest display checks preserved the existing operation at world version 44.
 
-The latest full suites passed **761 backend tests and 188 frontend tests**. The production build and formatting check also passed, as did both GitHub Actions runs for the release on `main` and `codex/airport-recovery-live`. The supplier-segment presentation changes in `769e416` separately passed **seven focused tests** covering impossible calendar dates, source/itinerary schedule reconciliation, connection waits and explicit clock fallbacks. Focused counts overlap the full suites and are not added to them. Existing build notices are recorded below.
+The latest full suites passed **775 backend tests and 203 frontend tests**. The production build and formatting check also passed, as did both GitHub Actions runs for the release on `main` and `codex/airport-recovery-live`. Focused coverage includes strict supplier-calendar validation, source/itinerary schedule reconciliation, freshness boundaries and clock cleanup, preserved booking confirmations, exact Decimal FX display and missing/stale-reference behavior. Focused counts overlap the full suites and are not added to them. Existing build notices are recorded below.
 
 ### Real flight case and sourced recovery
 
@@ -22,7 +22,24 @@ The passenger subsequently accepted the proposal as a preference. The quote late
 
 The configured Airport Pickups London account returned six live vehicle quotes in the actual UI for **Heathrow Terminal 5 → W1K 1LN, 2 November 2026 at 14:00 Europe/London, two passengers and two suitcases**. The amounts were **GBP 76, 88, 112, 88, 117 and 136 per vehicle**, preserving the supplier's currency and price scope. These are a dated verification snapshot, not current offers or recommendations.
 
-No booking, driver dispatch or supplier hold occurred. Supplier expiry, structured journey duration and arrival time were not provided, and EUR settlement was not verified. Consequently these quotes remain a separate price-search workflow, not allocatable EUR transport resources.
+The actual UI on `fe47825` preserved those six GBP prices and showed the following explicitly approximate EUR amounts using the **ECB reference dated 30 October 2026, 1 EUR = 0.83380 GBP**:
+
+| Exact GBP per vehicle | Approximate EUR reference estimate |
+| --------------------- | ---------------------------------- |
+| 76.00                 | 91.15                              |
+| 88.00                 | 105.54                             |
+| 112.00                | 134.32                             |
+| 88.00                 | 105.54                             |
+| 117.00                | 140.32                             |
+| 136.00                | 163.11                             |
+
+The interface showed the source/rate date and the explicit app policy allowing up to three calendar days, with revalidation before booking and no guaranteed EUR settlement. These are comparison estimates, not supplier EUR prices or a budget allocation. Missing or stale reference data leaves the original GBP quote intact without inventing a conversion.
+
+No booking, driver dispatch or supplier hold occurred. Supplier expiry, structured journey duration and arrival time were not provided. Sourcing road routes for a specified departure time and importing APL quotes into itineraries remain unfinished, so these quotes are not allocatable EUR transport resources.
+
+### Live quote freshness display
+
+The actual UI showed an old flight quote as **Validity expired** and an old hotel quote as **Quote stale**, with source time and the local **120-second** freshness cutoff labeled in **UTC**. Neutral record headings and unusable-state labels replaced ordinary availability claims. This verifies the deployed `3551f03` correction in the real resource views; it does not extend supplier validity. Recorded bookings remain distinct from quote age, and the local refresh makes no provider requests.
 
 ### Real hotel metadata and policy-validated UI import
 
@@ -32,7 +49,7 @@ One property was excluded with a displayed source-policy reason referring to its
 
 Selecting Park Plaza London, Park Royal from the network also moved the Google geographic 3D view to the property's sourced coordinates. The property panel identified it as a reference location and kept room availability and transport verification separate.
 
-Google TRANSIT and ECB reference FX adapters have offline tests but no connected product endpoint/UI or solver integration. Transit schedules do not establish seat availability; absent fares remain unknown. An ECB estimate or explicit operator allowance is not a supplier EUR charge or guaranteed settlement.
+Google TRANSIT still has a pure adapter with offline tests and no connected product endpoint/UI or solver integration. Transit schedules do not establish seat availability; absent fares remain unknown. ECB comparison estimates are connected to the APL quote display as verified above, but do not add ground legs or EUR budget allocations to a recovery plan.
 
 ### Real scoped text command and passenger itinerary
 
@@ -200,12 +217,13 @@ The local Three.js scene is an interactive architectural illustration with origi
 - Real GPT-Live microphone session, delegation, playback, interruption and final session close/usage.
 - Continuous FR24 position display with original timestamps and agreed account usage/retention; the authorized flight lookup/case flow is already verified above.
 - A complete sourced hotel itinerary including independently verified property transfers; policy-validated hotel import through the UI is verified above.
+- Road routes for a specified departure time and APL itinerary import; live GBP quotes and ECB comparison estimates are verified, but do not complete these features.
 - Determine the cause of Google's billing warning and confirm billing health; configure appropriate key restrictions.
 - Verify surveyed terminal photogrammetry and precise alignment against current airport data; authored GLB rendering/orientation now has browser evidence.
 - Review visual fidelity on the event display.
 - Production host/domain, account budgets and external deployment, if the team chooses to publish.
 
-The real FR24 lookup, Nuitee case-form and text-command recovery, APL quote search, and policy-validated hotel import close only their stated access/flow gates. A configured voice credential and transport check still require an actual microphone session. Google geographic rendering has evidence, while account administration, detailed geometry and photographic fidelity remain separate. Historical unit tests use explicitly mocked provider transports and do not substitute for remaining real checks.
+The real FR24 lookup, Nuitee case-form and text-command recovery, APL quote search with ECB comparison estimates, quote-freshness display and policy-validated hotel import close only their stated access/flow gates. A configured voice credential and transport check still require an actual microphone session. Google geographic rendering has evidence, while account administration, detailed geometry and photographic fidelity remain separate. Historical unit tests use explicitly mocked provider transports and do not substitute for remaining real checks.
 
 ## Non-failing tool notices
 
