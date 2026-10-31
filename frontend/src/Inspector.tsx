@@ -400,7 +400,7 @@ function ResourceFacts({
           <p className="field-hint">
             {booked
               ? 'A supplier booking is recorded separately.'
-              : 'Unbooked planning quote; importing this leg did not allocate a complete journey.'}{' '}
+              : 'Unbooked planning quote. Check the group’s current proposal for complete-journey status.'}{' '}
             {arrival
               ? 'The airport drop-off is reported by operations.'
               : 'The pickup point is reported by operations.'}{' '}
