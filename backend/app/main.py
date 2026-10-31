@@ -94,9 +94,10 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     live=LiveOperations(store,service,real_data)
     travel_provider=TravelProvider(settings)
     travel=LiveTravel(store,travel_provider)
-    jobs=RecoveryJobs(settings,store,service,travel_provider,ai)
-    service.live_commands=LiveCommands(store,jobs)
     ground_transfers=GroundTransfers(settings)
+    jobs=RecoveryJobs(settings,store,service,travel_provider,ai,hotel_provider=real_data.provider,
+        apl_provider=ground_transfers.provider,fx_provider=ground_transfers.fx)
+    service.live_commands=LiveCommands(store,jobs)
     ground_planning=GroundPlanning(store,ground_transfers,real_data.provider)
     login_attempts=defaultdict(deque)
     # Reserve worst-case credit cost in the persistent shared request ledger;

@@ -17,6 +17,12 @@ import {
   recoveryStageLabel,
 } from './recoveryJobs';
 import { Tag } from './ui';
+import HotelRecoveryFields from './HotelRecoveryFields';
+import {
+  emptyHotelRecoveryForm,
+  hotelRecoveryGroupIssue,
+  hotelRecoveryInput,
+} from './hotelRecovery';
 
 function waitDuration(minutes: number): string {
   if (!Number.isFinite(minutes) || minutes < 0) return 'Duration unavailable';
@@ -128,12 +134,33 @@ export function RecoveryJobDetails({ job, world }: { job: RecoveryJob; world: Wo
               <dd>{result.resource_ids.join(', ') || 'None'}</dd>
             </div>
           </dl>
+          {result.hotel_recovery && (
+            <section className="hotel-recovery-result" aria-label="Recorded hotel recovery scope">
+              <h4>Hotel stay and both transfer directions</h4>
+              <p>
+                {world.airports.find((node) => node.id === result.hotel_recovery?.hotel_node_id)
+                  ?.name ?? 'Sourced hotel property'}
+                {' · '}one property shortlist · flight query date{' '}
+                {result.hotel_recovery.flight_query_date} (Europe/London)
+              </p>
+              <p>
+                Return pickup: {utcTimestamp(result.hotel_recovery.return_pickup_at)}. Checkout + 10
+                minutes is an application connection allowance, not a supplier pickup promise.
+              </p>
+              <p className="field-hint">
+                The recorded proposal includes the requested hotel interval. This is a bounded
+                sourced search, not a complete-market comparison or supplier booking.
+              </p>
+            </section>
+          )}
           {Boolean(result.waits?.length) && (
             <section className="case-job-waits" aria-label="Recorded journey waiting times">
               <h4>Waiting in the recorded itinerary</h4>
               <p className="field-hint">
-                Planned waiting time is shown separately from travel and hotel stays. An overnight
-                wait is informational; no mandatory rest requirement was assumed.
+                Planned waiting time is shown separately from travel and hotel stays.{' '}
+                {result.hotel_recovery
+                  ? 'These waits are outside the requested hotel interval; they do not replace the required stay.'
+                  : 'An overnight wait is informational; no mandatory rest requirement was assumed.'}
               </p>
               <ul>
                 {result.waits?.map((wait, index) => {
@@ -218,9 +245,10 @@ export function RecoveryJobDetails({ job, world }: { job: RecoveryJob; world: Wo
             {job.steps.map((step) => (
               <li key={step.id}>
                 <div className="case-flight-heading">
-                  <strong>{step.provider ?? recoveryStageLabel[step.stage]}</strong>
+                  <strong>{recoveryStageLabel[step.stage]}</strong>
                   <Tag>{step.status.toUpperCase()}</Tag>
                 </div>
+                {step.provider && <small>{step.provider}</small>}
                 <p>{step.message}</p>
                 <small>
                   {utcTimestamp(step.started_at)}
@@ -262,6 +290,8 @@ export default function RecoveryJobPanel({
   const [modes, setModes] = useState<RecoveryJobInput['modes']>(['flight']);
   const [limit, setLimit] = useState('8');
   const [instructions, setInstructions] = useState('');
+  const [hotelMode, setHotelMode] = useState(false);
+  const [hotelFields, setHotelFields] = useState(emptyHotelRecoveryForm);
   const running = useRef(false);
   const mounted = useRef(true);
   const current = useRef({ world, onRefresh, onMutationPending });
@@ -269,6 +299,14 @@ export default function RecoveryJobPanel({
   const refreshedVersion = useRef(0);
   const groups = world.groups.filter((group) => incident.group_ids.includes(group.id));
   const eligible = groups.filter((group) => group.status !== 'confirmed');
+  const hotelGroupCandidate =
+    selectedGroups.length === 1
+      ? eligible.find((group) => group.id === selectedGroups[0])
+      : undefined;
+  const hotelGroup =
+    hotelGroupCandidate && !hotelRecoveryGroupIssue(hotelGroupCandidate, world)
+      ? hotelGroupCandidate
+      : undefined;
   const active = jobs.some(recoveryJobActive);
   const locked = busy || Boolean(uncertain) || disabled;
   useEffect(() => {
@@ -409,53 +447,116 @@ export default function RecoveryJobPanel({
               return;
             }
             const maxCalls = Number(limit);
-            if (!Number.isInteger(maxCalls) || maxCalls < 3 || maxCalls > 26 || !modes.length) {
+            if (
+              !Number.isInteger(maxCalls) ||
+              maxCalls < 3 ||
+              maxCalls > 26 ||
+              (!hotelMode && !modes.length)
+            ) {
               setActionError(
                 'Choose at least one service type and a provider-call limit between 3 and 26.',
               );
               return;
             }
+            let hotelRecovery: RecoveryJobInput['hotel_recovery'];
+            if (hotelMode) {
+              try {
+                hotelRecovery = hotelRecoveryInput(hotelFields, selectedGroups, world, maxCalls);
+              } catch (cause) {
+                setActionError(
+                  cause instanceof Error ? cause.message : 'Review the hotel recovery inputs.',
+                );
+                return;
+              }
+            }
             void mutate(() =>
               api.startRecoveryJob(world, incident.id, {
                 group_ids: [...selectedGroups],
                 objective,
-                modes: [...modes],
+                modes: hotelMode ? ['flight', 'hotel', 'bus'] : [...modes],
                 max_provider_calls: maxCalls,
                 instructions: instructions.trim(),
+                ...(hotelRecovery ? { hotel_recovery: hotelRecovery } : {}),
               }),
             );
           }}
         >
           <fieldset className="case-fieldset" disabled={locked || active || loading}>
             <legend className="field-hint">Groups to search for</legend>
-            <div className="case-group-options">
-              {groups.map((group) => (
-                <label className="case-group" key={group.id}>
+            {world.mode === 'live' && (
+              <fieldset className="case-job-modes hotel-recovery-choice">
+                <legend>Recovery workflow</legend>
+                <label>
                   <input
-                    type="checkbox"
-                    checked={selectedGroups.includes(group.id)}
-                    disabled={group.status === 'confirmed'}
-                    onChange={(event) =>
-                      setSelectedGroups((previous) =>
-                        event.target.checked
-                          ? [...previous, group.id]
-                          : previous.filter((id) => id !== group.id),
-                      )
-                    }
+                    type="radio"
+                    name="recovery-workflow"
+                    checked={!hotelMode}
+                    onChange={() => setHotelMode(false)}
                   />
-                  <span>
-                    <strong>
-                      {group.name} · {group.size} passengers
-                    </strong>
-                    <small>
-                      {passengerSourceLabel(group.source)} ·{' '}
-                      {group.status === 'confirmed'
-                        ? 'Already supplier confirmed; excluded'
-                        : `${group.origin} → ${group.destination}`}
-                    </small>
-                  </span>
+                  Source alternatives
                 </label>
-              ))}
+                <label>
+                  <input
+                    type="radio"
+                    name="recovery-workflow"
+                    checked={hotelMode}
+                    onChange={() => setHotelMode(true)}
+                  />
+                  Hotel + both transfers + onward flight
+                </label>
+              </fieldset>
+            )}
+            {hotelMode && (
+              <p className="field-hint">
+                Choose exactly one linked, explicitly all-adult group. UK origin and onward-airport
+                coverage are checked before source searches.
+              </p>
+            )}
+            <div className="case-group-options">
+              {groups.map((group) => {
+                const hotelIssue = hotelMode ? hotelRecoveryGroupIssue(group, world) : null;
+                return (
+                  <label className="case-group" key={group.id}>
+                    <input
+                      type={hotelMode ? 'radio' : 'checkbox'}
+                      name={hotelMode ? 'hotel-recovery-group' : undefined}
+                      checked={
+                        selectedGroups.includes(group.id) &&
+                        (!hotelMode || (selectedGroups.length === 1 && !hotelIssue))
+                      }
+                      disabled={group.status === 'confirmed' || Boolean(hotelIssue)}
+                      onChange={(event) => {
+                        if (hotelMode) {
+                          setSelectedGroups([group.id]);
+                          setHotelFields((previous) => ({
+                            ...previous,
+                            initial_point: { ...previous.initial_point, confirmed: false },
+                            airport_dropoff: { ...previous.airport_dropoff, confirmed: false },
+                          }));
+                          return;
+                        }
+                        setSelectedGroups((previous) =>
+                          event.target.checked
+                            ? [...previous, group.id]
+                            : previous.filter((id) => id !== group.id),
+                        );
+                      }}
+                    />
+                    <span>
+                      <strong>
+                        {group.name} · {group.size} passengers
+                      </strong>
+                      <small>
+                        {passengerSourceLabel(group.source)} ·{' '}
+                        {group.status === 'confirmed'
+                          ? 'Already supplier confirmed; excluded'
+                          : `${group.origin} → ${group.destination}`}
+                      </small>
+                      {hotelIssue && <small>{hotelIssue}</small>}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
             {!groups.length && (
               <p className="case-source-warning">
@@ -466,7 +567,14 @@ export default function RecoveryJobPanel({
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => setSelectedGroups([])}
+                onClick={() => {
+                  setSelectedGroups([]);
+                  setHotelFields((previous) => ({
+                    ...previous,
+                    initial_point: { ...previous.initial_point, confirmed: false },
+                    airport_dropoff: { ...previous.airport_dropoff, confirmed: false },
+                  }));
+                }}
               >
                 Clear search selection
               </button>
@@ -489,7 +597,7 @@ export default function RecoveryJobPanel({
                 Maximum provider calls
                 <input
                   type="number"
-                  min={3}
+                  min={hotelMode ? 10 : 3}
                   max={26}
                   step={1}
                   required
@@ -498,29 +606,51 @@ export default function RecoveryJobPanel({
                 />
               </label>
             </div>
-            <fieldset className="case-job-modes">
-              <legend>Services to consider</legend>
-              {(['flight', 'hotel', 'bus'] as const).map((mode) => (
-                <label key={mode}>
-                  <input
-                    type="checkbox"
-                    checked={modes.includes(mode)}
-                    onChange={(event) =>
-                      setModes((previous) =>
-                        event.target.checked
-                          ? [...previous, mode]
-                          : previous.filter((value) => value !== mode),
-                      )
-                    }
-                  />
-                  {mode === 'flight' ? 'Flights' : mode === 'hotel' ? 'Hotels' : 'Ground transport'}
-                </label>
-              ))}
-            </fieldset>
-            <p className="field-hint">
-              Unavailable supplier searches or missing physical connections are reported as gaps. A
-              listed hotel or route is not a confirmed journey.
-            </p>
+            {hotelMode && (
+              <>
+                <p className={Number(limit) < 10 ? 'case-source-warning' : 'field-hint'}>
+                  This workflow needs at least 10 provider calls. Your limit is {limit || 'not set'}
+                  ; it is never raised automatically. Flights, hotel policy and both dated private
+                  transfers are included in this explicit cap.
+                </p>
+                <HotelRecoveryFields
+                  value={hotelFields}
+                  onChange={setHotelFields}
+                  group={hotelGroup}
+                />
+              </>
+            )}
+            {!hotelMode && (
+              <>
+                <fieldset className="case-job-modes">
+                  <legend>Services to consider</legend>
+                  {(['flight', 'hotel', 'bus'] as const).map((mode) => (
+                    <label key={mode}>
+                      <input
+                        type="checkbox"
+                        checked={modes.includes(mode)}
+                        onChange={(event) =>
+                          setModes((previous) =>
+                            event.target.checked
+                              ? [...previous, mode]
+                              : previous.filter((value) => value !== mode),
+                          )
+                        }
+                      />
+                      {mode === 'flight'
+                        ? 'Flights'
+                        : mode === 'hotel'
+                          ? 'Hotels'
+                          : 'Ground transport'}
+                    </label>
+                  ))}
+                </fieldset>
+                <p className="field-hint">
+                  Unavailable supplier searches or missing physical connections are reported as
+                  gaps. A listed hotel or route is not a confirmed journey.
+                </p>
+              </>
+            )}
             <label className="field">
               Additional recovery requirements
               <textarea
@@ -535,11 +665,15 @@ export default function RecoveryJobPanel({
               disabled={
                 !selectedGroups.length ||
                 selectedGroups.length > 24 ||
-                !modes.length ||
+                (hotelMode ? !hotelGroup : !modes.length) ||
                 Boolean(loadError)
               }
             >
-              {jobs.length ? 'Start new provider search' : 'Search provider alternatives'}
+              {jobs.length
+                ? 'Start new provider search'
+                : hotelMode
+                  ? 'Search hotel and onward journey'
+                  : 'Search provider alternatives'}
             </button>
           </fieldset>
         </form>

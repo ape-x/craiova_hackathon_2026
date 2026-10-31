@@ -330,18 +330,38 @@ export type RecoveryJobStage =
   | 'validating'
   | 'planning_queries'
   | 'searching_flights'
+  | 'searching_hotels'
+  | 'locating_hotel'
+  | 'quoting_initial_airport_to_hotel'
+  | 'routing_initial_airport_to_hotel'
+  | 'reference_fx'
+  | 'quoting_hotel_to_airport'
+  | 'routing_hotel_to_airport'
   | 'evaluating'
   | 'deciding'
   | 'applying'
   | 'finished';
+export interface HotelRecoveryInput {
+  checkin_at: string;
+  checkout_at: string;
+  rooms: number;
+  minimum_rest_minutes: number;
+  initial_point: { label: string; latitude: number; longitude: number; confirmed: true };
+  pickup_at: string;
+  suitcases: number;
+  onward_airport_code: string;
+  airport_dropoff: { label: string; latitude: number; longitude: number; confirmed: true };
+  airport_processing_minutes: number;
+}
 export interface RecoveryJobInput {
   group_ids: string[];
   objective: 'balanced' | 'fastest' | 'lowest_cost';
   modes: ResourceKind[];
   max_provider_calls: number;
   instructions: string;
+  hotel_recovery?: HotelRecoveryInput;
 }
-export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions'> {
+export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions' | 'hotel_recovery'> {
   id: string;
   incident_id: string;
   status: RecoveryJobStatus;
@@ -373,6 +393,15 @@ export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions'> {
     offer_ids: string[];
     resource_ids: string[];
     source_counts: Record<string, number>;
+    hotel_recovery?: {
+      hotel_id: string;
+      hotel_node_id: string;
+      hotel_shortlist_limit: 1;
+      flight_query_date: string;
+      return_pickup_at: string;
+      return_pickup_basis: 'checkout_plus_10_minute_app_allowance';
+      required_provider_calls: 10;
+    };
     waits?: {
       group_id: string;
       location_id: string;

@@ -127,6 +127,47 @@ describe('durable recovery request boundaries', () => {
 });
 
 describe('recovery progress and provenance', () => {
+  it.each([
+    ['searching_hotels', 'Searching hotel rates', 'Nuitee / LiteAPI'],
+    ['locating_hotel', 'Checking hotel location and published policy', 'Nuitee / LiteAPI'],
+    [
+      'quoting_initial_airport_to_hotel',
+      'Getting airport-to-hotel transfer quotes',
+      'Airport Pickups London',
+    ],
+    [
+      'routing_initial_airport_to_hotel',
+      'Checking the airport-to-hotel driving route',
+      'Google Routes',
+    ],
+    ['reference_fx', 'Retrieving the ECB reference exchange rate', 'European Central Bank'],
+    [
+      'quoting_hotel_to_airport',
+      'Getting hotel-to-airport transfer quotes',
+      'Airport Pickups London',
+    ],
+    ['routing_hotel_to_airport', 'Checking the hotel-to-airport driving route', 'Google Routes'],
+  ] as const)(
+    'renders %s in both live progress and the source ledger',
+    (stage, label, provider) => {
+      const running: RecoveryJob = {
+        ...job,
+        stage,
+        message: 'Source work in progress.',
+        steps: [{ ...job.steps[0], stage, provider, message: 'Recorded source response.' }],
+      };
+      const html = renderToStaticMarkup(
+        <RecoveryJobDetails job={running} world={{ offers: [] } as unknown as World} />,
+      );
+      const ledger = html.split('class="case-job-ledger"')[1];
+      expect(html.split(label)).toHaveLength(3);
+      expect(ledger).toContain(`<strong>${label}</strong>`);
+      expect(ledger).toContain(provider);
+      expect(html).not.toContain(stage);
+      expect(html).not.toContain('<strong></strong>');
+    },
+  );
+
   it('preserves acknowledged jobs across an older list response and never regresses completed work', () => {
     const completed: RecoveryJob = {
       ...job,

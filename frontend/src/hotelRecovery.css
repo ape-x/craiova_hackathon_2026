@@ -1,0 +1,93 @@
+.hotel-recovery-fields {
+  margin: 20px 0;
+  min-width: 0;
+}
+.hotel-recovery-intro {
+  background: var(--cyan-soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.hotel-recovery-intro > p:last-child {
+  margin-bottom: 0;
+}
+.hotel-recovery-section {
+  margin: 22px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 0;
+}
+.hotel-recovery-section legend {
+  padding: 0 7px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.hotel-recovery-section legend > span {
+  display: inline-grid;
+  place-items: center;
+  margin-right: 7px;
+  height: 24px;
+  width: 24px;
+  border-radius: 50%;
+  background: var(--cyan-soft);
+  color: var(--cyan);
+}
+.hotel-recovery-section .field {
+  min-width: 0;
+}
+.hotel-recovery-section .field input {
+  width: 100%;
+  min-width: 0;
+}
+.hotel-recovery-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.hotel-recovery-confirm input {
+  margin-top: 3px;
+  accent-color: var(--cyan);
+  flex-shrink: 0;
+}
+.hotel-recovery-timeline {
+  padding: 16px;
+  border-left: 2px solid var(--cyan);
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.hotel-recovery-timeline ol {
+  padding-left: 20px;
+  margin: 12px 0;
+}
+.hotel-recovery-timeline li {
+  padding: 6px 0;
+}
+.hotel-recovery-timeline li span,
+.hotel-recovery-timeline li small {
+  display: block;
+}
+.hotel-recovery-timeline li small {
+  color: var(--muted);
+}
+.hotel-recovery-choice {
+  margin: 0 0 20px;
+}
+.hotel-recovery-result {
+  margin: 15px 0;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+@media (max-width: 600px) {
+  .hotel-recovery-section {
+    padding: 12px;
+  }
+  .hotel-recovery-section legend {
+    font-size: 12px;
+  }
+}

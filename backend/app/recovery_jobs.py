@@ -9,10 +9,11 @@ import sqlite3
 import time
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_serializer
 
 from .airport_catalog import lookup_airport
 from .hotel_location import coordinate_timezone, property_zone
+from .hotel_recovery import HotelRecoveryInputs, run_hotel_recovery, validate_hotel_job
 from .live_data import identifier
 from .live_travel import append_travel_quote, retire_travel_quotes
 from .models import Model, Mutation, Strategy
@@ -29,6 +30,14 @@ class RecoveryJobRequest(Mutation):
     modes: list[Literal["flight","hotel","bus"]] = Field(default_factory=lambda:["flight"],min_length=1,max_length=3)
     max_provider_calls: int = Field(default=8,ge=3,le=26,strict=True)
     instructions: str = Field(default="",max_length=2000)
+    hotel_recovery: HotelRecoveryInputs | None = None
+
+    @model_serializer(mode="wrap")
+    def compatible_payload(self, handler):
+        result = handler(self)
+        if self.hotel_recovery is None:
+            result.pop("hotel_recovery",None)
+        return result
 
     @field_validator("group_ids")
     @classmethod
@@ -167,7 +176,8 @@ def flight_query_options(world,groups):
                 for offset in range(min(7,(last-first).days+1)):
                     day=first+timedelta(days=offset)
                     try:
-                        request=TravelSearchRequest(kind="flight",origin_code=origin,destination_code=destination,departure_date=day,adults=group.size)
+                        request=TravelSearchRequest(kind="flight",origin_code=origin,destination_code=destination,departure_date=day,adults=group.size,
+                            earliest_departure_at=max(utcnow(),epoch+timedelta(minutes=ready+30)),latest_arrival_at=epoch+timedelta(minutes=latest))
                     except ValueError:
                         continue
                     data={"group_id":group.id,"query":request.model_dump(mode="json"),"earliest_departure":ready+30,"latest_arrival":latest}
@@ -186,8 +196,9 @@ def flight_query_options(world,groups):
 
 
 class RecoveryJobs:
-    def __init__(self,settings,store,service,travel_provider,ai):
+    def __init__(self,settings,store,service,travel_provider,ai,*,hotel_provider=None,apl_provider=None,fx_provider=None):
         self.settings,self.store,self.service,self.travel,self.ai=settings,store,service,travel_provider,ai
+        self.hotel_provider,self.apl_provider,self.fx_provider=hotel_provider,apl_provider,fx_provider
         self.ledger=RecoveryLedger(store,settings.request_timeout_seconds+60)
         self.task=None
 
@@ -198,6 +209,7 @@ class RecoveryJobs:
             return replay
         world=self.store.read()
         digest=scope_fingerprint(world,incident_id,request.group_ids)
+        validate_hotel_job(world,request)
         return self.ledger.create(incident_id,request,digest,world.scenario_id,on_created=on_created)
 
     def get(self,job_id):
@@ -251,7 +263,7 @@ class RecoveryJobs:
         try:
             async with asyncio.timeout(self.settings.request_timeout_seconds):
                 result=await call()
-            await asyncio.to_thread(self.ledger.outcome,job["id"],owner,step,"succeeded","Provider result recorded; no supplier hold or booking was made.",result,len(result.get("items",[])))
+            await asyncio.to_thread(self.ledger.outcome,job["id"],owner,step,"succeeded","Provider result recorded; no supplier hold or booking was made.",result,len(result.get("items",result.get("options",[]))))
             return result
         except asyncio.CancelledError:
             with suppress(DomainError):
@@ -298,6 +310,9 @@ class RecoveryJobs:
         gaps=[]
         if not self.ai or not self.ai.configured:
             await self._update(job,owner,status="blocked",stage="finished",message="Real AI is unavailable; no scripted planning fallback was used.",gaps=[gap("ai_not_configured","Connect the real Responses and Decisions provider.",job["group_ids"])])
+            return
+        if job["_request"].get("hotel_recovery") is not None:
+            await run_hotel_recovery(self,job,owner,world,started)
             return
         for mode in job["modes"]:
             if mode in ("hotel","bus"):
