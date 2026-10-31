@@ -70,7 +70,7 @@ class RecoveryLedger:
                 return on_created(conn, world, result)
             return result
 
-    def create_in_transaction(self, conn, world, incident_id, request, scope_hash, scenario_id):
+    def create_in_transaction(self, conn, world, incident_id, request, scope_hash, scenario_id, *, supersede_active=False):
         """Queue using the caller's transaction; never commit or dispatch here."""
         if not conn.in_transaction:
             raise RuntimeError("Recovery job creation requires an active transaction")
@@ -88,12 +88,25 @@ class RecoveryLedger:
             raise DomainError(409, "Operation changed before this recovery job was queued",
                 {"code": "recovery_world_changed"})
         active = [json.loads(row[0]) for row in conn.execute("SELECT data FROM recovery_jobs WHERE status IN ('queued','running')")]
-        if len(active) >= 20:
+        overlapping = [job for job in active if set(request.group_ids).intersection(job["group_ids"])]
+        replaced_queued = sum(job["status"] == "queued" for job in overlapping) if supersede_active else 0
+        if len(active) - replaced_queued >= 20:
             raise DomainError(429, "Recovery queue is full; wait for an existing job to finish",
                 {"code": "recovery_queue_full"})
-        if any(set(request.group_ids).intersection(job["group_ids"]) for job in active):
+        if overlapping and not supersede_active:
             raise DomainError(409, "A recovery job already owns one of these passenger groups; inspect or cancel it first",
                 {"code": "recovery_group_active"})
+        dependencies = []
+        if supersede_active:
+            # Carry unresolved ancestors through cancelled intermediate requests.
+            # Safe terminal ancestors can be dropped; unknown outcomes never can.
+            for previous in overlapping:
+                for job_id in [previous["id"], *previous.get("_handoff_dependencies", [])]:
+                    if job_id not in dependencies and self._predecessor_state(conn, job_id) != "ready":
+                        dependencies.append(job_id)
+            if len(dependencies) > 64:
+                raise DomainError(429, "Too many unresolved predecessor attempts; review their outcomes before another recovery",
+                    {"code": "recovery_handoff_limit"})
         now = utcnow().isoformat()
         job = {"id": "JOB-"+secrets.token_hex(10).upper(), "incident_id":incident_id,
                "group_ids":request.group_ids, "objective":request.objective, "modes":request.modes,
@@ -102,8 +115,32 @@ class RecoveryLedger:
                "created_at":now, "updated_at":now, "source_version":world.version, "applied_version":None,
                "cancel_requested":False, "gaps":[], "result":None,
                "_request":payload, "_scope_hash":scope_hash, "_scenario_id":scenario_id}
+        if overlapping:
+            job.update(supersedes_job_ids=[previous["id"] for previous in overlapping],
+                       _handoff_dependencies=dependencies)
+            if dependencies:
+                job.update(stage="waiting_for_previous", message="New report recovery recorded. Waiting for prior attempts to finish and their outcomes to be checked; no new supplier request has been dispatched.")
         conn.execute("INSERT INTO recovery_jobs VALUES(?,?,?,?,?,?,?)", (job["id"],key,Store.fingerprint(payload),"queued",None,0,json.dumps(job)))
+        for previous in overlapping:
+            previous.update(cancel_requested=True, superseded_by_job_id=job["id"],
+                message="A new operational report supersedes this attempt. Already dispatched calls may finish and incur charges; no later call or proposal will be applied.")
+            if previous["status"] == "queued":
+                previous.update(status="cancelled", stage="finished")
+            self._save(conn, previous)
+        if dependencies and all(self._predecessor_state(conn, prior) == "ready" for prior in dependencies):
+            job.update(stage="queued", message="New report recovery queued. Superseded attempts have ended; no new supplier request has been dispatched.")
+            self._save(conn, job)
         return {"job":self._public(conn,job), "replayed":False}
+
+    @staticmethod
+    def _predecessor_state(conn, job_id):
+        row = conn.execute("SELECT status FROM recovery_jobs WHERE id=?", (job_id,)).fetchone()
+        if row is None:
+            return "review"
+        if row[0] in ("queued", "running"):
+            return "waiting"
+        uncertain = conn.execute("SELECT 1 FROM recovery_steps WHERE job_id=? AND json_extract(data,'$.status') IN ('dispatched','unknown') LIMIT 1", (job_id,)).fetchone()
+        return "review" if row[0] not in TERMINAL or row[0] == "unknown_outcome" or uncertain else "ready"
 
     def _recover_expired(self, conn):
         now = utcnow().timestamp()
@@ -128,10 +165,22 @@ class RecoveryLedger:
             # A single shared worker slot bounds orchestration across processes.
             if conn.execute("SELECT 1 FROM recovery_jobs WHERE status='running' LIMIT 1").fetchone():
                 return None
-            row = conn.execute("SELECT id FROM recovery_jobs WHERE status='queued' ORDER BY rowid LIMIT 1").fetchone()
-            if not row:
+            job = None
+            for job_id, in conn.execute("SELECT id FROM recovery_jobs WHERE status='queued' ORDER BY rowid").fetchall():
+                candidate = self._load(conn, job_id)
+                states = {prior: self._predecessor_state(conn, prior) for prior in candidate.get("_handoff_dependencies", [])}
+                if "review" in states.values():
+                    candidate.update(status="needs_review", stage="finished",
+                        blocking_job_ids=[prior for prior, state in states.items() if state == "review"],
+                        message="A prior attempt has an unknown outcome or missing history. No successor call was dispatched. Review its recorded calls before explicitly starting a new attempt.")
+                    self._save(conn, candidate)
+                    continue
+                if "waiting" in states.values():
+                    continue
+                job = candidate
+                break
+            if job is None:
                 return None
-            job = self._load(conn,row[0])
             owner = secrets.token_hex(16)
             job.update(status="running",stage="validating",message="Checking current passenger scope, provider access and physical journey inputs.")
             self._save(conn,job)
@@ -166,12 +215,14 @@ class RecoveryLedger:
             self._save(conn,job)
             conn.execute("UPDATE recovery_jobs SET lease_until=? WHERE id=?",(utcnow().timestamp()+self.lease_seconds,job_id))
 
-    def dispatch(self,job_id,owner,stage,provider,query,group_ids):
+    def dispatch(self,job_id,owner,stage,provider,query,group_ids,*,expected_version=None):
         with self.store.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             job=self._owned(conn,job_id,owner)
             if job["cancel_requested"] or job.get("_halt_dispatch"):
                 raise DomainError(409,"Recovery cancellation requested")
+            if expected_version is not None and self.store._load(conn).version != expected_version:
+                raise DomainError(409,"Operation changed before dispatch; no provider request was issued.")
             if job["calls_dispatched"]>=job["max_provider_calls"]:
                 raise DomainError(409,"Recovery provider-call allowance exhausted")
             query_hash=Store.fingerprint({"stage":stage,"provider":provider,"query":query})

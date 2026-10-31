@@ -213,13 +213,13 @@ class RecoveryJobs:
         validate_hotel_job(world,request)
         return self.ledger.create(incident_id,request,digest,world.scenario_id,on_created=on_created)
 
-    def start_in_transaction(self,conn,world,incident_id,request):
+    def start_in_transaction(self,conn,world,incident_id,request,*,supersede_active=False):
         """Validate the saved post-report world and queue without opening a connection."""
         if not conn.in_transaction:
             raise RuntimeError("Recovery job creation requires an active transaction")
         digest=scope_fingerprint(world,incident_id,request.group_ids)
         validate_hotel_job(world,request)
-        return self.ledger.create_in_transaction(conn,world,incident_id,request,digest,world.scenario_id)
+        return self.ledger.create_in_transaction(conn,world,incident_id,request,digest,world.scenario_id,supersede_active=supersede_active)
 
     def get(self,job_id):
         return {"job":self.ledger.get(job_id)}
@@ -268,7 +268,7 @@ class RecoveryJobs:
         current=await asyncio.to_thread(self.store.read)
         if current.version!=job["_planning_version"] or scope_fingerprint(current,job["incident_id"],job["group_ids"])!=job["_scope_hash"]:
             raise DomainError(409,"Operation changed while sourcing; no further provider call was issued. Review the recorded results before a new attempt.")
-        step=await asyncio.to_thread(self.ledger.dispatch,job["id"],owner,stage,provider,query,group_ids)
+        step=await asyncio.to_thread(self.ledger.dispatch,job["id"],owner,stage,provider,query,group_ids,expected_version=job["_planning_version"])
         try:
             async with asyncio.timeout(self.settings.request_timeout_seconds):
                 result=await call()

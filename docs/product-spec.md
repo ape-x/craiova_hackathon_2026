@@ -40,6 +40,7 @@ Contextul FR24 are retenție limitată. Reîmprospătarea unui caz trebuie să p
 | Proprietăți hoteliere           | Coordonate ale furnizorului, metadate și fus orar derivat                           | Hotelul nu este plasat la aeroport și nu implică un shuttle                                                      |
 | Transferuri private UK          | Airport Pickups London, GBP per vehicul, plus proprietatea exactă și Google Routes datat | Import manual în ambele direcții și plan hotelier automat limitat; sosirea și EUR sunt estimări, nu rezervare sau stoc de flotă |
 | Autocare programate             | Adaptor Distribusion, cu acces de producție separat                                 | Stații reale, vârste explicite și conexiuni până la stații; accesul nu este presupus                             |
+| Tarife publice autocare România | BILETERIA, numai CRA→OTP, dată explicită și 1–8 adulți | Prețuri originale RON și estimări ECB EUR; locurile și expirarea rămân necunoscute, fără alocare în itinerar |
 | Hartă și rute rutiere           | Google Maps/Places/Routes; surse publice documentate când nu este configurat Google | O rută și o durată estimată nu sunt un vehicul disponibil                                                        |
 | Transport public                | Adaptor pur Google TRANSIT, cu teste offline                                        | Nu este încă un flux conectat în produs și nu completează inventarul                                             |
 | Estimări valutare               | ECB, conectat la cotațiile APL și costul planificat al itinerariilor                  | Prețul GBP rămâne original; EUR intră explicit ca estimare în buget, fără decontare garantată și cu revalidare înainte de rezervare |
@@ -49,6 +50,10 @@ Eșecul unui furnizor configurat rămâne vizibil. Nu este înlocuit cu inventar
 ## 4. Căutări durabile pe incident
 
 Fiecare încercare păstrează selecția grupurilor, obiectivul, limita de apeluri, etapele și rezultatele într-un registru persistent. Interfața arată apelurile expediate și stările lor, nu un procent de progres inventat.
+
+Un raport operațional nou care cere explicit recuperarea poate înlocui încercările active pentru aceleași grupuri. Raportul, cererea nouă și oprirea pașilor rămași ai încercărilor vechi se salvează atomic. Încercările încă nepornite sunt anulate; cele cu apeluri deja trimise păstrează proprietarul până se încheie apelurile. Noua cerere așteaptă și își păstrează limita proprie, inclusiv interpretarea deja consumată. Nu moștenește apeluri nefolosite și nu reinterpretează comanda la replay.
+
+Rezultatele necunoscute, inclusiv cele ale unor încercări anterioare indirecte, opresc continuarea pentru revizuire; panoul identifică încercările care o blochează. Limita este de 20 de joburi active și cel mult 64 de dependențe nerezolvate, fără trunchiere tăcută. O comandă distinctă autorizată poate repeta o căutare anterioară reușită și poate avea costuri noi; replay-ul aceleiași comenzi nu o retrimite. Dacă lumea se schimbă în timpul interpretării, răspunsul rămâne un conflict explicit 409: raportul nu este aplicat implicit pe o versiune nouă. Căutările obișnuite, fără un raport nou, continuă să refuze grupurile deja deținute de un job.
 
 ```mermaid
 flowchart TD

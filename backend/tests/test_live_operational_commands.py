@@ -102,7 +102,7 @@ async def test_report_and_job_share_post_report_scope_atomic_receipt_and_total_c
     assert len(ai.calls) == 1 and len(jobs.list("RC-ONE")["jobs"]) == 1
 
 
-@pytest.mark.parametrize("kind", ["low_cap", "invalid_profile", "queue_busy"])
+@pytest.mark.parametrize("kind", ["low_cap", "invalid_profile"])
 @pytest.mark.asyncio
 async def test_known_followup_prerequisite_records_report_without_search(operational_setup, kind):
     _, store, service, jobs, ai, _ = operational_setup
@@ -114,18 +114,13 @@ async def test_known_followup_prerequisite_records_report_without_search(operati
         recovery["modes"] = ["flight", "hotel", "bus"]
         suffix = " Recover RO321 for G1 using saved hotel and both transfers and flight with maximum 11 calls"
         expected = "hotel_setup_required"
-    if kind == "queue_busy":
-        from app.recovery_jobs import RecoveryJobRequest
-        jobs.start("RC-ONE", RecoveryJobRequest(expected_version=store.read().version, idempotency_key="existing-queued-job", group_ids=["G1"]))
-        suffix = " Recover RO321 for G1 with maximum 4 calls"
-        expected = "recovery_queue_unavailable"
     set_report(ai, report, recovery)
     result = await service.command(request(store, f"For RO321: {report['report_reference']}." + suffix))
     assert result["applied"] and result["recovery_blocked"]["code"] == expected
     assert "recovery_job" not in result and result["command_interpretation_calls"] == 1
     assert store.read().groups[0].origin == "SBZ"
     recorded = jobs.list("RC-ONE")["jobs"]
-    assert len(recorded) == (1 if kind == "queue_busy" else 0)
+    assert recorded == []
     assert all(job["calls_dispatched"] == 0 for job in recorded)
 
 
@@ -219,8 +214,8 @@ async def test_unexpected_fault_rolls_back_report_job_receipt_and_reuses_interpr
     set_report(ai, outage(), intent(group_ids=["G1"], all_linked_groups=False))
     before = store.read()
     original = jobs.start_in_transaction
-    def crash(*args):
-        original(*args)
+    def crash(*args, **kwargs):
+        original(*args, **kwargs)
         raise RuntimeError("offline crash after job insert")
     monkeypatch.setattr(jobs, "start_in_transaction", crash)
     req = request(store, "Q1 is unavailable. Recover RO321 for G1 with maximum 4 calls")
@@ -273,8 +268,8 @@ async def test_relative_readiness_retries_use_original_durable_anchor(operationa
     set_report(ai, report, intent(group_ids=["G1"], all_linked_groups=False))
     req = request(store, "For RO321: " + report["report_reference"] + ". Recover RO321 for G1 with maximum 4 calls")
     original = jobs.start_in_transaction
-    def crash(*args):
-        original(*args)
+    def crash(*args, **kwargs):
+        original(*args, **kwargs)
         raise RuntimeError("offline failure")
     monkeypatch.setattr(jobs, "start_in_transaction", crash)
     before = store.read()

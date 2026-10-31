@@ -375,16 +375,18 @@ def route_operational_report(commands, request, world, interpreted):
         try:
             job_request = _job_request(current, request, case, groups, recovery, total, report)
             try:
-                result = commands.jobs.start_in_transaction(conn, current, case.id, job_request)
+                result = commands.jobs.start_in_transaction(conn, current, case.id, job_request, supersede_active=True)
             except DomainError as exc:
                 code = (exc.details or {}).get("code")
-                if code not in ("recovery_queue_full", "recovery_group_active"):
+                if code not in ("recovery_queue_full", "recovery_group_active", "recovery_handoff_limit"):
                     raise
                 raise RecoveryBlocked("recovery_queue_unavailable", "Coada este ocupată sau un job deține deja grupurile. Verifică progresul; nu am trimis o altă căutare.") from exc
             response["recovery_job"] = result["job"]
             response["explanation"] += (f" Recuperarea pentru {case.id}, grupurile {', '.join(groups)}, este în coadă. "
                 f"Limita totală {total}: 1 interpretare și cel mult {total - 1} apeluri ale jobului. "
                 "Niciun itinerar găsit sau rezervare efectuată nu este confirmat de această înregistrare.")
+            if result["job"].get("supersedes_job_ids"):
+                response["explanation"] += " Cererea nouă înlocuiește încercările depășite pentru grupurile selectate. Așteaptă încheierea apelurilor deja trimise; un rezultat incert cere revizuire înainte de alte apeluri."
         except RecoveryBlocked as exc:
             response["recovery_blocked"] = {"code": exc.code, "explanation": exc.explanation}
             response["explanation"] += " Raport înregistrat; căutarea nu a pornit. " + exc.explanation

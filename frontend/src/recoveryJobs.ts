@@ -3,6 +3,11 @@ import type { RecoveryJob, RecoveryJobStage } from './types';
 export const recoveryJobActive = (job: RecoveryJob): boolean =>
   job.status === 'queued' || job.status === 'running';
 
+export const recoveryJobWaiting = (job: RecoveryJob): boolean =>
+  job.status === 'queued' && job.stage === 'waiting_for_previous';
+
+export const recoveryJobAnchor = (id: string): string => `recovery-job-${encodeURIComponent(id)}`;
+
 const groundReferenceLimitations = new Set([
   'ground_availability_unverified',
   'ground_fare_allowance_uncovered',
@@ -37,6 +42,7 @@ export function classifyRecoveryJobGaps(gaps: RecoveryJob['gaps'], allPassengers
 
 export const recoveryStageLabel: Record<RecoveryJobStage, string> = {
   queued: 'Queued',
+  waiting_for_previous: 'Waiting for earlier recovery attempts',
   validating: 'Checking case and passenger requirements',
   planning_queries: 'Preparing provider searches',
   searching_flights: 'Searching flight suppliers',
@@ -60,6 +66,20 @@ export function mergeRecoveryJobs(current: RecoveryJob[], incoming: RecoveryJob[
   for (const job of incoming) {
     const previous = jobs.get(job.id);
     const difference = previous ? Date.parse(job.updated_at) - Date.parse(previous.updated_at) : 1;
+    // An immutable receipt can arrive after a poll with the same timestamp.
+    // Never let it erase a recorded replacement or revive work being stopped.
+    if (
+      previous &&
+      difference === 0 &&
+      ((previous.cancel_requested && !job.cancel_requested) ||
+        (previous.status === 'running' && job.status === 'queued') ||
+        previous.calls_dispatched > job.calls_dispatched ||
+        (previous.superseded_by_job_id &&
+          previous.superseded_by_job_id !== job.superseded_by_job_id) ||
+        previous.supersedes_job_ids?.some((id) => !job.supersedes_job_ids?.includes(id)) ||
+        previous.blocking_job_ids?.some((id) => !job.blocking_job_ids?.includes(id)))
+    )
+      continue;
     if (
       !previous ||
       difference > 0 ||

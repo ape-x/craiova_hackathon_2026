@@ -14,6 +14,8 @@ import {
   classifyRecoveryJobGaps,
   mergeRecoveryJobs,
   recoveryJobActive,
+  recoveryJobAnchor,
+  recoveryJobWaiting,
   recoveryStageLabel,
 } from './recoveryJobs';
 import { Tag } from './ui';
@@ -59,8 +61,35 @@ function waitClock(from: string, to: string, timezone: string | null) {
   return { from: format(from), to: format(to), zone: zone ?? 'UTC · local timezone unavailable' };
 }
 
-export function RecoveryJobDetails({ job, world }: { job: RecoveryJob; world: World }) {
+function RecoveryJobReference({ id, recorded }: { id: string; recorded?: RecoveryJob }) {
+  if (!recorded) return <span>{id} · not in loaded case history</span>;
+  const anchor = recoveryJobAnchor(id);
+  return (
+    <a
+      href={`#${encodeURIComponent(anchor)}`}
+      onClick={() => {
+        const target = document.getElementById(anchor);
+        const history = target?.closest('details');
+        if (history) history.open = true;
+        target?.focus({ preventScroll: true });
+      }}
+    >
+      {id} · {recorded.status.replaceAll('_', ' ')}
+    </a>
+  );
+}
+
+export function RecoveryJobDetails({
+  job,
+  world,
+  relatedJobs,
+}: {
+  job: RecoveryJob;
+  world: World;
+  relatedJobs?: readonly RecoveryJob[];
+}) {
   const result = job.result;
+  const waitingForPrevious = recoveryJobWaiting(job);
   const {
     requirements: unresolved,
     sourceExclusions,
@@ -83,7 +112,12 @@ export function RecoveryJobDetails({ job, world }: { job: RecoveryJob; world: Wo
   );
   const stillCurrent = result?.offer_ids.filter((id) => currentOfferIds.has(id)).length ?? 0;
   return (
-    <article className="case-job" aria-label={`Recovery attempt ${job.id}`}>
+    <article
+      className="case-job"
+      id={recoveryJobAnchor(job.id)}
+      tabIndex={-1}
+      aria-label={`Recovery attempt ${job.id}`}
+    >
       <div className="case-flight-heading">
         <strong>
           {recoveryJobActive(job) ? recoveryStageLabel[job.stage] : job.status.replaceAll('_', ' ')}
@@ -100,6 +134,72 @@ export function RecoveryJobDetails({ job, world }: { job: RecoveryJob; world: Wo
         {job.calls_dispatched} provider calls dispatched · limit {job.max_provider_calls} ·{' '}
         {job.group_ids.length} selected groups. Calls are usage, not a completion percentage.
       </p>
+      {(waitingForPrevious || Boolean(job.supersedes_job_ids?.length)) && (
+        <section className="case-job-result" aria-label="Recovery attempt dependencies">
+          <h4>
+            {waitingForPrevious ? 'Waiting before the new search' : 'Earlier recovery attempts'}
+          </h4>
+          {waitingForPrevious && (
+            <p>
+              Earlier attempts must finish before this search can start. An in-flight call may still
+              finish and incur a charge; an unknown outcome requires review.
+            </p>
+          )}
+          {job.status === 'needs_review' && job.calls_dispatched === 0 && (
+            <p>
+              No new provider calls were dispatched by this attempt. Review the recorded
+              dependencies.
+            </p>
+          )}
+          {Boolean(job.supersedes_job_ids?.length) && (
+            <>
+              <p className="field-hint">
+                This request supersedes the following attempts. Their own recorded statuses remain
+                authoritative.
+              </p>
+              <ul>
+                {job.supersedes_job_ids?.map((id) => (
+                  <li key={id}>
+                    <RecoveryJobReference
+                      id={id}
+                      recorded={relatedJobs?.find((item) => item.id === id)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
+      {Boolean(job.blocking_job_ids?.length) && (
+        <section className="case-job-result" aria-label="Attempts requiring review">
+          <h4>Attempts requiring review</h4>
+          <p className="field-hint">
+            Review the recorded outcomes for these attempts before requesting further recovery.
+          </p>
+          <ul>
+            {job.blocking_job_ids?.map((id) => (
+              <li key={id}>
+                <RecoveryJobReference
+                  id={id}
+                  recorded={relatedJobs?.find((item) => item.id === id)}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {job.superseded_by_job_id && (
+        <p className="case-source-warning">
+          Superseded by request{' '}
+          <RecoveryJobReference
+            id={job.superseded_by_job_id}
+            recorded={relatedJobs?.find((item) => item.id === job.superseded_by_job_id)}
+          />
+          . The newer request has its own status; this link does not confirm that earlier work has
+          stopped.
+        </p>
+      )}
       {job.cancel_requested && job.status !== 'cancelled' && (
         <p className="case-source-warning">
           Cancellation requested. An in-flight provider call may still finish and incur a charge; no
@@ -445,7 +545,7 @@ export default function RecoveryJobPanel({
       {jobs.map((job, index) =>
         index === 0 || recoveryJobActive(job) ? (
           <div key={job.id}>
-            <RecoveryJobDetails job={job} world={world} />
+            <RecoveryJobDetails job={job} world={world} relatedJobs={jobs} />
             {recoveryJobActive(job) && (
               <button
                 className="secondary-button"
@@ -462,7 +562,7 @@ export default function RecoveryJobPanel({
             <summary>
               Earlier attempt · {utcTimestamp(job.created_at)} · {job.status.replaceAll('_', ' ')}
             </summary>
-            <RecoveryJobDetails job={job} world={world} />
+            <RecoveryJobDetails job={job} world={world} relatedJobs={jobs} />
           </details>
         ),
       )}

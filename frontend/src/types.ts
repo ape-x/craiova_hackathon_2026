@@ -338,6 +338,7 @@ export type RecoveryJobStatus =
   | 'unknown_outcome';
 export type RecoveryJobStage =
   | 'queued'
+  | 'waiting_for_previous'
   | 'validating'
   | 'planning_queries'
   | 'searching_flights'
@@ -375,6 +376,9 @@ export interface RecoveryJobInput {
 }
 export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions' | 'hotel_recovery'> {
   ground_references?: import('./coachFareData').GroundFareReference[];
+  supersedes_job_ids?: string[];
+  superseded_by_job_id?: string;
+  blocking_job_ids?: string[];
   id: string;
   incident_id: string;
   status: RecoveryJobStatus;

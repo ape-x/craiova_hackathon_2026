@@ -147,6 +147,104 @@ describe('bounded voice acknowledgements from authoritative receipts', () => {
     expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
   });
 
+  it.each([false, true])(
+    'describes a waiting receipt historically without announcing a finished handoff (replay=%s)',
+    (replayed) => {
+      const content = voiceCommandAcknowledgement(
+        reportReceipt({
+          replayed,
+          recovery_job: queuedJob({
+            stage: 'waiting_for_previous',
+            calls_dispatched: 0,
+            supersedes_job_ids: ['PREVIOUS-1', 'PREVIOUS-2'],
+          }),
+          recovery_total_call_limit: 11,
+        }),
+      );
+      expect(content).toContain(replayed ? 'Raport deja înregistrat' : 'Raport înregistrat');
+      expect(content).toContain(
+        'La înregistrare, cererea aștepta încheierea încercărilor anterioare; 0 apeluri proprii.',
+      );
+      expect(content).toContain('Limită totală: 11 apeluri');
+      expect(content).toContain('Vezi progresul curent în panoul cazului');
+      expect(content).toContain('nu confirmare de aterizare');
+      expect(content).not.toMatch(/am oprit|am anulat|finalizată|căutarea a pornit|caut acum/);
+      expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+    },
+  );
+
+  it('does not call the old superseded request a new search or a completed cancellation', () => {
+    const content = voiceCommandAcknowledgement(
+      reportReceipt({
+        replayed: true,
+        recovery_job: queuedJob({
+          status: 'running',
+          stage: 'searching_flights',
+          calls_dispatched: 2,
+          cancel_requested: true,
+          superseded_by_job_id: 'NEW-ATTEMPT',
+        }),
+      }),
+    );
+    expect(content).toContain('are o înlocuire consemnată');
+    expect(content).toContain('nu confirmă oprirea ei');
+    expect(content).not.toMatch(/Cererea de căutare a fost|am oprit|0 apeluri proprii/);
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+  });
+
+  it.each(['finished', 'waiting_for_previous'] as const)(
+    'keeps unknown dependency review distinct from a queued search at stage %s',
+    (stage) => {
+      const content = voiceCommandAcknowledgement(
+        reportReceipt({
+          recovery_job: queuedJob({
+            status: 'needs_review',
+            stage,
+            calls_dispatched: 0,
+            supersedes_job_ids: ['UNKNOWN-ATTEMPT'],
+          }),
+        }),
+      );
+      expect(content).toContain('Starea consemnată cere revizuirea încercărilor anterioare');
+      expect(content).toContain('0 apeluri proprii');
+      expect(content).not.toMatch(
+        /aștepta încheierea|Cererea de căutare a fost|este contradictorie/,
+      );
+    },
+  );
+
+  it('never invents zero usage or waiting success for inconsistent status receipts', () => {
+    for (const overrides of [
+      { status: 'queued', calls_dispatched: 1 },
+      { status: 'running', calls_dispatched: 0 },
+    ] as const) {
+      const content = voiceCommandAcknowledgement(
+        reportReceipt({
+          recovery_job: queuedJob({ stage: 'waiting_for_previous', ...overrides }),
+        }),
+      );
+      expect(content).toContain('Starea așteptării este contradictorie');
+      expect(content).not.toMatch(/0 apeluri proprii|aștepta încheierea/);
+    }
+  });
+
+  it('acknowledges review for an inherited blocker even without a direct predecessor', () => {
+    const content = voiceCommandAcknowledgement(
+      reportReceipt({
+        recovery_job: queuedJob({
+          status: 'needs_review',
+          stage: 'finished',
+          calls_dispatched: 0,
+          blocking_job_ids: ['UNKNOWN-ANCESTOR'],
+        }),
+      }),
+    );
+    expect(content).toContain('Starea consemnată cere revizuirea încercărilor anterioare');
+    expect(content).toContain('0 apeluri proprii');
+    expect(content).not.toContain('Cererea de căutare a fost');
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+  });
+
   it('speaks the server-resolved relative readiness without reanchoring it to the browser or retry time', () => {
     const receipt = reportReceipt({ replayed: true });
     if (receipt.report?.type !== 'arrival_report') throw new Error('Invalid arrival fixture');

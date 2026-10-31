@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { api, ApiError, TransportError } from './api';
 import { RecoveryJobDetails } from './RecoveryJobPanel';
-import { classifyRecoveryJobGaps, mergeRecoveryJobs, recoveryJobActive } from './recoveryJobs';
+import {
+  classifyRecoveryJobGaps,
+  mergeRecoveryJobs,
+  recoveryJobActive,
+  recoveryJobAnchor,
+  recoveryJobWaiting,
+} from './recoveryJobs';
 import type { RecoveryJob, RecoveryJobInput, RecoveryJobResponse, World } from './types';
 
 const input: RecoveryJobInput = {
@@ -236,6 +242,171 @@ describe('recovery progress and provenance', () => {
     expect(html).toContain('in-flight provider call may still finish and incur a charge');
     expect(html).toContain('A new attempt can incur additional provider charges');
     expect(html).toContain('UNKNOWN OUTCOME');
+  });
+});
+
+describe('operational update recovery dependencies', () => {
+  const previous: RecoveryJob = {
+    ...job,
+    cancel_requested: true,
+    superseded_by_job_id: 'JOB-2',
+  };
+  const waiting: RecoveryJob = {
+    ...job,
+    id: 'JOB-2',
+    status: 'queued',
+    stage: 'waiting_for_previous',
+    calls_dispatched: 0,
+    supersedes_job_ids: ['JOB-1'],
+    steps: [],
+    gaps: [],
+    message: 'Waiting for the earlier attempt to finish.',
+    created_at: '2026-11-01T10:02:00Z',
+    updated_at: '2026-11-01T10:02:00Z',
+  };
+  const world = { offers: [] } as unknown as World;
+
+  it('keeps waiting work active with zero calls and navigable recorded dependencies', () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal('fetch', fetcher);
+    const html = renderToStaticMarkup(
+      <RecoveryJobDetails job={waiting} world={world} relatedJobs={[waiting, previous]} />,
+    );
+    expect(recoveryJobActive(waiting)).toBe(true);
+    expect(recoveryJobWaiting(waiting)).toBe(true);
+    expect(html).toContain('Waiting for earlier recovery attempts');
+    expect(html).toContain('Waiting before the new search');
+    expect(html).toContain('0 provider calls dispatched');
+    expect(html).toContain('unknown outcome requires review');
+    expect(html).toContain('href="#recovery-job-JOB-1"');
+    expect(html).toContain('JOB-1 · running');
+    expect(html).not.toMatch(/Searching flight suppliers|passengers proposed|handoff complete/);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('shows the replacement link without calling a requested cancellation complete', () => {
+    const html = renderToStaticMarkup(
+      <RecoveryJobDetails job={previous} world={world} relatedJobs={[previous, waiting]} />,
+    );
+    expect(html).toContain('Superseded by request');
+    expect(html).toContain('href="#recovery-job-JOB-2"');
+    expect(html).toContain('JOB-2 · queued');
+    expect(html).toContain('does not confirm that earlier work has stopped');
+    expect(html).toContain('Cancellation requested');
+    expect(html).toContain('no cancellation is complete until the recorded status confirms it');
+    expect(html).toContain('2 provider calls dispatched');
+    expect(html).not.toContain('CANCELLED');
+  });
+
+  it('does not invent navigable history or dependency outcomes when a linked attempt is not loaded', () => {
+    const html = renderToStaticMarkup(<RecoveryJobDetails job={waiting} world={world} />);
+    expect(html).toContain('JOB-1 · not in loaded case history');
+    expect(html).not.toContain('href="#recovery-job-JOB-1"');
+    expect(html).not.toContain('JOB-1 · cancelled');
+    const withoutRelationships = renderToStaticMarkup(
+      <RecoveryJobDetails job={job} world={world} />,
+    );
+    expect(withoutRelationships).not.toContain('Recovery attempt dependencies');
+    expect(withoutRelationships).not.toContain('Superseded by request');
+  });
+
+  it('keeps the dependency record after review is required without claiming a search or recovery', () => {
+    const needsReview: RecoveryJob = {
+      ...waiting,
+      status: 'needs_review',
+      stage: 'finished',
+      message: 'An earlier provider outcome is unknown. Review the call ledger.',
+    };
+    const html = renderToStaticMarkup(
+      <RecoveryJobDetails job={needsReview} world={world} relatedJobs={[previous, needsReview]} />,
+    );
+    expect(recoveryJobActive(needsReview)).toBe(false);
+    expect(recoveryJobWaiting(needsReview)).toBe(false);
+    expect(html).toContain('NEEDS REVIEW');
+    expect(html).toContain('No new provider calls were dispatched by this attempt');
+    expect(html).toContain('href="#recovery-job-JOB-1"');
+    expect(html).not.toMatch(/Waiting before the new search|passengers proposed/);
+  });
+
+  it('preserves replacement/cancellation facts against older receipts and equal-time polls', () => {
+    expect(mergeRecoveryJobs([previous, waiting], [job])).toEqual([waiting, previous]);
+    expect(mergeRecoveryJobs([waiting], [{ ...waiting, supersedes_job_ids: undefined }])).toEqual([
+      waiting,
+    ]);
+    const running: RecoveryJob = {
+      ...waiting,
+      status: 'running',
+      stage: 'searching_flights',
+      calls_dispatched: 1,
+    };
+    expect(mergeRecoveryJobs([waiting], [running])).toEqual([running]);
+    expect(mergeRecoveryJobs([running], [waiting])).toEqual([running]);
+    const cancelled: RecoveryJob = { ...previous, status: 'cancelled', stage: 'finished' };
+    expect(mergeRecoveryJobs([cancelled], [previous])).toEqual([cancelled]);
+  });
+
+  it('identifies inherited blockers separately from the directly superseded attempts', () => {
+    const ancestor: RecoveryJob = {
+      ...job,
+      id: 'JOB-ANCESTOR',
+      status: 'unknown_outcome',
+      stage: 'finished',
+    };
+    const review: RecoveryJob = {
+      ...waiting,
+      status: 'needs_review',
+      stage: 'finished',
+      blocking_job_ids: [ancestor.id, 'JOB-MISSING'],
+    };
+    const html = renderToStaticMarkup(
+      <RecoveryJobDetails job={review} world={world} relatedJobs={[previous, ancestor, review]} />,
+    );
+    const blockers = html.split('aria-label="Attempts requiring review"')[1].split('</section>')[0];
+    const direct = html
+      .split('aria-label="Recovery attempt dependencies"')[1]
+      .split('</section>')[0];
+    expect(blockers).toContain('href="#recovery-job-JOB-ANCESTOR"');
+    expect(blockers).toContain('JOB-ANCESTOR · unknown outcome');
+    expect(blockers).toContain('JOB-MISSING · not in loaded case history');
+    expect(blockers).not.toContain('href="#recovery-job-JOB-MISSING"');
+    expect(blockers).not.toContain('href="#recovery-job-JOB-1"');
+    expect(direct).toContain('href="#recovery-job-JOB-1"');
+    expect(direct).not.toContain('JOB-ANCESTOR');
+    expect(html).toContain('0 provider calls dispatched');
+    expect(html).not.toContain('passengers proposed');
+  });
+
+  it('preserves inherited blockers on equal-time stale receipts and shows them without direct predecessors', () => {
+    const review: RecoveryJob = {
+      ...waiting,
+      status: 'needs_review',
+      stage: 'finished',
+      supersedes_job_ids: undefined,
+      blocking_job_ids: ['JOB-ANCESTOR', 'JOB-MISSING'],
+    };
+    for (const blocking_job_ids of [undefined, [], ['JOB-ANCESTOR']]) {
+      expect(mergeRecoveryJobs([review], [{ ...review, blocking_job_ids }])).toEqual([review]);
+    }
+    const html = renderToStaticMarkup(<RecoveryJobDetails job={review} world={world} />);
+    expect(html).toContain('aria-label="Attempts requiring review"');
+    expect(html).toContain('JOB-ANCESTOR · not in loaded case history');
+    expect(html).not.toContain('aria-label="Recovery attempt dependencies"');
+  });
+
+  it('uses literal safe fragment targets for recorded IDs', () => {
+    const odd = { ...previous, id: 'JOB/1?x=#quoted' };
+    const html = renderToStaticMarkup(
+      <RecoveryJobDetails
+        job={{ ...waiting, supersedes_job_ids: [odd.id] }}
+        world={world}
+        relatedJobs={[odd]}
+      />,
+    );
+    expect(recoveryJobAnchor(odd.id)).toBe('recovery-job-JOB%2F1%3Fx%3D%23quoted');
+    expect(html).toContain('href="#recovery-job-JOB%252F1%253Fx%253D%2523quoted"');
+    expect(renderToStaticMarkup(<RecoveryJobDetails job={odd} world={world} />)).toContain(
+      'id="recovery-job-JOB%2F1%3Fx%3D%23quoted"',
+    );
   });
 });
 

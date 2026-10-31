@@ -84,6 +84,29 @@ export function voiceCommandAcknowledgement(result: MutationResult): string {
   } else if (job) {
     if (!result.incident_id || result.incident_id !== job.incident_id) {
       parts.push('Nu pot confirma cazul căutării din acest răspuns; verifică panoul cazului.');
+    } else if (job.superseded_by_job_id) {
+      parts.push(
+        'Cererea din răspuns are o înlocuire consemnată; această legătură nu confirmă oprirea ei.',
+      );
+    } else if (
+      job.stage === 'waiting_for_previous' &&
+      (job.status === 'queued' || job.status === 'running')
+    ) {
+      if (job.status === 'queued' && job.calls_dispatched === 0) {
+        // This is the immutable receipt, including on an exact replay. Current
+        // dependency outcomes are fetched by the case panel, never inferred here.
+        parts.push(
+          'La înregistrare, cererea aștepta încheierea încercărilor anterioare; 0 apeluri proprii.',
+        );
+      } else {
+        parts.push('Starea așteptării este contradictorie; verifică panoul cazului.');
+      }
+    } else if (
+      job.status === 'needs_review' &&
+      (job.supersedes_job_ids?.length || job.blocking_job_ids?.length) &&
+      job.calls_dispatched === 0
+    ) {
+      parts.push('Starea consemnată cere revizuirea încercărilor anterioare; 0 apeluri proprii.');
     } else if (job.status === 'queued' || job.status === 'running') {
       parts.push(
         `Cererea de căutare a fost ${result.replayed ? 'deja ' : ''}înregistrată pentru ${groups(job.group_ids.length)}${report ? '' : `, cazul ${result.incident_id}`}.`,
