@@ -18,6 +18,7 @@ export interface LiveVoiceOptions {
 
 type Fragment = { text: string; start: number; end: number; receivedAt: number };
 type DelegationWindow = { start: number; end: number };
+type ConversationFragment = Fragment & { role: 'user' | 'assistant' };
 
 /** Context appends allow 500 tokens. A smaller UTF-8 byte budget is a
  * conservative bound without shipping a tokenizer or guessing chars/token.
@@ -55,6 +56,8 @@ export class LiveVoiceClient {
   private handshakeTimer?: ReturnType<typeof setTimeout>;
   private closeTimer?: ReturnType<typeof setTimeout>;
   private fragments: Fragment[] = [];
+  private conversation: ConversationFragment[] = [];
+  private retiredThrough = -1;
   private delegatedThrough = -1;
   private transcript = { user: '', assistant: '' };
   private seenDelegations = new Set<string>();
@@ -79,6 +82,8 @@ export class LiveVoiceClient {
     this.finalized = false;
     this.closing = false;
     this.fragments = [];
+    this.conversation = [];
+    this.retiredThrough = -1;
     this.delegatedThrough = -1;
     this.transcript = { user: '', assistant: '' };
     this.seenDelegations.clear();
@@ -282,19 +287,27 @@ export class LiveVoiceClient {
       this.transcript[role] = (this.transcript[role] + event.delta).slice(-6000);
       this.options.onTranscript(this.transcript[role], role);
       if (
-        role === 'user' &&
         Number.isFinite(event.start_ms) &&
         Number.isFinite(event.end_ms) &&
         event.start_ms >= 0 &&
         event.end_ms >= event.start_ms
       ) {
-        this.fragments.push({
+        // The interval is half-open: speech exactly at the retired boundary
+        // belongs to the next turn. Earlier late speech is neither a command
+        // nor newly admitted reference context.
+        if (role === 'user' && event.start_ms < this.retiredThrough) return;
+        const fragment = {
           text: event.delta,
           start: event.start_ms,
           end: event.end_ms,
           receivedAt: Date.now(),
-        });
-        this.fragments = this.fragments.slice(-200);
+        };
+        this.conversation.push({ ...fragment, role });
+        this.conversation = this.conversation.slice(-300);
+        if (role === 'user') {
+          this.fragments.push(fragment);
+          this.fragments = this.fragments.slice(-200);
+        }
       }
     } else if (
       event.type === 'session.delegation.created' &&
@@ -370,11 +383,21 @@ export class LiveVoiceClient {
       .map((part) => part.text)
       .join('')
       .trim();
-    const context = this.fragments
-      .filter((part) => part.end <= window.start)
-      .map((part) => part.text)
-      .join('')
+    const earlier: Array<{ role: 'user' | 'assistant'; text: string }> = [];
+    for (const part of this.conversation) {
+      if (part.start >= window.end || (part.role === 'user' && part.start >= window.start))
+        continue;
+      const last = earlier.at(-1);
+      if (last?.role === part.role) last.text += part.text;
+      else earlier.push({ role: part.role, text: part.text });
+    }
+    // Assistant speech can clarify a reference, but is not proof of execution.
+    // App separately adds authoritative backend request/result history.
+    const context = earlier
+      .map((part) => `${part.role}: ${part.text}`)
+      .join('\n')
       .slice(-2000);
+    this.retiredThrough = Math.max(this.retiredThrough, window.end);
     if (!text) {
       this.send({
         type: 'session.commentary.append',

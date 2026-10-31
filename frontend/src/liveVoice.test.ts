@@ -117,7 +117,9 @@ afterEach(() => {
 
 function clientWith(overrides: Partial<LiveVoiceOptions> = {}) {
   const states: Array<[VoiceState, string]> = [];
-  const onDelegation = vi.fn(async () => 'Nu am aplicat nicio modificare.');
+  const onDelegation = vi.fn<LiveVoiceOptions['onDelegation']>(
+    async () => 'Nu am aplicat nicio modificare.',
+  );
   const client = new LiveVoiceClient({
     onState: (state, message) => states.push([state, message]),
     onTranscript: vi.fn(),
@@ -155,6 +157,83 @@ function command(channel: FakeChannel, id = 'delegation-1') {
 }
 
 describe('GPT-Live lifecycle with mocked browser resources', () => {
+  it('delegates a complete free-form compound request once, never each transcript fragment', async () => {
+    const { client, channel, onDelegation } = await connected();
+    [
+      'Adaugă un autocar nou cu 52 de locuri. ',
+      'Pleacă din Craiova spre Sibiu la 18:00, ',
+      'iar B12 este defect.',
+    ].forEach((delta, index) => {
+      channel.emit({
+        type: 'session.input_transcript.delta',
+        event_id: `compound-${index}`,
+        delta,
+        start_ms: index * 500,
+        end_ms: (index + 1) * 500,
+      });
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onDelegation).not.toHaveBeenCalled();
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1600,
+      delegation: { id: 'compound', target: 'client' },
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Și bugetul să fie 9000 de euro.',
+      start_ms: 2000,
+      end_ms: 2400,
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledOnce();
+    expect(onDelegation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'Adaugă un autocar nou cu 52 de locuri. Pleacă din Craiova spre Sibiu la 18:00, iar B12 este defect.',
+        delegationId: 'live_test:compound',
+      }),
+    );
+    await end(client, channel);
+  });
+
+  it('passes prior dialogue as reference context while executing only the new clarification reply', async () => {
+    const { client, channel, onDelegation } = await connected();
+    command(channel);
+    await vi.advanceTimersByTimeAsync(250);
+    channel.emit({
+      type: 'session.output_transcript.delta',
+      delta: 'Te referi la B12 din Craiova?',
+      start_ms: 1100,
+      end_ms: 1500,
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Da, din Craiova.',
+      start_ms: 1600,
+      end_ms: 1900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'clarification', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
+    expect(onDelegation).toHaveBeenLastCalledWith({
+      text: 'Da, din Craiova.',
+      delegationId: 'live_test:clarification',
+      context: 'user: Arată autocarul B12.\nassistant: Te referi la B12 din Craiova?',
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2100,
+      delegation: { id: 'empty-followup', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
+    await end(client, channel);
+  });
+
   it('keeps recoverable command failures controllable and listening, then closes every local resource', async () => {
     const onAudioLevel = vi.fn();
     const { client, states, peer, channel } = await connected({
@@ -335,6 +414,35 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
     await end(client, channel);
   });
 
+  it('lets a compound request finish arriving before dispatching its accumulated text', async () => {
+    const { client, channel, onDelegation } = await connected();
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Adaugă un autocar nou ',
+      start_ms: 0,
+      end_ms: 400,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'settling-text', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'cu 52 de locuri spre Sibiu.',
+      start_ms: 400,
+      end_ms: 900,
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onDelegation).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ text: 'Adaugă un autocar nou cu 52 de locuri spre Sibiu.' }),
+    );
+    await end(client, channel);
+  });
+
   it('retires an expired turn so its late words never join a later complete command', async () => {
     const { client, channel, onDelegation } = await connected();
     channel.emit({
@@ -407,6 +515,40 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
       2,
       expect.objectContaining({ text: 'Arată aeroportul OTP.' }),
     );
+    await end(client, channel);
+  });
+
+  it('keeps speech on the exact next-window boundary and excludes retired late words from reference context', async () => {
+    const { client, channel, onDelegation } = await connected();
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'expired-boundary', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(2100);
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Anulează zborul F101.',
+      start_ms: 0,
+      end_ms: 900,
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Arată autocarul B12.',
+      start_ms: 1000,
+      end_ms: 1900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'next-boundary', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledExactlyOnceWith({
+      text: 'Arată autocarul B12.',
+      delegationId: 'live_test:next-boundary',
+      context: '',
+    });
     await end(client, channel);
   });
 

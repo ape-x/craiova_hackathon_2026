@@ -1,0 +1,83 @@
+{
+  "verified_at": "2026-10-31T15:06:19.193254+00:00",
+  "environment": "isolated loopback preview with temporary SQLite, synthetic seed world; production world unchanged",
+  "provider_calls": "real OpenAI Responses Ultrafast and Decisions; browser text command uses same backend as voice delegation",
+  "microphone_tested": false,
+  "first_request": {
+    "text": "Creează un scenariu nou cu 12 pasageri la Craiova care trebuie să ajungă la Lisabona.",
+    "result": "asked deadline and per-passenger budget; applied false, world remained version 1"
+  },
+  "followup": {
+    "result": "created LIS, a 36-seat charter and four groups of three; held complete feasible journeys",
+    "version": 2,
+    "airport": {
+      "id": "LIS",
+      "code": "LIS",
+      "name": "Lisbon Humberto Delgado Airport",
+      "lat": 38.7813,
+      "lon": -9.13592,
+      "available": true,
+      "diversion_eligible": true
+    },
+    "resources": [
+      {
+        "id": "CHARTER-LIS",
+        "source": "synthetic",
+        "capacity": 36,
+        "departure": 800,
+        "arrival": 1000,
+        "cost_per_person": 120.0
+      }
+    ],
+    "groups": 4,
+    "passengers": 12,
+    "group_sizes": [
+      3,
+      3,
+      3,
+      3
+    ],
+    "timings_ms": {
+      "interpretation_ms": 3578.0,
+      "solver_ms": 19.58,
+      "decisions_ms": 551.81,
+      "apply_ms": 1.0,
+      "transaction_ms": 6.39,
+      "server_total_ms": 4162.96
+    },
+    "candidate_counts": {
+      "computed": 1,
+      "validated": 1,
+      "shortlisted": 1,
+      "submitted": 1
+    },
+    "provider": "OpenAI Decisions / gpt-6-luna",
+    "recovered_passengers": 132,
+    "single_plan_approval": true
+  },
+  "initial_failure_fixed": "A single-choice Decisions request received HTTP400; single-plan review now uses genuine approve/reject boolean choices.",
+  "subsequent_change": {
+    "text": "Întârzie charterul spre Lisabona cu 90 de minute și redu capacitatea lui la 9 locuri. Recalculează, fără să separi familiile.",
+    "version": 3,
+    "departure": 890,
+    "arrival": 1090,
+    "capacity": 9,
+    "whole_families_offered": 3,
+    "families_without_solution": 1,
+    "new_passengers_without_solution": 3,
+    "timings_ms": {
+      "interpretation_ms": 2171.59,
+      "solver_ms": 15.07,
+      "decisions_ms": 465.84,
+      "apply_ms": 1.08,
+      "transaction_ms": 7.08,
+      "server_total_ms": 2693.81
+    },
+    "candidate_counts": {
+      "computed": 1,
+      "validated": 1,
+      "shortlisted": 1,
+      "submitted": 1
+    }
+  }
+}

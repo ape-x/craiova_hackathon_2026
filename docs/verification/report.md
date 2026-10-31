@@ -2,6 +2,10 @@
 
 This report separates executed tests, bounded real-provider checks and remaining acceptance gates. The application is a synthetic operations simulator. Real Sol Ultrafast interpretation, Decisions selection, GPT-Live transport/closure with synthetic silence and Google geographic rendering have passed. User microphone/delegation, observed traffic, surveyed terminal geometry and photographic fidelity remain open.
 
+## Integrated release verification — 2026-10-31
+
+The combined scenario-authoring and passenger/scene release passed **279 tests: 189 backend and 90 frontend**, strict TypeScript, the production build and full frontend formatting. Merge review preserved current-command isolation, role-tagged conversational context and separate reserved/retired transcript windows. An additional exact-boundary regression checks that the next utterance can start at the previous window boundary while retired late fragments cannot enter reference context. The bounded real-provider and browser checks below apply to their stated flows; no new microphone test is inferred from this merge.
+
 ## Passenger decisions, voice ordering and scene materials — 2026-10-31
 
 An isolated checkout passed **181 tests: 114 backend and 67 frontend**, strict TypeScript, the production Vite build and frontend formatting. The isolation keeps this verified change separate from concurrent scenario-authoring work. No live operator world or microphone session was reset or modified.
@@ -19,6 +23,20 @@ The native scene now has restrained apron wear, darker concrete, recessed warm i
 The built frontend was also served by a separate test API with the configured browser Maps key. Chrome loaded 96 model elements on Google terrain; the regenerated terminal, glazing, buses and family figures rendered at close range without a map warning. `google-materials-qa.jpg` records that check with attribution. OpenAI and FR24 were disabled, and the test API used its own SQLite file.
 
 **Implementation gap:** the scenario clock is fixed. Journey advancement, rescue after a simulated departure and recovery from a completed transfer are not implemented. Advancing fixture time reveals origin/continuity problems; this is pending implementation, not a missing-credentials issue. Real spoken delegation, FR24 access, surveyed geography and event-display fidelity remain separate acceptance gates.
+
+## Free-form scenario authoring — 2026-10-31
+
+The release supports new airports, synthetic flights/buses/hotels and passenger batches, plus composable schedule, route, capacity, cost and group constraints. The voice/text pipeline carries current input separately from bounded prior requests and verified outcomes; clarification replies persist in the UI. Failed or uncertain requests are retained as explicitly unconfirmed context, not executed outcomes. Timestamped voice delegation tests cover delayed fragments, whole compound requests, duplicate events and stale turn isolation.
+
+**179 backend tests and 89 frontend tests passed on an isolated snapshot of the exact staged release**, excluding concurrent unrelated work. TypeScript, production build and changed-file formatting passed. Checks include atomic rollback, server-generated groups/tokens, catalog aliases, temporal continuity, confirmed reservation protection, bounded authoring, multi-airport candidate shortlisting, typed single-plan approval and input-size limits. Public catalog data inclusion was checked in both wheel and Docker builds.
+
+A real browser → Responses Ultrafast → solver → Decisions → temporary SQLite run created LIS, a 36-seat charter and four indivisible three-person families after a separate clarification turn. Server time was **4,162.96 ms** (Responses 3,578 ms; solver 19.58 ms; Decisions 551.81 ms). A subsequent free-form request delayed the flight 90 minutes and reduced capacity to nine: **2,693.81 ms** total, with three intact families offered transport and one family explicitly without a solution. These are individual observed samples, not latency guarantees. The operational Docker database was not changed by these tests. [Sanitized evidence](freeform-live-check.json).
+
+This test exposed an actual Decisions HTTP400 for a single choice. The adapter now asks the model to approve or reject the sole validated plan using two typed boolean choices; only literal true applies it. Multiple plans use dynamic plan IDs. Ranking input contains compact authoritative metrics, with hard API input limits checked before transmission. The full validated itineraries remain server-side. [Official Decisions contract](https://developers.openai.com/api/reference/resources/decisions/methods/create).
+
+The regional scene now fits newly authored destinations and shows all known airport/flight endpoints. A longitude-wrap regression was corrected and real LIS/LTN/CRA ordering tested; long flight routes remain visible above the schematic ground. The expanded view is explicitly labelled schematic. `freeform-network-live.jpg` shows the actual rendered Lisbon scenario after the capacity reduction.
+
+These checks exercised real AI through text commands and tested voice transport/delegation boundaries with fixtures. **They do not claim a new live microphone/audio end-to-end test.** Weather physics, crew, fuel and ATC models remain outside the supported operations; unsupported effects require explicit clarification instead of silently choosing a preset.
 
 ## Geographic 3D object correction — 2026-10-31
 

@@ -95,11 +95,13 @@ async def test_refusal_and_incomplete_do_not_become_ai_success(world):
 @pytest.mark.asyncio
 async def test_decisions_selects_only_dynamic_validated_id(world):
     candidates = [{"id": "plan-live-42", "strategy": {"objective": "fastest"}, "validation": {"valid": True}, "recovered_passengers": 19, "total_cost": 534.5, "average_arrival": 940, "exceptions": [{"group_id": "G002"}]}]
+    candidates.append({**candidates[0], "id": "plan-live-alternative", "average_arrival": 960})
     def handler(request):
         body = json.loads(request.content)
         assert request.url.path == "/v1/decisions"
         assert body["model"] == "gpt-6-luna"
         assert body["questions"][0]["choices"][0]["value"] == "plan-live-42"
+        assert len(body["questions"][0]["choices"]) == 2
         assert body["input"][0]["content"][0]["type"] == "input_json"
         assert "private-passenger-access-token" not in request.content.decode()
         return httpx.Response(200, json={"answers": [{"type": "choice", "name": "recovery_plan", "choice": "plan-live-42", "confidence": 0.8}]})
@@ -124,7 +126,93 @@ async def test_decisions_refusal_or_unknown_choice_is_error(world):
     for answer in [{"type": "refusal", "name": "recovery_plan"}, {"type": "choice", "name": "recovery_plan", "choice": "made-up"}]:
         async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"answers": [answer]}))) as client:
             with pytest.raises(ProviderError, match="no valid candidate"):
-                await AIProvider(settings(), client=client).choose(world, [{"id": "valid", "validation": {"valid": True}}], "choose")
+                await AIProvider(settings(), client=client).choose(world, [{"id": "valid", "validation": {"valid": True}}, {"id": "other-valid", "validation": {"valid": True}}], "choose")
+
+
+@pytest.mark.asyncio
+async def test_decisions_approves_single_plan_with_real_boolean_choices(world):
+    candidate = {"id": "only-valid-plan", "validation": {"valid": True}, "recovered_passengers": 4, "total_cost": 40, "exceptions": []}
+    def handler(request):
+        body = json.loads(request.content)
+        question = body["questions"][0]
+        assert question["name"] == "approve_recovery_plan"
+        assert question["type"] == "choice"
+        assert [option["value"] for option in question["choices"]] == [True, False]
+        assert all(type(option["value"]) is bool for option in question["choices"])
+        assert body["input"][0]["content"][0]["data"]["candidate_count"] == 1
+        return httpx.Response(200, json={"answers": [{"type": "choice", "name": "approve_recovery_plan", "choice": True}]})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await AIProvider(settings(), client=client).choose(world, [candidate], "Apply this scenario")
+    assert result["plan_id"] == "only-valid-plan"
+    assert "a aprobat singurul plan validat" in result["explanation"]
+    assert "4 pasageri" in result["explanation"]
+
+
+@pytest.mark.parametrize("answer", [
+    {"type": "choice", "name": "approve_recovery_plan", "choice": False},
+    {"type": "choice", "name": "approve_recovery_plan", "choice": "true"},
+    {"type": "choice", "name": "approve_recovery_plan", "choice": 1},
+    {"type": "choice", "name": "approve_recovery_plan", "choice": "only-valid-plan"},
+    {"type": "predicate", "name": "approve_recovery_plan", "probability": 1.0},
+    {"type": "refusal", "name": "approve_recovery_plan"},
+    {},
+])
+@pytest.mark.asyncio
+async def test_decisions_single_plan_requires_explicit_typed_approval(world, answer):
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"answers": [answer]}))) as client:
+        with pytest.raises(ProviderError, match="did not approve") as failure:
+            await AIProvider(settings(), client=client).choose(world, [{"id": "only-valid-plan", "validation": {"valid": True}}], "choose")
+    assert failure.value.code == "not_approved"
+
+
+@pytest.mark.asyncio
+async def test_decisions_compacts_large_world_without_losing_ranking_evidence(world):
+    large = copy.deepcopy(world)
+    large["groups"] = [{"id": f"G{i}", "name": "private passenger name", "token": "private token", "members": ["private member"], "size": 4, "origin": "CRA", "destination": "OTP", "deadline": 2000, "ready_at": 600, "accessible": i % 2 == 0, "budget": 400, "priority": i % 10 + 1, "status": "waiting"} for i in range(250)]
+    large["resources"] = [{"id": f"B{i}", "name": "private resource name", "kind": "bus", "origin": "CRA", "destination": "OTP", "departure": 800, "arrival": 1000, "capacity": 100, "accessible": True, "available": True, "cost_per_person": 10} for i in range(150)]
+    large["offers"] = [{"group_id": "G0", "status": "held", "itinerary": {"legs": [{"resource_id": "B149"}]}}, {"group_id": "G1", "status": "confirmed"}]
+    large["observations"] = [{"private": "raw external observation"}]
+    allocations = [{"group_id": f"G{i}", "itinerary": {"arrival": 1000, "total_cost": 40, "legs": [{"resource_id": f"B{i % 150}", "kind": "bus", "origin": "CRA", "destination": "OTP", "departure": 800, "arrival": 1000, "cost": 40}]}} for i in range(250)]
+    candidates = [{"id": f"plan-{i}", "strategy": {"objective": "balanced", "preferred_airport": None}, "validation": {"valid": True, "total_committed_cost": 10000}, "recovered_passengers": 1000, "total_cost": 10000, "average_arrival": 1000, "allocations": allocations, "exceptions": []} for i in range(8)]
+    def nodes(value):
+        children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
+        return 1 + sum(nodes(child) for child in children)
+    def handler(request):
+        body = json.loads(request.content)
+        evidence = body["input"][0]["content"][0]["data"]
+        encoded = json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
+        assert nodes(evidence) <= 10000
+        assert len(encoded.encode()) <= 256 * 1024
+        assert "private" not in encoded and "raw external observation" not in encoded
+        assert evidence["request"]["text"] == "Prioritize accessible passengers"
+        assert evidence["request"]["interpretation"]["explanation"] == "Keep the provided passenger constraints."
+        assert len(evidence["world"]["groups"]) == 250
+        summary = evidence["validated_candidates"][0]
+        assert len(summary["recovered_group_ids"]) == 250
+        assert summary["accessible_passengers_recovered"] == 500
+        assert summary["recovery_by_priority"]["1"] == {"passengers": 100, "average_arrival": 1000}
+        assert summary["changed_held_routes"] == 1 and summary["confirmed_groups_replanned"] == 1
+        assert "allocations" not in summary and len(summary["resource_ids"]) == 150
+        assert summary["validation"]["total_committed_cost"] == 10000
+        return httpx.Response(200, json={"answers": [{"type": "choice", "name": "recovery_plan", "choice": "plan-0"}]})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await AIProvider(settings(), client=client).choose(large, candidates, {"text": "Prioritize accessible passengers", "interpretation": {"explanation": "Keep the provided passenger constraints.", "events": [{"value": "private event name"}]}})
+    assert result["plan_id"] == "plan-0"
+    assert len(candidates[0]["allocations"]) == 250
+
+
+@pytest.mark.parametrize("oversized", ["bytes", "values"])
+@pytest.mark.asyncio
+async def test_decisions_rejects_oversized_evidence_before_network(world, oversized):
+    request = "x" * (256 * 1024 + 1) if oversized == "bytes" else "choose"
+    if oversized == "values":
+        world["groups"] = [{"id": f"G{i}", "size": 1} for i in range(4000)]
+    def forbidden(_):
+        pytest.fail("oversized decision evidence must never reach the provider")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(forbidden)) as client:
+        with pytest.raises(ProviderError, match="input size") as failure:
+            await AIProvider(settings(), client=client).choose(world, [{"id": "valid", "validation": {"valid": True}}], request)
+    assert failure.value.code == "input_too_large"
 
 
 @pytest.mark.asyncio

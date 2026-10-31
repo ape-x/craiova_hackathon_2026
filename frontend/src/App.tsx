@@ -34,6 +34,15 @@ import Timeline from './Timeline';
 import ScenarioDialog from './ScenarioDialog';
 import { Brand, Dot, Modal, Tag } from './ui';
 import { LiveVoiceClient } from './liveVoice';
+import {
+  commandContext,
+  commandNeedsRegionalView,
+  keepCommandReplyVisible,
+  rememberCommand,
+  rememberFailedCommand,
+  verifiedCommandResult,
+} from './commandContext';
+import type { CommandExchange } from './commandContext';
 const Scene = lazy(() => import('./scene/Scene'));
 const GoogleMaps3D = lazy(() => import('./maps/GoogleMaps3D'));
 const Passenger = lazy(() => import('./Passenger'));
@@ -130,16 +139,22 @@ function Operations() {
   const [notice, setNotice] = useState<{
     text: string;
     error?: boolean;
+    persistent?: boolean;
     retry?: () => Promise<unknown>;
   } | null>(null);
   const [command, setCommand] = useState('');
   const [lastCommand, setLastCommand] = useState('');
+  const [lastReply, setLastReply] = useState('');
   const [voiceState, setVoiceState] = useState<string>('idle');
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(false);
   const waveform = useRef<HTMLDivElement>(null);
   const voice = useRef<LiveVoiceClient | null>(null);
+  const commandHistory = useRef<{ scenarioId: string; exchanges: CommandExchange[] }>({
+    scenarioId: '',
+    exchanges: [],
+  });
   const commandInput = useRef<HTMLInputElement>(null);
   const [mobilePanel, setMobilePanel] = useState<'map' | 'resources' | 'inspector'>('map');
   const [plannerMode, setPlannerMode] = useState<'ai' | 'solver' | null>(null);
@@ -174,6 +189,7 @@ function Operations() {
       try {
         const result = applyResult(await action());
         setNotice({
+          persistent: keepCommandReplyVisible(result),
           text:
             result.applied === false
               ? (result.explanation ?? 'No operational change applied.')
@@ -214,28 +230,50 @@ function Operations() {
     }
   }, [chosenMode, execute, worldRef]);
   const submitCommand = useCallback(
-    async (text: string, delegationId?: string) => {
+    async (text: string, delegationId?: string, voiceContext = '') => {
       if (!text.trim() || !worldRef.current) return null;
       setLastCommand(text);
       setCommand('');
-      const interpretedText = selectedRef.current
-        ? `Context UI (nu este o comandă): entitatea selectată este ${selectedRef.current}. Cererea curentă a utilizatorului: ${text}`
-        : text;
-      const result = await execute('Interpreting request and evaluating plans', () =>
-        delegationId
-          ? request<MutationResult>('/commands', {
-              text: interpretedText,
-              expected_version: worldRef.current!.version,
-              idempotency_key: `voice-${delegationId}`.slice(0, 120),
-            })
-          : api.command(worldRef.current!, interpretedText),
+      const previousWorld = worldRef.current;
+      const scenarioId = previousWorld.scenario_id;
+      if (commandHistory.current.scenarioId !== scenarioId)
+        commandHistory.current = { scenarioId, exchanges: [] };
+      const context = commandContext(
+        commandHistory.current.exchanges,
+        selectedRef.current,
+        voiceContext,
       );
-      if (
-        result.world.events
-          .slice(-4)
-          .some((event) => ['airport_closed', 'flight_diverted'].includes(event.type))
-      )
-        setMode('region');
+      let result: MutationResult;
+      try {
+        result = await execute('Interpreting request and evaluating plans', () =>
+          delegationId
+            ? request<MutationResult>('/commands', {
+                text,
+                context,
+                expected_version: previousWorld.version,
+                idempotency_key: `voice-${delegationId}`.slice(0, 120),
+              })
+            : api.command(previousWorld, text, context),
+        );
+      } catch (cause) {
+        if (worldRef.current?.scenario_id === scenarioId)
+          commandHistory.current.exchanges = rememberFailedCommand(
+            commandHistory.current.exchanges,
+            text,
+            cause,
+          );
+        // execute owns the existing error notice and exact-payload retry.
+        throw cause;
+      }
+      if (worldRef.current?.scenario_id === scenarioId) {
+        setLastReply(verifiedCommandResult(result));
+        commandHistory.current.exchanges = rememberCommand(
+          commandHistory.current.exchanges,
+          text,
+          verifiedCommandResult(result),
+        );
+      }
+      if (commandNeedsRegionalView(previousWorld, result)) setMode('region');
       return result;
     },
     [execute, worldRef],
@@ -262,17 +300,22 @@ function Operations() {
       onState: (state, message) => {
         setVoiceState(state);
         if (state === 'idle' || state === 'error') voice.current = null;
-        if (message) setNotice({ text: message, error: state === 'error' });
+        if (message)
+          setNotice((previous) =>
+            previous?.persistent && state !== 'error'
+              ? previous
+              : { text: message, error: state === 'error' },
+          );
       },
       onTranscript: (text, role) => {
         if (role === 'user') setVoiceTranscript(text);
       },
       onAudioLevel: (level) => waveform.current?.style.setProperty('--audio-level', String(level)),
       onPlaybackBlocked: () => setAudioBlocked(true),
-      onDelegation: async ({ text, delegationId }) => {
-        const result = await submitCommand(text, delegationId);
+      onDelegation: async ({ text, delegationId, context }) => {
+        const result = await submitCommand(text, delegationId, context);
         if (!result) return 'Nu am aplicat nicio modificare.';
-        return `Simularea este la versiunea ${result.world.version}. ${result.explanation ?? result.decision?.explanation ?? 'Condițiile au fost actualizate.'}`;
+        return verifiedCommandResult(result);
       },
     });
     voice.current = client;
@@ -320,10 +363,11 @@ function Operations() {
     return () => window.removeEventListener('keydown', keydown);
   }, [modal]);
   useEffect(() => {
-    if (!notice || notice.error) return;
+    if (!notice || notice.error || notice.persistent) return;
     const timer = setTimeout(() => setNotice(null), 6000);
     return () => clearTimeout(timer);
   }, [notice]);
+  useEffect(() => setLastReply(''), [world?.scenario_id]);
   if (authRequired) return <Login onSuccess={reconnect} />;
   if (!world)
     return error ? (
@@ -549,9 +593,13 @@ function Operations() {
                 : 'CUSTOM 3D MODEL · SYNTHETIC OPERATIONS'}
             </div>
             <div className="map-action">
-              <button className="secondary-button" onClick={showScenario}>
+              <button
+                className="secondary-button"
+                onClick={showScenario}
+                title="Exemple de condiții. Descrie un scenariu propriu prin voce sau text."
+              >
                 <SlidersHorizontal size={14} />
-                Introduce incident
+                Exemple rapide
               </button>
               <button
                 className="primary-button"
@@ -623,27 +671,36 @@ function Operations() {
           </label>
           <input
             id="scenario-command"
+            aria-describedby={lastReply ? 'command-reply' : undefined}
             ref={commandInput}
             placeholder={
               isVoiceActive
-                ? 'Ascult. Schimbă condițiile prin voce…'
-                : 'Descrie un incident. Schimbă orice condiție.'
+                ? 'Ascult. Descrie scenariul prin voce…'
+                : 'Descrie un scenariu, resursele și condițiile…'
             }
             value={command}
             onChange={(event) => setCommand(event.target.value)}
             maxLength={4000}
             disabled={busy}
           />
-          <span className="command-subtitle">
+          <output
+            id="command-reply"
+            className="command-subtitle"
+            aria-live={lastReply && !busy ? 'polite' : 'off'}
+            aria-atomic="true"
+            title={lastReply || undefined}
+          >
             {busy
               ? operation
-              : isVoiceActive
-                ? voiceTranscript || 'OpenAI voice session active'
-                : lastCommand ||
-                  (config.ai_configured
-                    ? 'Voice + Decisions + Ultrafast · live reasoning, validated actions'
-                    : 'Text & voice need OpenAI access. Scenario controls and solver are available.')}
-          </span>
+              : lastReply
+                ? `Ultimul răspuns verificat: ${lastReply}`
+                : isVoiceActive
+                  ? voiceTranscript || 'OpenAI voice session active'
+                  : lastCommand ||
+                    (config.ai_configured
+                      ? 'Voice + Decisions + Ultrafast · live reasoning, validated actions'
+                      : 'Text & voice need OpenAI access. Scenario controls and solver are available.')}
+          </output>
           <button
             className="send-command"
             type="submit"
