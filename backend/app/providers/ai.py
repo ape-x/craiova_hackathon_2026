@@ -96,10 +96,15 @@ times; a timetable is a simulation assumption, never a live schedule.
 For updates to existing inventory, preserve unspecified values. If a requested
 update needs an unknown entity or truly ambiguous essential value, ask once.
 For a newly created diversion demo with no specified alternate, add at least two
-nearby catalog airports as options and plausible onward bus/flight capacity to
+nearby catalog airports as options, DISTINCT from the airborne departure airport,
+and plausible onward bus/flight capacity to
 the passengers' final destination, then let the solver and Decisions choose.
 nearby_airport_options are reference geography only; they do not certify actual
 landing eligibility, aircraft performance, weather, availability or live routes.
+This simulator does not divert an aircraft back to its departure airport. When
+choosing a demonstration origin, use a separate catalog airport so that at least
+two alternate landing airports remain eligible after excluding the disrupted
+destination and the departure airport. Never count the departure as an alternate.
 Do not ask the user to select a diversion airport when the request leaves that
 choice to the agent. Do not directly emit flight_diverted in that case: emit the
 disruption and leave strategies empty so all eligible airports are compared.
