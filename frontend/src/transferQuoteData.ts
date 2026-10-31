@@ -54,6 +54,7 @@ export interface TransferQuoteResult {
   received_at: string;
   source_quoted_at: string | null;
   expires_at: string | null;
+  meeting_point?: { name: string | null; instructions: string | null } | null;
   fx?: TransferFx;
   request: TransferQuoteRequest & {
     transfer_date: string;

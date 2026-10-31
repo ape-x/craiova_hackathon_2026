@@ -4,7 +4,7 @@ import { isAirportNode } from '../locationNodes';
 import { parkedPoint, passengerPoint, resourcePoint, sceneHeading, scenePoint } from './placement';
 export { resourcePoint } from './placement';
 import type { Camera, GeoPoint } from './contracts';
-import { groundCamera, groundPath } from './groundPaths';
+import { groundCamera, groundPath, reportedAirportDropoff } from './groundPaths';
 import { transferReview } from '../resourceLabels';
 
 export const COLORS = {
@@ -17,6 +17,7 @@ export const COLORS = {
 };
 export interface GeoMarker {
   id: string;
+  selectionId?: string;
   label: string;
   title: string;
   point: GeoPoint;
@@ -271,13 +272,15 @@ export function buildOverlays(
       const road = item.id === inspected?.id ? inspectedPath : groundPath(item, liveWorld);
       if (!road) continue;
       const selected = item.id === selectedId || allocated.has(item.id);
+      const dropoff = reportedAirportDropoff(item, liveWorld);
       const review = transferReview(liveWorld, item, now);
       const identity = `${item.origin}:${item.destination}:${item.departure}:${road.geometry}`;
       if (drawnGround.has(identity) && !selected) continue;
       drawnGround.add(identity);
       if (selected)
         for (const marker of markers) {
-          if (marker.id === item.origin || marker.id === item.destination) marker.selected = true;
+          if (marker.id === item.origin || (marker.id === item.destination && !dropoff))
+            marker.selected = true;
         }
       routes.push({
         id: item.id,
@@ -287,6 +290,18 @@ export function buildOverlays(
         observed: false,
         selected,
       });
+      if (selected && dropoff)
+        markers.push({
+          id: `${item.id}-dropoff`,
+          selectionId: item.id,
+          label: `${dropoff.label} · REPORTED DROP-OFF`,
+          title:
+            'Operator-declared airport drop-off. Departure terminal unknown; this is not a vehicle position or verified terminal connection.',
+          point: dropoff.point,
+          color: COLORS.muted,
+          observed: false,
+          selected: true,
+        });
       if (selected || road.geometry === 'connection_only')
         markers.push({
           id: item.id,

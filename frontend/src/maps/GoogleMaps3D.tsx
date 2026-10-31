@@ -267,7 +267,7 @@ export default function GoogleMaps3D({
           );
           element.addEventListener('gmp-click', (event) => {
             event.stopPropagation();
-            current.current.onSelect(marker.id);
+            current.current.onSelect(marker.selectionId ?? marker.id);
           });
           stage = 'attach marker';
           runtime.map.append(element);

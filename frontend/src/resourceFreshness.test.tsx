@@ -8,7 +8,7 @@ import {
   resourceFreshness,
   startFreshnessClock,
 } from './resourceFreshness';
-import type { Offer, Resource, World } from './types';
+import type { AirportArrivalAssumption, Offer, Resource, World } from './types';
 
 const quotedAt = Date.parse('2026-10-31T20:00:00Z');
 const resource: Resource = {
@@ -86,6 +86,111 @@ afterEach(() => {
 });
 
 describe('live resource freshness and presentation', () => {
+  const returnTransfer: Resource = {
+    ...resource,
+    kind: 'bus',
+    transport_mode: 'private_transfer',
+    source: 'Airport Pickups London',
+    capacity_scope: 'private_vehicle_quote',
+    quote_freshness: {
+      basis: 'app_receipt',
+      received_at: '2026-10-31T20:00:00Z',
+      max_age_seconds: 120,
+    },
+    airport_arrival_assumption: {
+      source: 'operator_declared',
+      confirmed: true,
+      group_id: 'G1',
+      group_fingerprint: 'a'.repeat(64),
+      scenario_id: 'freshness-fixture',
+      epoch: '2026-10-31T00:00:00+02:00',
+      airport_id: 'LHR',
+      onward_resource_id: 'ONWARD-1',
+      onward_flight_fingerprint: 'b'.repeat(64),
+      onward_departure_at: '2026-11-02T18:00:00Z',
+      dropoff: { label: 'Reported drop-off', coordinates: { latitude: 51.47, longitude: -0.48 } },
+      processing_minutes: 120,
+      departure_terminal: null,
+    } satisfies AirportArrivalAssumption,
+    provenance: { google_route: { source: 'Google Routes', fetched_at: '2026-10-31T19:59:30Z' } },
+  };
+
+  it('limits return planning by the earlier of the distinct APL and Google receipt windows', () => {
+    const boundary = quotedAt + 90_000;
+    expect(resourceFreshness(returnTransfer, boundary)).toMatchObject({
+      state: 'current',
+      basis: 'app_receipt',
+      receivedAt: quotedAt,
+      routeReceivedAt: quotedAt - 30_000,
+      cutoff: boundary,
+    });
+    expect(resourceFreshness(returnTransfer, boundary + 1)).toMatchObject({
+      state: 'stale',
+      label: 'Quote stale',
+      cutoff: boundary,
+    });
+    expect(resourceFreshness(returnTransfer, boundary).detail).toContain('earlier cutoff');
+    const laterRoute = {
+      ...returnTransfer,
+      provenance: { google_route: { source: 'Google Routes', fetched_at: '2026-10-31T20:00:30Z' } },
+    };
+    expect(resourceFreshness(laterRoute, quotedAt + 120_000)).toMatchObject({
+      state: 'current',
+      cutoff: quotedAt + 120_000,
+      routeReceivedAt: quotedAt + 30_000,
+    });
+    expect(resourceFreshness(laterRoute, quotedAt + 120_001).state).toBe('stale');
+    const outbound = { ...returnTransfer, airport_arrival_assumption: null };
+    expect(resourceFreshness(outbound, boundary + 1)).toMatchObject({
+      state: 'current',
+      cutoff: quotedAt + 120_000,
+      routeReceivedAt: null,
+    });
+  });
+
+  it('does not show return freshness when the road receipt is missing, malformed or future-dated', () => {
+    for (const fetched_at of [
+      undefined,
+      'not-a-date',
+      '2026-10-31T20:00:00',
+      '2026-02-30T20:00:00Z',
+      '2026-10-31T20:00:00.001Z',
+    ]) {
+      const item = {
+        ...returnTransfer,
+        provenance: { google_route: { source: 'Google Routes', fetched_at } },
+      };
+      expect(resourceFreshness(item, quotedAt)).toMatchObject({ state: 'unknown', cutoff: null });
+      expect(resourceFreshness(item, quotedAt).detail).toContain('Google Routes receipt time');
+      expect(
+        liveResourceStatus(item, resourceFreshness(item, quotedAt), false).planningCurrent,
+      ).toBe(false);
+    }
+    for (const google_route of [null, [], 'invalid'])
+      expect(
+        resourceFreshness({ ...returnTransfer, provenance: { google_route } }, quotedAt).state,
+      ).toBe('unknown');
+  });
+
+  it('shows both UTC receipts and their earlier cutoff without cancelling a recorded booking', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(quotedAt + 90_001);
+    const item = { ...returnTransfer, booking_status: 'confirmed' };
+    const freshness = resourceFreshness(item, Date.now());
+    expect(
+      liveResourceStatus(item, freshness, recordedBooking(operation(item), item)),
+    ).toMatchObject({ label: 'Booking recorded', planningCurrent: false });
+    const html = inspector(operation(item));
+    expect(html).toContain('Road prediction received');
+    expect(html).toContain('19:59:30 UTC');
+    expect(html).toContain('APL response received by app');
+    expect(html).toContain('20:00:00 UTC');
+    expect(html).toContain('Return planning freshness through');
+    expect(html).toContain('20:01:30 UTC');
+    expect(html).toContain('Quote stale');
+    expect(html).toContain('Booking recorded');
+    expect(html).toContain('earlier cutoff');
+  });
   it('uses a distinct app-receipt window without inventing a source quote timestamp', () => {
     const item: Resource = {
       ...resource,

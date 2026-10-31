@@ -29,6 +29,8 @@ import { passengerSourceLabel } from './liveData';
 import { isAirportNode, locationKindLabel } from './locationNodes';
 import { flightSegments, waitingTime } from './journeyPresentation';
 import { locationName, resourceTitle } from './resourceLabels';
+import { airportArrivalEvidence, resourceMeetingEvidence } from './airportArrival';
+import { AirportArrivalDetails, SupplierMeetingInstructions } from './TransferEvidence';
 import {
   costPresentation,
   EstimatedCostNote,
@@ -50,12 +52,15 @@ export function ItineraryView({
   world,
 }: {
   offer: Offer;
-  world?: Pick<World, 'mode' | 'epoch'> & Partial<Pick<World, 'resources'>>;
+  world?: Pick<World, 'mode' | 'epoch'> & Partial<Pick<World, 'resources' | 'airports'>>;
 }) {
   return (
     <div className="itinerary">
       {offer.itinerary.legs.map((leg, index) => {
         const transfer = privateTransfer(leg);
+        const resource = world?.resources?.find((item) => item.id === leg.resource_id);
+        const names = { airports: world?.airports ?? [] };
+        const epoch = sourceInstant(world?.epoch);
         const Icon = transfer
           ? CarFront
           : leg.kind === 'bus'
@@ -63,14 +68,7 @@ export function ItineraryView({
             : leg.kind === 'hotel'
               ? BedDouble
               : Plane;
-        const segments =
-          world?.mode === 'live'
-            ? flightSegments(
-                world.resources?.find((resource) => resource.id === leg.resource_id),
-                world.epoch,
-                leg,
-              )
-            : [];
+        const segments = world?.mode === 'live' ? flightSegments(resource, world.epoch, leg) : [];
         if (segments.length)
           return (
             <div className="sourced-flight-journey" key={`${leg.resource_id}-${index}`}>
@@ -121,7 +119,9 @@ export function ItineraryView({
               <strong>
                 {leg.kind === 'hotel'
                   ? `Overnight · ${leg.origin}`
-                  : `${leg.origin} → ${leg.destination}`}
+                  : transfer
+                    ? `${locationName(names, leg.origin)} → ${locationName(names, leg.destination)}`
+                    : `${leg.origin} → ${leg.destination}`}
               </strong>
               {transfer && <span>Private transfer</span>}
               {leg.initial_position_assumption?.source === 'operator_declared' && (
@@ -130,12 +130,30 @@ export function ItineraryView({
                   operations; no connection from an arriving flight is verified.
                 </span>
               )}
+              <AirportArrivalDetails assumption={leg.airport_arrival_assumption} />
+              {transfer && (
+                <SupplierMeetingInstructions
+                  value={resourceMeetingEvidence(resource?.provenance)}
+                />
+              )}
               <span>
-                {leg.resource_id} <b>·</b>{' '}
-                {world ? formatWorldTime(world, leg.departure) : formatTime(leg.departure)}–
-                {world ? formatWorldTime(world, leg.arrival) : formatTime(leg.arrival)}
-                {world?.mode === 'live' ? ' · Europe/Bucharest operations time' : ''}
+                {transfer ? (resource?.name ?? 'Private transfer') : leg.resource_id} <b>·</b>{' '}
+                {transfer && epoch !== null ? (
+                  `${freshnessTime(epoch + leg.departure * 60_000)} – ${freshnessTime(epoch + leg.arrival * 60_000)}`
+                ) : (
+                  <>
+                    {world ? formatWorldTime(world, leg.departure) : formatTime(leg.departure)}–
+                    {world ? formatWorldTime(world, leg.arrival) : formatTime(leg.arrival)}
+                    {world?.mode === 'live' ? ' · Europe/Bucharest operations time' : ''}
+                  </>
+                )}
               </span>
+              {transfer && (
+                <details className="record-references">
+                  <summary>Transfer record</summary>
+                  <span>{leg.resource_id}</span>
+                </details>
+              )}
               <PriceEvidenceDetails evidence={leg.price_evidence} />
             </div>
           </div>
@@ -355,6 +373,7 @@ function ResourceFacts({
   const planningCurrent =
     !freshness || liveResourceStatus(resource, freshness, booked).planningCurrent;
   const transfer = privateTransfer(resource);
+  const arrival = airportArrivalEvidence(resource.airport_arrival_assumption);
   const route = resource.provenance?.google_route as Record<string, unknown> | undefined;
   const routeReceived = route?.source === 'Google Routes' ? sourceInstant(route.fetched_at) : null;
   const operationEpoch = sourceInstant(world.epoch);
@@ -364,7 +383,11 @@ function ResourceFacts({
         <strong>{transfer ? locationName(world, resource.origin) : resource.origin}</strong>
         <ArrowRight size={20} />
         <strong>
-          {transfer ? locationName(world, resource.destination) : resource.destination}
+          {arrival
+            ? `${arrival.dropoff.label} · ${arrival.airport_id}`
+            : transfer
+              ? locationName(world, resource.destination)
+              : resource.destination}
         </strong>
       </div>
       {transfer && (
@@ -373,20 +396,27 @@ function ResourceFacts({
             {booked
               ? 'A supplier booking is recorded separately.'
               : 'Unbooked planning quote; importing this leg did not allocate a complete journey.'}{' '}
-            The pickup point is reported by operations. No vehicle position is observed.
+            {arrival
+              ? 'The airport drop-off is reported by operations.'
+              : 'The pickup point is reported by operations.'}{' '}
+            No vehicle position is observed.
           </p>
           <details className="record-references">
             <summary>Record identifiers</summary>
             <dl>
               <dt>Transfer record</dt>
               <dd>{resource.id}</dd>
-              <dt>Meeting point</dt>
+              <dt>{arrival ? 'Hotel property' : 'Meeting point'}</dt>
               <dd>{resource.origin}</dd>
-              <dt>Hotel property</dt>
+              <dt>{arrival ? 'Airport reference' : 'Hotel property'}</dt>
               <dd>{resource.destination}</dd>
             </dl>
           </details>
         </>
+      )}
+      <AirportArrivalDetails assumption={resource.airport_arrival_assumption} />
+      {transfer && (
+        <SupplierMeetingInstructions value={resourceMeetingEvidence(resource.provenance)} />
       )}
       <div className="fact-list">
         <span>
@@ -486,7 +516,10 @@ function ResourceFacts({
           )}
           {freshness?.receivedAt != null && (
             <span>
-              Received by app <b>{freshnessTime(freshness.receivedAt)}</b>
+              {resource.airport_arrival_assumption != null
+                ? 'APL response received by app'
+                : 'Received by app'}{' '}
+              <b>{freshnessTime(freshness.receivedAt)}</b>
             </span>
           )}
           {resource.valid_until ? (
@@ -499,7 +532,10 @@ function ResourceFacts({
           ) : (freshness?.basis === 'quoted_at' || freshness?.basis === 'app_receipt') &&
             freshness.cutoff !== null ? (
             <span>
-              Local freshness through <b>{freshnessTime(freshness.cutoff)}</b>
+              {resource.airport_arrival_assumption != null
+                ? 'Return planning freshness through'
+                : 'Local freshness through'}{' '}
+              <b>{freshnessTime(freshness.cutoff)}</b>
             </span>
           ) : null}
           <span>

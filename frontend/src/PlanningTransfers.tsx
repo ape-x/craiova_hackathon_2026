@@ -4,11 +4,19 @@ import { api, SearchOutcomeUnknownError, TransportError } from './api';
 import type { MutationResult, World } from './types';
 import { freshnessTime, sourceInstant, useFreshnessClock } from './resourceFreshness';
 import { transferEuroEstimate, transferFxReference, transferPrice } from './transferQuoteData';
-import { planningQuoteCurrent, planningTransferInput } from './planningTransferData';
+import {
+  planningQuoteCurrent,
+  planningTransferInput,
+  returnFlightChoices,
+} from './planningTransferData';
+import { AirportArrivalDetails, SupplierMeetingInstructions } from './TransferEvidence';
 import type { PlanningTransferForm, PlanningTransferQuote } from './planningTransferData';
 import './planningTransfers.css';
 
 const emptyForm: PlanningTransferForm = {
+  direction: 'initial_airport_to_hotel',
+  onward_resource_id: '',
+  airport_processing_minutes: '',
   group_id: '',
   hotel_node_id: '',
   pickup_at: '',
@@ -39,16 +47,40 @@ export function PlanningTransferResults({
   const received = sourceInstant(result.transfer?.received_at ?? result.created_at);
   const pickup = sourceInstant(result.route?.request.departure_time);
   const seconds = Number(result.route?.duration_seconds);
+  const returning = result.direction === 'hotel_to_airport';
   return (
     <section className="planning-transfer-results" aria-label="Scoped private-transfer quote">
       <h3>{result.state === 'ready' ? 'Planning quotes' : 'Planning quote blocked'}</h3>
       <p>
-        <strong>{result.initial_point.label}</strong> →{' '}
-        <strong>{result.hotel?.name ?? result.hotel_node_id}</strong>
+        <strong>
+          {returning
+            ? (result.hotel?.name ?? 'Supplier hotel property')
+            : (result.initial_point?.label ?? 'Reported meeting point')}
+        </strong>{' '}
+        →{' '}
+        <strong>
+          {returning
+            ? (result.airport_arrival_assumption?.dropoff.label ?? 'Reported airport drop-off')
+            : (result.hotel?.name ?? 'Supplier hotel property')}
+        </strong>
       </p>
       <p className="field-hint">
-        Initial meeting point reported by operations. No arriving-flight connection is verified.
+        {returning
+          ? 'Hotel pickup to an operator-declared airport drop-off. The flight’s departure terminal is unknown.'
+          : 'Initial meeting point reported by operations. No arriving-flight connection is verified.'}
       </p>
+      {returning && <AirportArrivalDetails assumption={result.airport_arrival_assumption} />}
+      {returning && result.onward_flight && (
+        <details className="record-references">
+          <summary>Selected onward flight quote</summary>
+          <p>
+            {result.onward_flight.origin} → {result.onward_flight.destination} ·{' '}
+            {result.onward_flight.source}
+          </p>
+          <p>Quote record: {result.onward_flight.resource_id}</p>
+        </details>
+      )}
+      <SupplierMeetingInstructions value={result.transfer?.meeting_point} />
       {result.hotel && (
         <p>
           {result.hotel.address}
@@ -86,8 +118,9 @@ export function PlanningTransferResults({
           {result.road_snap_offsets_m && (
             <span>
               Road endpoint offsets: {result.road_snap_offsets_m.origin.toFixed(1)} m at pickup /{' '}
-              {result.road_snap_offsets_m.destination.toFixed(1)} m at the property. Pedestrian
-              access is not verified.
+              {result.road_snap_offsets_m.destination.toFixed(1)} m at{' '}
+              {returning ? 'the airport drop-off' : 'the property'}. Pedestrian access is not
+              verified.
             </span>
           )}
           {result.route.warnings.map((warning, index) => (
@@ -196,7 +229,8 @@ export default function PlanningTransfers({
   const scope = useRef(world.scenario_id);
   scope.current = world.scenario_id;
   const locked = busy !== null || uncertain !== null;
-  const now = useFreshnessClock(result !== null);
+  const returning = form.direction === 'hotel_to_airport';
+  const now = useFreshnessClock(result !== null || returning);
   useEffect(() => {
     onMutationPending(locked);
   }, [locked, onMutationPending]);
@@ -209,13 +243,30 @@ export default function PlanningTransfers({
   }, [onMutationPending]);
   const selectedGroup = world.groups.find((group) => group.id === form.group_id);
   const hotels = world.airports.filter((node) => node.kind === 'hotel');
+  const flights = returning ? returnFlightChoices(world, form.group_id, now) : [];
+  const selectedFlight = flights.find((item) => item.resource.id === form.onward_resource_id);
   const visibleResult = resultScenario === world.scenario_id ? result : null;
   function change<K extends keyof PlanningTransferForm>(field: K, value: PlanningTransferForm[K]) {
     if (pending.current || uncertain) return;
     setForm((previous) => ({
       ...previous,
       [field]: value,
+      ...(field === 'direction'
+        ? {
+            label: '',
+            latitude: '',
+            longitude: '',
+            onward_resource_id: '',
+            airport_processing_minutes: '',
+          }
+        : field === 'group_id'
+          ? { onward_resource_id: '' }
+          : {}),
       ...(field === 'group_id' ||
+      field === 'direction' ||
+      field === 'hotel_node_id' ||
+      field === 'onward_resource_id' ||
+      field === 'airport_processing_minutes' ||
       field === 'label' ||
       field === 'latitude' ||
       field === 'longitude' ||
@@ -298,11 +349,13 @@ export default function PlanningTransfers({
   }
   return (
     <div className="planning-transfers">
-      <h3>Airport meeting point → hotel property</h3>
+      <h3>{returning ? 'Hotel property → airport' : 'Airport meeting point → hotel property'}</h3>
       <p className="field-hint">
-        Choose an existing group and an imported supplier property. The pickup point is your
-        declared initial position, not a verified arrival terminal. Hotel price freshness does not
-        establish transport or room availability.
+        Choose an existing group and an imported supplier property.{' '}
+        {returning
+          ? 'Select a current sourced onward flight and report the airport drop-off and processing allowance. These are operator inputs, not airline guidance.'
+          : 'The pickup point is your declared initial position, not a verified arrival terminal.'}{' '}
+        Hotel price freshness does not establish transport or room availability.
       </p>
       {terminalSearch && (
         <div className="planning-uncertain" role="alert">
@@ -322,6 +375,18 @@ export default function PlanningTransfers({
       >
         <fieldset disabled={locked} className="live-form-fieldset">
           <div className="live-form-grid">
+            <label className="field">
+              Transfer direction
+              <select
+                value={form.direction ?? 'initial_airport_to_hotel'}
+                onChange={(event) =>
+                  change('direction', event.target.value as PlanningTransferForm['direction'])
+                }
+              >
+                <option value="initial_airport_to_hotel">Airport meeting point → hotel</option>
+                <option value="hotel_to_airport">Hotel → airport for onward flight</option>
+              </select>
+            </label>
             <label className="field">
               Passenger group
               <select
@@ -346,6 +411,39 @@ export default function PlanningTransfers({
                 ))}
               </select>
             </label>
+            {returning && (
+              <>
+                <label className="field">
+                  Exact onward flight quote
+                  <select
+                    required
+                    value={form.onward_resource_id ?? ''}
+                    onChange={(event) => change('onward_resource_id', event.target.value)}
+                  >
+                    <option value="">Choose a sourced quote for this group</option>
+                    {flights.map(({ resource, reason, eligible, departureLabel }) => (
+                      <option key={resource.id} value={resource.id} disabled={!eligible}>
+                        {resource.name} · {resource.origin} → {resource.destination} ·{' '}
+                        {departureLabel} · ref {resource.id.slice(-8)}
+                        {reason ? ` · ${reason}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  Operator airport processing allowance (minutes)
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max="720"
+                    step="1"
+                    value={form.airport_processing_minutes ?? ''}
+                    onChange={(event) => change('airport_processing_minutes', event.target.value)}
+                  />
+                </label>
+              </>
+            )}
             <label className="field">
               Supplier hotel property
               <select
@@ -384,14 +482,18 @@ export default function PlanningTransfers({
               />
             </label>
             <label className="field">
-              Initial meeting point
+              {returning ? 'Reported airport drop-off' : 'Initial meeting point'}
               <input
                 required
                 minLength={2}
                 maxLength={160}
                 value={form.label}
                 onChange={(event) => change('label', event.target.value)}
-                placeholder="Precise pickup location reported by operations"
+                placeholder={
+                  returning
+                    ? 'Precise drop-off location reported by operations'
+                    : 'Precise pickup location reported by operations'
+                }
               />
             </label>
             <div className="planning-coordinates">
@@ -427,6 +529,25 @@ export default function PlanningTransfers({
               to the group’s origin or final destination is implied.
             </p>
           )}
+          {returning && (
+            <p className="field-hint">
+              Departure terminal unknown. The processing allowance is your planning assumption, not
+              airline guidance. Refresh stale or expired flight quotes under Flight quotes or the
+              case’s recovery search before requesting a return. The server rechecks the exact
+              flight, driving duration and group constraints.
+            </p>
+          )}
+          {returning && !flights.length && (
+            <p className="text-amber" role="status">
+              No sourced flight quote is linked exclusively to this group. Import or search a real
+              onward flight first.
+            </p>
+          )}
+          {returning && selectedFlight?.reason && (
+            <p className="text-amber" role="status">
+              {selectedFlight.reason}. Choose a usable replacement before searching.
+            </p>
+          )}
           {!hotels.length && (
             <p className="text-amber">
               Import a real supplier hotel property under Hotel quotes first.
@@ -439,9 +560,15 @@ export default function PlanningTransfers({
               checked={form.confirmed}
               onChange={(event) => change('confirmed', event.target.checked)}
             />
-            I confirm this group will be ready at the declared meeting point at pickup.
+            {returning
+              ? 'I confirm the reported airport drop-off and operator processing allowance for the exact selected flight. Its departure terminal remains unverified.'
+              : 'I confirm this group will be ready at the declared meeting point at pickup.'}
           </label>
-          <button className="primary-button" type="submit" disabled={locked || !hotels.length}>
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={locked || !hotels.length || (returning && !selectedFlight?.eligible)}
+          >
             {busy === 'quote' ? <Loader2 size={15} className="spin" /> : <Search size={15} />}Get
             planning quotes
           </button>

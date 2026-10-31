@@ -13,6 +13,7 @@ import {
 } from './transferQuoteData';
 import type { TransferQuoteForm, TransferQuoteResult, TransferStatus } from './transferQuoteData';
 import './transferQuotes.css';
+import { SupplierMeetingInstructions } from './TransferEvidence';
 
 export function TransferQuoteResults({ result }: { result: TransferQuoteResult }) {
   const reference = transferFxReference(result.fx);
@@ -51,6 +52,7 @@ export function TransferQuoteResults({ result }: { result: TransferQuoteResult }
           : 'Supplier expiry was not provided.'}{' '}
         Search again before relying on a price.
       </p>
+      <SupplierMeetingInstructions value={result.meeting_point} />
       {result.message && (
         <p className="transfer-note" role="status">
           {result.message}

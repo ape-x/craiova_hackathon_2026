@@ -1,6 +1,7 @@
 import type { Resource, World } from '../types';
 import type { GeoPoint } from './contracts';
 import { sourceInstant } from '../resourceFreshness';
+import { airportArrivalEvidence } from '../airportArrival';
 
 /** Decode Google's 1e5 polyline format with bounded input, work and coordinates. */
 export function decodeRoadPolyline(encoded: unknown): GeoPoint[] | null {
@@ -66,6 +67,24 @@ function distance(a: GeoPoint, b: GeoPoint) {
   return 12_742_000 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, value))));
 }
 
+export function reportedAirportDropoff(
+  resource: Resource,
+  world: Pick<World, 'airports' | 'epoch'>,
+) {
+  const arrival = airportArrivalEvidence(resource.airport_arrival_assumption);
+  if (
+    !arrival ||
+    arrival.airport_id !== resource.destination ||
+    resource.initial_position_assumption != null ||
+    world.airports.find((node) => node.id === resource.origin)?.kind !== 'hotel' ||
+    world.airports.find((node) => node.id === resource.destination)?.kind !== 'airport' ||
+    sourceInstant(arrival.epoch) !== sourceInstant(world.epoch)
+  )
+    return null;
+  const point = coordinates(arrival.dropoff.coordinates);
+  return point ? { point, label: arrival.dropoff.label } : null;
+}
+
 export function groundPath(
   resource: Resource,
   world: Pick<World, 'airports' | 'epoch'>,
@@ -78,8 +97,10 @@ export function groundPath(
   const origin = world.airports.find((node) => node.id === resource.origin),
     destination = world.airports.find((node) => node.id === resource.destination);
   if (!origin || !destination) return null;
+  const dropoff = reportedAirportDropoff(resource, world);
+  if (resource.airport_arrival_assumption != null && !dropoff) return null;
   const start = coordinates({ latitude: origin.lat, longitude: origin.lon }),
-    end = coordinates({ latitude: destination.lat, longitude: destination.lon });
+    end = dropoff?.point ?? coordinates({ latitude: destination.lat, longitude: destination.lon });
   if (!start || !end) return null;
   const fallback = { path: [start, end], geometry: 'connection_only' as const };
   const route = object(resource.provenance?.google_route),

@@ -1,0 +1,19 @@
+.transfer-evidence {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.transfer-evidence strong {
+  color: var(--text);
+  font-size: inherit;
+}
+.supplier-instructions-text {
+  white-space: pre-wrap;
+}

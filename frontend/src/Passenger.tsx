@@ -305,6 +305,7 @@ function PassengerJourney({ token }: { token: string }) {
                       mode: live ? 'live' : 'simulation',
                       epoch: state.epoch,
                       resources: state.resources,
+                      airports: state.airports,
                     }}
                   />
                   <div className="boarding-facts">

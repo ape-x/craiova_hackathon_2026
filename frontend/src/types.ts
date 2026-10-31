@@ -38,6 +38,21 @@ export interface CostEvidence {
   settlement_guaranteed: false;
   revalidation_required: true;
 }
+export interface AirportArrivalAssumption {
+  source: 'operator_declared';
+  confirmed: true;
+  group_id: string;
+  group_fingerprint: string;
+  scenario_id: string;
+  epoch: string;
+  airport_id: string;
+  onward_resource_id: string;
+  onward_flight_fingerprint: string;
+  onward_departure_at: string;
+  dropoff: { label: string; coordinates: { latitude: number; longitude: number } };
+  processing_minutes: number;
+  departure_terminal: null;
+}
 export interface AirportWeather {
   condition: 'clear' | 'fog' | 'storm' | 'snow' | 'wind' | 'rain';
   visibility_m: number | null;
@@ -82,6 +97,7 @@ export interface Resource {
   quote_freshness?: QuoteFreshness | null;
   transport_mode?: 'private_transfer' | null;
   initial_position_assumption?: InitialPositionAssumption | null;
+  airport_arrival_assumption?: AirportArrivalAssumption | null;
   quote_rooms?: number | null;
   requires_revalidation?: boolean;
   external_offer_id?: string | null;
@@ -118,6 +134,7 @@ export interface Leg {
   price_evidence?: PriceEvidence | null;
   transport_mode?: 'private_transfer' | null;
   initial_position_assumption?: InitialPositionAssumption | null;
+  airport_arrival_assumption?: AirportArrivalAssumption | null;
 }
 export interface Itinerary {
   legs: Leg[];

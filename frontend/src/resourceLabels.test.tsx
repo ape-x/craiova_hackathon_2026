@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import Inspector from './Inspector';
+import Inspector, { ItineraryView } from './Inspector';
 import { geographicContext, locationName, resourceTitle, transferReview } from './resourceLabels';
 import { buildOverlays, cameraFor } from './maps/overlays';
 import { ALL_MODELS, buildModelDescriptors } from './maps/models';
 import { GeographicLegend } from './maps/GoogleMaps3D';
-import type { Airport, Resource, World } from './types';
+import { groundPath } from './maps/groundPaths';
+import { AirportArrivalDetails, SupplierMeetingInstructions } from './TransferEvidence';
+import type { Airport, AirportArrivalAssumption, Offer, Resource, World } from './types';
 
 // Entirely synthetic coordinates and records; no provider request or production fixture.
 const now = Date.parse('2026-10-31T20:00:00Z');
@@ -126,7 +128,147 @@ function operation(): World {
 }
 afterEach(() => vi.useRealTimers());
 
+function returnOperation(): World {
+  const world = operation();
+  const arrival: AirportArrivalAssumption = {
+    source: 'operator_declared',
+    confirmed: true,
+    group_id: 'ASSUMED-GROUP',
+    group_fingerprint: 'a'.repeat(64),
+    scenario_id: world.scenario_id,
+    epoch: world.epoch,
+    airport_id: 'LHR',
+    onward_resource_id: 'FLIGHT-QUOTE',
+    onward_flight_fingerprint: 'b'.repeat(64),
+    onward_departure_at: '2026-11-02T18:00:00Z',
+    dropoff: { label: 'Reported forecourt', coordinates: origin },
+    processing_minutes: 120,
+    departure_terminal: null,
+  };
+  world.resources[0] = {
+    ...world.resources[0],
+    origin: hotelId,
+    destination: 'LHR',
+    airport_arrival_assumption: arrival,
+    provenance: {
+      google_route: {
+        source: 'Google Routes',
+        fetched_at: '2026-10-31T20:00:04Z',
+        request: {
+          origin: destination,
+          destination: origin,
+          departure_time: '2026-11-02T14:00:00Z',
+          travel_mode: 'DRIVE',
+        },
+        road_endpoints: { origin: destination, destination: origin },
+        encoded_polyline: '_ueyHnu~Af^g^f^g^',
+      },
+      apl_quote: {
+        meeting_point: {
+          name: 'Hotel reception',
+          instructions: 'Wait at the desk.\nAsk for the driver’s name.',
+        },
+      },
+    },
+  };
+  world.resources[2] = { ...world.resources[2], departure: 2520, arrival: 2700 };
+  return world;
+}
+
 describe('imported transfer selection in the live geographic workspace', () => {
+  it('plots a return at its reported drop-off rather than moving it to the airport reference', () => {
+    const world = returnOperation();
+    const resource = world.resources[0];
+    const road = groundPath(resource, world)!;
+    expect(road.geometry).toBe('sourced_road');
+    expect(road.path.at(-1)).toMatchObject({ lat: origin.latitude, lng: origin.longitude });
+    const overlay = buildOverlays(world, resource.id, new Map(), now);
+    const dropoff = overlay.markers.find((marker) => marker.id === `${resource.id}-dropoff`)!;
+    expect(dropoff).toMatchObject({
+      selectionId: resource.id,
+      label: 'Reported forecourt · REPORTED DROP-OFF',
+      point: { lat: origin.latitude, lng: origin.longitude },
+      selected: true,
+    });
+    expect(dropoff.title).toContain('Departure terminal unknown');
+    const airport = overlay.markers.find((marker) => marker.id === 'LHR')!;
+    expect(airport.point.lng).toBe(-0.45);
+    expect(airport.selected).toBe(false);
+    const selectedFromMarker = dropoff.selectionId ?? dropoff.id;
+    expect(geographicContext(world, selectedFromMarker).selectionId).toBe(resource.id);
+    expect(cameraFor(world, 'region', selectedFromMarker).center.lng).toBeCloseTo(-0.485);
+    expect(buildModelDescriptors(world, resource.id)).toEqual([]);
+  });
+
+  it('rejects mismatched return geometry without substituting a fabricated road to the airport centroid', () => {
+    const world = returnOperation();
+    const resource = world.resources[0];
+    const route = resource.provenance!.google_route as { request: { destination: typeof origin } };
+    route.request.destination = { latitude: 51.47, longitude: -0.45 };
+    const road = groundPath(resource, world)!;
+    expect(road.geometry).toBe('connection_only');
+    expect(road.path).toHaveLength(2);
+    expect(road.path[1].lng).toBe(origin.longitude);
+    resource.airport_arrival_assumption = {
+      ...resource.airport_arrival_assumption!,
+      departure_terminal: '5',
+    } as unknown as AirportArrivalAssumption;
+    expect(groundPath(resource, world)).toBeNull();
+    expect(
+      renderToStaticMarkup(
+        <AirportArrivalDetails assumption={resource.airport_arrival_assumption} />,
+      ),
+    ).toContain('Airport arrival evidence is incomplete');
+  });
+
+  it('preserves operator buffer and unknown terminal in passenger legs, independently of supplier pickup instructions', () => {
+    const world = returnOperation();
+    const resource = world.resources[0];
+    const offer = {
+      id: 'return-offer',
+      group_id: 'ASSUMED-GROUP',
+      status: 'proposed',
+      itinerary: {
+        arrival: resource.arrival,
+        total_cost: 0,
+        legs: [
+          {
+            resource_id: resource.id,
+            kind: 'bus',
+            origin: resource.origin,
+            destination: resource.destination,
+            departure: resource.departure,
+            arrival: resource.arrival,
+            cost: 0,
+            transport_mode: 'private_transfer',
+            airport_arrival_assumption: resource.airport_arrival_assumption,
+          },
+        ],
+      },
+    } as Offer;
+    const html = renderToStaticMarkup(<ItineraryView offer={offer} world={world} />);
+    expect(html).toContain('Source Hotel London → LHR');
+    expect(html).toContain('Reported drop-off: Reported forecourt');
+    expect(html).toContain('Operator processing allowance: 120 minutes');
+    expect(html).toContain('Departure terminal unknown');
+    expect(html).toContain('not airline guidance or guaranteed boarding');
+    expect(html).toContain('APL supplier meeting instructions');
+    expect(html).toContain('Hotel reception');
+    expect(html).toContain('14:00:00 UTC');
+    expect(html).not.toContain('Initial meeting point:');
+    const safe = renderToStaticMarkup(
+      <SupplierMeetingInstructions
+        value={{ name: 'Reception', instructions: '<script>alert(1)</script>' }}
+      />,
+    );
+    expect(safe).not.toContain('<script>');
+    expect(safe).toContain('&lt;script&gt;');
+    expect(
+      renderToStaticMarkup(
+        <SupplierMeetingInstructions value={{ name: null, instructions: 42 }} />,
+      ),
+    ).toBe('');
+  });
   it('focuses the sourced road in Airport and Network before any complete itinerary exists', () => {
     const world = operation();
     const context = geographicContext(world, resourceId);

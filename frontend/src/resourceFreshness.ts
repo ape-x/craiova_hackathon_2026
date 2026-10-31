@@ -8,6 +8,7 @@ export interface ResourceFreshness {
   basis: 'valid_until' | 'quoted_at' | 'app_receipt' | null;
   quotedAt: number | null;
   receivedAt: number | null;
+  routeReceivedAt: number | null;
   cutoff: number | null;
 }
 
@@ -28,18 +29,27 @@ export function sourceInstant(value: unknown): number | null {
     : null;
 }
 
-// Presentation mirrors solver.live_resource_current; eligibility remains server-side.
+// Presentation mirrors live-resource and return-route receipt checks; eligibility remains server-side.
 export function resourceFreshness(resource: Resource, now: number): ResourceFreshness {
   const quotedAt = sourceInstant(resource.provenance?.quoted_at);
   const apl = resource.source === 'Airport Pickups London';
   const receipt = apl ? resource.quote_freshness : null;
   const receivedAt = sourceInstant(receipt?.received_at);
+  const returning = apl && resource.airport_arrival_assumption != null;
+  const rawRoute = returning ? resource.provenance?.google_route : null;
+  const route =
+    rawRoute !== null && typeof rawRoute === 'object' && !Array.isArray(rawRoute)
+      ? (rawRoute as Record<string, unknown>)
+      : null;
+  const routeReceivedAt =
+    route?.source === 'Google Routes' ? sourceInstant(route.fetched_at) : null;
   const unknown: ResourceFreshness = {
     state: 'unknown',
     label: 'Freshness unknown',
     basis: null,
     quotedAt,
     receivedAt,
+    routeReceivedAt,
     cutoff: null,
     detail: 'No usable validity or quote time. Revalidation is required for a new plan.',
   };
@@ -70,6 +80,7 @@ export function resourceFreshness(resource: Resource, now: number): ResourceFres
       basis: 'valid_until',
       quotedAt,
       receivedAt,
+      routeReceivedAt,
       cutoff,
       detail: current
         ? 'Within the recorded validity window; this does not guarantee supplier stock.'
@@ -88,16 +99,32 @@ export function resourceFreshness(resource: Resource, now: number): ResourceFres
         ...unknown,
         detail: 'The app receipt time is in the future. Freshness cannot be established.',
       };
-    const cutoff = receivedAt + 120_000;
+    if (returning && routeReceivedAt === null)
+      return {
+        ...unknown,
+        detail:
+          'The Google Routes receipt time for this return is missing or invalid. Both APL and road prediction receipts are required for a new plan.',
+      };
+    if (returning && routeReceivedAt! > now)
+      return {
+        ...unknown,
+        detail:
+          'The Google Routes receipt time is in the future. Return planning freshness cannot be established.',
+      };
+    const cutoff = returning
+      ? Math.min(receivedAt + 120_000, routeReceivedAt! + 120_000)
+      : receivedAt + 120_000;
     return {
       state: now <= cutoff ? 'current' : 'stale',
       label: now <= cutoff ? 'Within freshness window' : 'Quote stale',
       basis: 'app_receipt',
       quotedAt,
       receivedAt,
+      routeReceivedAt,
       cutoff,
-      detail:
-        'The app applies a 120-second planning freshness window from receipt. Supplier quote time and expiry are unknown; this is not a supplier hold.',
+      detail: returning
+        ? 'The app applies a 120-second window to both the APL response and Google Routes prediction receipts. The earlier cutoff limits return planning; revalidate both sources for a new plan. Supplier quote time and expiry are unknown; this is not a supplier hold.'
+        : 'The app applies a 120-second planning freshness window from receipt. Supplier quote time and expiry are unknown; this is not a supplier hold.',
     };
   }
   if (!resource.requires_revalidation || quotedAt === null) return unknown;
@@ -114,6 +141,7 @@ export function resourceFreshness(resource: Resource, now: number): ResourceFres
     basis: 'quoted_at',
     quotedAt,
     receivedAt,
+    routeReceivedAt,
     cutoff,
     detail:
       'This quote has a 120-second local freshness window from the source quote time. This is not a supplier expiry or a hold.',

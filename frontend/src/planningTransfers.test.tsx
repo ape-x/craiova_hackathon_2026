@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import PlanningTransfers, { PlanningTransferResults } from './PlanningTransfers';
-import { planningQuoteCurrent, planningTransferInput } from './planningTransferData';
+import {
+  planningQuoteCurrent,
+  planningTransferInput,
+  returnFlightChoices,
+} from './planningTransferData';
 import type { PlanningTransferForm, PlanningTransferQuote } from './planningTransferData';
 import { api, ApiError, SearchOutcomeUnknownError, TransportError } from './api';
-import type { World } from './types';
+import type { AirportArrivalAssumption, Resource, World } from './types';
 
 const now = Date.parse('2026-11-01T12:00:00Z');
 const world = {
@@ -161,6 +165,101 @@ const quote: PlanningTransferQuote = {
   blockers: [],
   options: [{ option_id: 'OPTION-1', importable: true, blockers: [] }],
 };
+const onward: Resource = {
+  id: 'FLIGHT-EXACT-1',
+  kind: 'flight',
+  name: 'Sourced onward flight',
+  origin: 'LHR',
+  destination: 'OTP',
+  departure: 2520,
+  arrival: 2700,
+  capacity: 2,
+  accessible: false,
+  available: true,
+  cost_per_person: 0,
+  room_capacity: 0,
+  vehicle_id: null,
+  status: 'quoted',
+  source: 'Flight provider',
+  eligible_group_ids: ['G1'],
+  booking_status: 'unbooked',
+  external_offer_id: 'supplier-offer',
+  valid_until: '2026-11-01T12:10:00Z',
+  provenance: {
+    mode: 'live',
+    provider: 'Flight provider',
+    provider_offer_id: 'supplier-offer',
+    origin: 'LHR',
+    destination: 'OTP',
+    departure_at: '2026-11-02T18:00:00Z',
+  },
+};
+const returnWorld = { ...world, resources: [onward] };
+const returnForm: PlanningTransferForm = {
+  ...form,
+  direction: 'hotel_to_airport',
+  onward_resource_id: onward.id,
+  airport_processing_minutes: '120',
+  label: 'Reported airport forecourt',
+};
+const arrival: AirportArrivalAssumption = {
+  source: 'operator_declared',
+  confirmed: true,
+  group_id: 'G1',
+  group_fingerprint: 'a'.repeat(64),
+  scenario_id: world.scenario_id,
+  epoch: world.epoch,
+  airport_id: 'LHR',
+  onward_resource_id: onward.id,
+  onward_flight_fingerprint: 'b'.repeat(64),
+  onward_departure_at: '2026-11-02T18:00:00Z',
+  dropoff: {
+    label: 'Reported airport forecourt',
+    coordinates: { latitude: 51.47, longitude: -0.48 },
+  },
+  processing_minutes: 120,
+  departure_terminal: null,
+};
+const returnQuote: PlanningTransferQuote = {
+  ...quote,
+  direction: 'hotel_to_airport',
+  initial_point: null,
+  airport_arrival_assumption: arrival,
+  onward_flight: {
+    resource_id: onward.id,
+    origin: onward.origin,
+    destination: onward.destination,
+    departure_at: arrival.onward_departure_at,
+    departure: onward.departure,
+    source: onward.source,
+    departure_terminal: null,
+  },
+  transfer: {
+    ...quote.transfer!,
+    request: {
+      ...quote.transfer!.request,
+      origin: 'Source property address',
+      destination: 'Reported airport forecourt',
+    },
+    resolved_route: { ...quote.transfer!.resolved_route, direction: 'to_hub' },
+    meeting_point: {
+      name: 'Hotel reception',
+      instructions: 'Wait by reception.\nAsk for the driver’s name.',
+    },
+  },
+  route: {
+    ...quote.route!,
+    request: {
+      ...quote.route!.request,
+      origin: quote.route!.request.destination,
+      destination: quote.route!.request.origin,
+    },
+    road_endpoints: {
+      origin: quote.route!.road_endpoints.destination,
+      destination: quote.route!.road_endpoints.origin,
+    },
+  },
+};
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -177,6 +276,122 @@ const results = (value = quote, time = now, imported = false) =>
   );
 
 describe('scoped private-transfer planning UI', () => {
+  it('submits an explicitly selected return flight, declared drop-off and buffer without outbound fields', () => {
+    const input = planningTransferInput(returnForm, returnWorld, now);
+    expect(input).toEqual({
+      group_id: 'G1',
+      hotel_node_id: 'HP-1',
+      pickup_at: '2026-11-02T14:00:00.000Z',
+      suitcases: 2,
+      direction: 'hotel_to_airport',
+      airport_dropoff: {
+        label: 'Reported airport forecourt',
+        latitude: 51.47,
+        longitude: -0.48,
+        confirmed: true,
+      },
+      onward_resource_id: onward.id,
+      airport_processing_minutes: 120,
+    });
+    expect(input).not.toHaveProperty('initial_point');
+    for (const change of [
+      { onward_resource_id: '' },
+      { onward_resource_id: 'OTHER' },
+      { airport_processing_minutes: '' },
+      { airport_processing_minutes: '0' },
+      { airport_processing_minutes: '721' },
+      { airport_processing_minutes: '1.5' },
+      { airport_processing_minutes: '240' },
+      { confirmed: false },
+    ])
+      expect(() => planningTransferInput({ ...returnForm, ...change }, returnWorld, now)).toThrow();
+    expect(world.groups[0].origin).toBe('LHR');
+    expect(world.groups[0].destination).toBe('OTP');
+  });
+
+  it('limits onward choices to the exact group, exposes stale quotes and refuses source mismatches', () => {
+    const operation = {
+      ...returnWorld,
+      resources: [
+        onward,
+        { ...onward, id: 'STALE', valid_until: '2026-11-01T11:59:00Z' },
+        { ...onward, id: 'OTHER-GROUP', eligible_group_ids: ['OTHER'] },
+        { ...onward, id: 'SHARED', eligible_group_ids: ['G1', 'OTHER'] },
+        { ...onward, id: 'SYNTHETIC', source: 'synthetic' },
+      ],
+    };
+    const options = returnFlightChoices(operation, 'G1', now);
+    expect(options.map((item) => item.resource.id)).toEqual([onward.id, 'STALE']);
+    expect(options[0].eligible).toBe(true);
+    expect(options[1]).toMatchObject({
+      eligible: false,
+      reason: 'Validity expired — refresh flight quote',
+    });
+    expect(() =>
+      planningTransferInput({ ...returnForm, onward_resource_id: 'STALE' }, operation, now),
+    ).toThrow('refresh flight quote');
+    expect(returnFlightChoices(returnWorld, 'G1', now + 600_000)[0].eligible).toBe(false);
+    for (const change of [
+      { available: false },
+      { status: 'superseded' },
+      { booking_status: 'confirmed' },
+      { provenance: { ...onward.provenance, provider_offer_id: 'different' } },
+      { provenance: { ...onward.provenance, departure_at: '2026-11-02T17:59:00Z' } },
+    ])
+      expect(
+        returnFlightChoices({ ...returnWorld, resources: [{ ...onward, ...change }] }, 'G1', now)[0]
+          .eligible,
+      ).toBe(false);
+  });
+
+  it('renders a nullable-initial-point return response with separate operator and supplier evidence', () => {
+    const html = results(returnQuote);
+    expect(html).toContain(
+      '<strong>Supplier property</strong> → <strong>Reported airport forecourt</strong>',
+    );
+    expect(html).toContain('Operator processing allowance: 120 minutes');
+    expect(html).toContain('Departure terminal unknown');
+    expect(html).toContain('not airline guidance or guaranteed boarding');
+    expect(html).toContain('APL supplier meeting instructions');
+    expect(html).toContain('Hotel reception');
+    expect(html).toContain('Ask for the driver');
+    expect(html).toContain('£76.00');
+    expect(html).toContain('Approximately €91.15');
+    expect(html).not.toContain('Initial meeting point reported by operations');
+    expect(
+      results({
+        ...returnQuote,
+        state: 'blocked',
+        hotel: null,
+        transfer: null,
+        route: null,
+        options: [],
+        blockers: [{ code: 'source_unavailable', message: 'Source property unavailable' }],
+      }),
+    ).toContain('Source property unavailable');
+  });
+
+  it('keeps a return retry bound to the same exact flight and declared drop-off', async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Connection lost'))
+      .mockResolvedValueOnce(new Response(JSON.stringify(returnQuote)));
+    vi.stubGlobal('fetch', fetch);
+    const input = planningTransferInput(returnForm, returnWorld, now);
+    let uncertain: unknown;
+    try {
+      await api.planningTransferQuote(returnWorld, input);
+    } catch (error) {
+      uncertain = error;
+    }
+    expect(uncertain).toBeInstanceOf(TransportError);
+    if (input.direction !== 'hotel_to_airport') throw new Error('Return fixture required');
+    input.airport_dropoff.label = 'Edited after dispatch';
+    input.onward_resource_id = 'OTHER';
+    await (uncertain as TransportError).retry();
+    expect(fetch.mock.calls[1][1].body).toBe(fetch.mock.calls[0][1].body);
+    expect(JSON.parse(fetch.mock.calls[1][1].body).onward_resource_id).toBe(onward.id);
+  });
   it('marks only the imported option as added, keeping alternative vehicle quotes unselected', () => {
     const second = { ...quote.transfer!.options[0], id: 'OPTION-2', car_type: 'Estate' };
     const value = {
@@ -416,7 +631,7 @@ describe('scoped private-transfer planning UI', () => {
       failure = cause;
     }
     expect(failure).toBeInstanceOf(TransportError);
-    input.initial_point.label = 'Edited after dispatch';
+    input.initial_point!.label = 'Edited after dispatch';
     await expect((failure as TransportError).retry()).rejects.toBeInstanceOf(ApiError);
     expect(fetch.mock.calls[1][1].body).toBe(fetch.mock.calls[0][1].body);
     expect(JSON.parse(fetch.mock.calls[1][1].body).initial_point.label).toBe(
