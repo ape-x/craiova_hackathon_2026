@@ -357,7 +357,7 @@ function Operations() {
       onDelegation: async ({ text, delegationId, context }) => {
         const result = await submitCommand(text, delegationId, context);
         if (!result) return 'Nu am aplicat nicio modificare.';
-        return verifiedCommandResult(result);
+        return result;
       },
     });
     voice.current = client;

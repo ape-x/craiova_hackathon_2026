@@ -1,6 +1,190 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { LiveVoiceClient } from './liveVoice';
+import { request, TransportError } from './api';
+import { LiveVoiceClient, voiceCommandAcknowledgement } from './liveVoice';
 import type { LiveVoiceOptions, VoiceState } from './liveVoice';
+import type { MutationResult, RecoveryJob, World } from './types';
+
+function reportReceipt(overrides: Partial<MutationResult> = {}): MutationResult {
+  return {
+    world: { version: 7, mode: 'live' } as World,
+    applied: true,
+    incident_id: 'CASE1',
+    command_interpretation_calls: 1,
+    report: {
+      id: 'opr_arrival',
+      source: 'operator_report',
+      type: 'arrival_report',
+      received_at: '2026-11-01T09:00:00Z',
+      description: 'Operator-reported passenger position.',
+      incident_id: 'CASE1',
+      group_ids: ['G1', 'G2'],
+      airport_code: 'OTP',
+      ready_at: '2026-11-01T12:30:00+02:00',
+      affected_group_ids: ['G1'],
+      affected_offer_ids: ['O1'],
+    },
+    ...overrides,
+  };
+}
+function queuedJob(overrides: Partial<RecoveryJob> = {}): RecoveryJob {
+  return {
+    id: 'JOB1',
+    incident_id: 'CASE1',
+    group_ids: ['G1', 'G2'],
+    status: 'queued',
+    max_provider_calls: 10,
+    ...overrides,
+  } as RecoveryJob;
+}
+
+describe('bounded voice acknowledgements from authoritative receipts', () => {
+  it('separates the recorded arrival/readiness from clearance, journey completion and a search', () => {
+    const content = voiceCommandAcknowledgement(
+      reportReceipt({
+        explanation: 'Long explanation '.repeat(200),
+        recovery_total_call_limit: 27,
+      }),
+    );
+    expect(content).toContain('Raport înregistrat: 2 grupuri la OTP');
+    expect(content).toContain('2026-11-01 10:30 UTC');
+    expect(content).toContain('Nu am pornit o căutare.');
+    expect(content).toContain(
+      'nu confirmare de aterizare, autorizare aeroportuară, itinerar sau rezervare',
+    );
+    expect(content).not.toContain('27');
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+  });
+
+  it.each([
+    ['insufficient_call_allowance', 'limita de apeluri este insuficientă'],
+    ['hotel_setup_required', 'configurația hotelului trebuie completată sau revizuită'],
+    ['recovery_prerequisite_failed', 'o condiție necesară nu este îndeplinită'],
+    ['recovery_queue_unavailable', 'coada de recuperare nu este disponibilă'],
+  ] as const)('keeps a persisted report distinct from blocked search: %s', (code, reason) => {
+    const content = voiceCommandAcknowledgement(
+      reportReceipt({
+        recovery_blocked: { code, explanation: 'Detailed prerequisite explanation '.repeat(200) },
+        recovery_total_call_limit: 8,
+      }),
+    );
+    expect(content).toContain('Raport înregistrat');
+    expect(content).toContain(`Căutarea nu a pornit: ${reason}`);
+    expect(content).toContain('Limită totală: 8 apeluri');
+    expect(content).not.toContain('în coadă');
+    expect(content).toContain('nu confirmare de aterizare');
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+  });
+
+  it('announces a queued job and only its returned total allowance, without claiming a recovered itinerary', () => {
+    const content = voiceCommandAcknowledgement(
+      reportReceipt({
+        recovery_job: queuedJob(),
+        recovery_total_call_limit: 11,
+      }),
+    );
+    expect(content).toContain('Raport înregistrat');
+    expect(content).toContain('Cererea de căutare a fost înregistrată pentru 2 grupuri');
+    expect(content).toContain('Limită totală: 11 apeluri, inclusiv interpretarea.');
+    expect(content).toContain(
+      'nu confirmare de aterizare, autorizare aeroportuară, itinerar sau rezervare',
+    );
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+  });
+
+  it('keeps the exact affected service ahead of optional long text and never calls an outage a supplier cancellation', () => {
+    const serviceId = 'APL-' + 'a'.repeat(100);
+    const content = voiceCommandAcknowledgement(
+      reportReceipt({
+        report: {
+          id: 'opr_outage',
+          source: 'operator_report',
+          type: 'resource_unavailability',
+          resource_id: serviceId,
+          previous_available: true,
+          received_at: '2026-11-01T09:00:00Z',
+          description: 'Reported breakdown',
+          affected_group_ids: ['G1'],
+          affected_offer_ids: ['O1'],
+        },
+        recovery_job: queuedJob({ group_ids: ['G1'] }),
+        recovery_total_call_limit: 8,
+        explanation: 'An unbounded explanation '.repeat(200),
+      }),
+    );
+    expect(content).toContain(`serviciul ${serviceId} indisponibil pentru planificare`);
+    expect(content).toContain('Cererea de căutare a fost înregistrată pentru 1 grup');
+    expect(content).toContain('Nu este anulare la furnizor, itinerar confirmat sau rezervare.');
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+  });
+
+  it('does not call an old completed job newly queued or a proposal still valid', () => {
+    const content = voiceCommandAcknowledgement(
+      reportReceipt({
+        applied: false,
+        report: undefined,
+        recovery_job: queuedJob({ status: 'completed' }),
+      }),
+    );
+    expect(content).toContain('Starea consemnată a căutării: completed.');
+    expect(content).toContain('Verifică propunerea actuală');
+    expect(content).not.toMatch(/Raport înregistrat|în coadă/);
+    expect(content).toContain('Nu confirmă un itinerar sau o rezervare.');
+  });
+
+  it('describes a historical queued replay as the same recorded request, never a new or current job', () => {
+    const content = voiceCommandAcknowledgement(
+      reportReceipt({
+        replayed: true,
+        recovery_job: queuedJob(),
+        recovery_total_call_limit: 11,
+        explanation: 'This historical job may now have finished.',
+      }),
+    );
+    expect(content).toContain('Raport deja înregistrat');
+    expect(content).toContain('Cererea de căutare a fost deja înregistrată');
+    expect(content).toContain('Vezi progresul curent în panoul cazului');
+    expect(content).not.toMatch(/în coadă|în curs|am pornit|finalizată/);
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+  });
+
+  it('speaks the server-resolved relative readiness without reanchoring it to the browser or retry time', () => {
+    const receipt = reportReceipt({ replayed: true });
+    if (receipt.report?.type !== 'arrival_report') throw new Error('Invalid arrival fixture');
+    receipt.report.readiness_basis = {
+      kind: 'command_relative_minutes',
+      reference: 'în 30 de minute',
+      command_received_at: '2026-11-01T09:59:50Z',
+      anchor_at: '2026-11-01T10:00:00Z',
+      rounding: 'ceil_minute',
+      minutes: 30,
+    };
+    vi.setSystemTime(new Date('2026-11-02T12:00:00Z'));
+    const content = voiceCommandAcknowledgement(receipt);
+    expect(content).toContain('Raport deja înregistrat');
+    expect(content).toContain('pregătite de la 2026-11-01 10:30 UTC');
+    expect(content).not.toContain('2026-11-02');
+    expect(content).not.toContain('în 30 de minute');
+  });
+
+  it('does not announce queue success for a foreign case or contradictory receipt', () => {
+    const foreign = voiceCommandAcknowledgement(
+      reportReceipt({
+        recovery_job: queuedJob({ incident_id: 'CASE-OTHER' }),
+      }),
+    );
+    expect(foreign).toContain('Raport înregistrat');
+    expect(foreign).toContain('Nu pot confirma cazul căutării');
+    expect(foreign).not.toContain('în coadă');
+    const contradictory = voiceCommandAcknowledgement(
+      reportReceipt({
+        recovery_job: queuedJob(),
+        recovery_blocked: { code: 'hotel_setup_required', explanation: 'Missing setup' },
+      }),
+    );
+    expect(contradictory).toContain('Starea căutării este contradictorie');
+    expect(contradictory).not.toMatch(/în coadă|Căutarea nu a pornit/);
+  });
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -140,11 +324,11 @@ async function end(client: LiveVoiceClient, channel: FakeChannel) {
   channel.emit({ type: 'session.closed', usage: { seconds: 1 } });
   await done;
 }
-function command(channel: FakeChannel, id = 'delegation-1') {
+function command(channel: FakeChannel, id = 'delegation-1', text = 'Arată autocarul B12.') {
   channel.emit({
     type: 'session.input_transcript.delta',
     event_id: 'transcript-1',
-    delta: 'Arată autocarul B12.',
+    delta: text,
     start_ms: 0,
     end_ms: 900,
   });
@@ -157,6 +341,121 @@ function command(channel: FakeChannel, id = 'delegation-1') {
 }
 
 describe('GPT-Live lifecycle with mocked browser resources', () => {
+  it('speaks the report outcome once and never borrows earlier search scope or a call cap for the next report', async () => {
+    const onDelegation = vi
+      .fn<LiveVoiceOptions['onDelegation']>()
+      .mockResolvedValueOnce(
+        reportReceipt({ recovery_job: queuedJob(), recovery_total_call_limit: 11 }),
+      )
+      .mockResolvedValueOnce(reportReceipt());
+    const { client, channel } = await connected({ onDelegation, scope: { incident_id: 'CASE1' } });
+    const first =
+      'Grupurile G1 și G2 din CASE1 sunt pregătite la OTP la 2026-11-01 10:30 UTC. Înregistrează și recalculează cazul CASE1. Maximum 11 apeluri.';
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: first,
+      start_ms: 0,
+      end_ms: 900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'report-search', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'report-search', target: 'client' },
+    });
+    const second =
+      'Doar înregistrează: grupurile G1 și G2 din CASE1 sunt pregătite la OTP la 2026-11-01 10:30 UTC.';
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: second,
+      start_ms: 1001,
+      end_ms: 1900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'report-only', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
+    expect(onDelegation.mock.calls[1][0]).toEqual({
+      text: second,
+      context: `user: ${first}`,
+      delegationId: 'live_test:report-only',
+    });
+    const spoken = channel.sent.filter((event) => event.type === 'session.commentary.append');
+    expect(spoken).toHaveLength(2);
+    expect(spoken[0].content).toContain('Limită totală: 11');
+    expect(spoken[1].content).toContain('Raport înregistrat');
+    expect(spoken[1].content).toContain('Nu am pornit o căutare.');
+    expect(spoken[1].content).not.toMatch(/11 apeluri|CASE1|Cererea de căutare|Limită totală/);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // Only the mocked session handshake.
+    await end(client, channel);
+  });
+
+  it('keeps an uncertain report outcome unknown and recovers the identical request without another delegation', async () => {
+    let uncertain: TransportError | undefined;
+    let submitted: Record<string, unknown> | undefined;
+    const onDelegation = vi.fn<LiveVoiceOptions['onDelegation']>(
+      async ({ text, context, delegationId }) => {
+        submitted = {
+          text,
+          context,
+          expected_version: 6,
+          idempotency_key: `voice-${delegationId}`,
+        };
+        try {
+          return await request<MutationResult>('/commands', submitted);
+        } catch (error) {
+          if (error instanceof TransportError) uncertain = error;
+          throw error;
+        }
+      },
+    );
+    const { client, channel } = await connected({ onDelegation });
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({ applied: null, detail: 'Request outcome unknown' }),
+    });
+    command(
+      channel,
+      'report-unknown',
+      'Înregistrează: grupurile G1 și G2 din CASE1 sunt pregătite la OTP la 2026-11-01 10:30 UTC.',
+    );
+    await vi.advanceTimersByTimeAsync(250);
+    expect(uncertain).toBeInstanceOf(TransportError);
+    const spoken = channel.sent.filter((event) => event.type === 'session.commentary.append');
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0].content).toContain('raportul sau căutarea pot fi deja înregistrate');
+    expect(spoken[0].content).toContain('Recover request cu același ID');
+    expect(spoken[0].content).not.toMatch(/Raport înregistrat:|Nu am aplicat|în coadă/);
+    expect(onDelegation).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const originalBody = fetchMock.mock.calls[1][1].body;
+    // Changing current UI/input objects cannot change the serialized retry.
+    Object.assign(submitted!, {
+      text: 'A different request with 27 calls',
+      context: 'New history',
+      expected_version: 99,
+      idempotency_key: 'new-key',
+    });
+    const replay = reportReceipt({ replayed: true });
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => replay });
+    expect(await uncertain!.retry<MutationResult>()).toEqual(replay);
+    expect(fetchMock.mock.calls[2][1].body).toBe(originalBody);
+    expect(onDelegation).toHaveBeenCalledOnce();
+    expect(channel.sent.filter((event) => event.type === 'session.commentary.append')).toHaveLength(
+      1,
+    );
+    await end(client, channel);
+  });
+
   it('sends only a snapshot of selected scope IDs after permission without executing a command', async () => {
     const delayed = deferred<FakeStream>();
     permission.mockReturnValue(delayed.promise);

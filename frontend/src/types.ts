@@ -449,6 +449,39 @@ export interface ScenarioChange {
   target_id: string | null;
   value: unknown;
 }
+export type OperationalReportReceipt = {
+  id: string;
+  source: 'operator_report';
+  received_at: string;
+  description: string;
+  affected_group_ids: string[];
+  affected_offer_ids: string[];
+} & (
+  | {
+      type: 'arrival_report';
+      incident_id: string;
+      group_ids: string[];
+      airport_code: string;
+      ready_at: string;
+      readiness_basis?: {
+        kind: 'command_relative_minutes';
+        reference: string;
+        command_received_at: string;
+        anchor_at: string;
+        rounding: 'ceil_minute';
+        minutes: number;
+      };
+    }
+  | { type: 'resource_unavailability'; resource_id: string; previous_available: boolean }
+);
+export interface RecoveryBlockedReceipt {
+  code:
+    | 'insufficient_call_allowance'
+    | 'hotel_setup_required'
+    | 'recovery_prerequisite_failed'
+    | 'recovery_queue_unavailable';
+  explanation: string;
+}
 export interface MutationResult {
   world: World;
   replayed?: boolean;
@@ -461,4 +494,6 @@ export interface MutationResult {
   recovery_job?: RecoveryJob | null;
   command_interpretation_calls?: number;
   recovery_total_call_limit?: number;
+  report?: OperationalReportReceipt;
+  recovery_blocked?: RecoveryBlockedReceipt;
 }

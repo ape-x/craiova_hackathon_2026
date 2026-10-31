@@ -212,6 +212,14 @@ class RecoveryJobs:
         validate_hotel_job(world,request)
         return self.ledger.create(incident_id,request,digest,world.scenario_id,on_created=on_created)
 
+    def start_in_transaction(self,conn,world,incident_id,request):
+        """Validate the saved post-report world and queue without opening a connection."""
+        if not conn.in_transaction:
+            raise RuntimeError("Recovery job creation requires an active transaction")
+        digest=scope_fingerprint(world,incident_id,request.group_ids)
+        validate_hotel_job(world,request)
+        return self.ledger.create_in_transaction(conn,world,incident_id,request,digest,world.scenario_id)
+
     def get(self,job_id):
         return {"job":self.ledger.get(job_id)}
 

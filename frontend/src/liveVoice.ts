@@ -2,6 +2,10 @@
  * Official contract: https://developers.openai.com/api/docs/guides/voice-webrtc
  * No project key or provider configuration reaches the browser.
  */
+import { TransportError } from './api';
+import { verifiedCommandResult } from './commandContext';
+import type { MutationResult } from './types';
+
 export type VoiceState = 'idle' | 'connecting' | 'listening' | 'working' | 'closing' | 'error';
 export type DelegationRequest = { text: string; delegationId: string; context: string };
 export interface VoiceStartupScope {
@@ -18,7 +22,7 @@ export interface LiveVoiceOptions {
   /** Render a user-gesture Play control calling client.audio.play(). */
   onPlaybackBlocked?: () => void;
   /** Must execute through the versioned backend, then return verified facts. */
-  onDelegation: (request: DelegationRequest) => Promise<string>;
+  onDelegation: (request: DelegationRequest) => Promise<string | MutationResult>;
   onEvent?: (event: Record<string, unknown>) => void;
 }
 
@@ -30,18 +34,109 @@ type ConversationFragment = Fragment & { role: 'user' | 'assistant' };
  * conservative bound without shipping a tokenizer or guessing chars/token.
  * Iterate code points so truncation never splits a surrogate pair.
  */
-function boundedContext(content: string): string {
+function boundedContext(content: string, limit = 480): string {
   const encoder = new TextEncoder();
-  if (encoder.encode(content).byteLength <= 480) return content;
+  if (encoder.encode(content).byteLength <= limit) return content;
   let result = '',
     bytes = 0;
   for (const character of content) {
     const length = encoder.encode(character).byteLength;
-    if (bytes + length > 477) break;
+    if (bytes + length > limit - 3) break;
     bytes += length;
     result += character;
   }
   return result.trimEnd() + '…';
+}
+
+/** Only facts from this backend receipt may describe the outcome or allowance.
+ * Reserve room for the qualification; long scope/reason text cannot remove it.
+ * Full details remain in the command reply and case panel, without another call.
+ */
+export function voiceCommandAcknowledgement(result: MutationResult): string {
+  const report =
+    result.applied === true && result.report?.source === 'operator_report'
+      ? result.report
+      : undefined;
+  const job = result.recovery_job;
+  const blocked = result.recovery_blocked;
+  if (!report && !job && !blocked) return boundedContext(verifiedCommandResult(result));
+
+  const parts: string[] = [];
+  const recorded = result.replayed ? 'deja înregistrat' : 'înregistrat';
+  const groups = (count: number) => `${count} ${count === 1 ? 'grup' : 'grupuri'}`;
+  if (report?.type === 'arrival_report') {
+    const ready = Date.parse(report.ready_at);
+    const time =
+      Number.isFinite(ready) && /(?:Z|[+-]\d{2}:\d{2})$/i.test(report.ready_at)
+        ? `${new Date(ready).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+        : 'ora declarată în panou';
+    parts.push(
+      `Raport ${recorded}: ${groups(report.group_ids.length)} la ${report.airport_code}, ${report.group_ids.length === 1 ? 'pregătit' : 'pregătite'} de la ${time}.`,
+    );
+  } else if (report?.type === 'resource_unavailability') {
+    parts.push(
+      `Raport ${recorded}: serviciul ${report.resource_id} indisponibil pentru planificare.`,
+    );
+  }
+
+  if (job && blocked) {
+    parts.push('Starea căutării este contradictorie în răspuns; verifică panoul cazului.');
+  } else if (job) {
+    if (!result.incident_id || result.incident_id !== job.incident_id) {
+      parts.push('Nu pot confirma cazul căutării din acest răspuns; verifică panoul cazului.');
+    } else if (job.status === 'queued' || job.status === 'running') {
+      parts.push(
+        `Cererea de căutare a fost ${result.replayed ? 'deja ' : ''}înregistrată pentru ${groups(job.group_ids.length)}${report ? '' : `, cazul ${result.incident_id}`}.`,
+      );
+    } else {
+      // A status read or replay may include an old completed job. It is not a
+      // fresh queue receipt or proof that its proposal is still usable.
+      parts.push(
+        `Starea consemnată a căutării: ${job.status}. Verifică propunerea actuală în panoul cazului.`,
+      );
+    }
+  } else if (blocked) {
+    const reasons = {
+      insufficient_call_allowance: 'limita de apeluri este insuficientă',
+      hotel_setup_required: 'configurația hotelului trebuie completată sau revizuită',
+      recovery_prerequisite_failed:
+        'o condiție necesară nu este îndeplinită; verifică panoul cazului',
+      recovery_queue_unavailable:
+        'coada de recuperare nu este disponibilă; verifică panoul cazului',
+    };
+    parts.push(
+      `Căutarea nu a pornit: ${reasons[blocked.code] ?? 'verifică motivul în panoul cazului'}.`,
+    );
+  } else {
+    parts.push('Nu am pornit o căutare.');
+  }
+
+  if (
+    (job || blocked) &&
+    Number.isSafeInteger(result.recovery_total_call_limit) &&
+    result.recovery_total_call_limit! >= 0 &&
+    result.recovery_total_call_limit! <= 27
+  ) {
+    parts.push(
+      `Limită totală: ${result.recovery_total_call_limit} apeluri, inclusiv interpretarea.`,
+    );
+  }
+  if (
+    job &&
+    !blocked &&
+    result.incident_id === job.incident_id &&
+    (job.status === 'queued' || job.status === 'running')
+  ) {
+    parts.push('Vezi progresul curent în panoul cazului.');
+  }
+  const qualification =
+    report?.type === 'arrival_report'
+      ? 'Date raportate, nu confirmare de aterizare, autorizare aeroportuară, itinerar sau rezervare.'
+      : report
+        ? 'Nu este anulare la furnizor, itinerar confirmat sau rezervare.'
+        : 'Nu confirmă un itinerar sau o rezervare.';
+  const available = 480 - new TextEncoder().encode(qualification).byteLength - 1;
+  return `${boundedContext(parts.join(' '), available)} ${qualification}`;
 }
 
 export class LiveVoiceClient {
@@ -439,7 +534,7 @@ export class LiveVoiceClient {
         type: 'session.commentary.append',
         event_id: crypto.randomUUID(),
         delegation_id: id,
-        content: result.slice(0, 1200),
+        content: typeof result === 'string' ? result : voiceCommandAcknowledgement(result),
       });
       this.options.onState('listening', 'Rezultatul verificat a revenit în conversație.');
     } catch (error) {
@@ -449,7 +544,10 @@ export class LiveVoiceClient {
         type: 'session.commentary.append',
         event_id: crypto.randomUUID(),
         delegation_id: id,
-        content: `Aplicația a raportat o eroare: ${message.slice(0, 700)}. Nu afirma că planul a fost aplicat. Operatorul poate verifica starea curentă.`,
+        content:
+          error instanceof TransportError
+            ? 'Rezultatul cererii este neconfirmat; raportul sau căutarea pot fi deja înregistrate. Folosește Recover request cu același ID. Nu retrimite automat comanda și nu afirma succesul.'
+            : `Nu afirma că planul a fost aplicat. Aplicația a raportat o eroare: ${message.slice(0, 700)}. Operatorul poate verifica starea curentă.`,
       });
       // A failed planning command is recoverable. Keep the same session and
       // microphone under UI control; the application already displays its error.

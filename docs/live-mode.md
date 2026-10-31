@@ -88,6 +88,46 @@ including interpretation. The default eight-call allowance is never increased
 automatically. [The contract](implementation-contract.md#durable-recovery-jobs)
 describes the limits and atomic source revalidation.
 
+## Reporting operational changes
+
+Use the case panel to report a passenger group's actual or explicitly assumed
+planning location/readiness, or the service inspector to report an existing
+service unavailable. These operator reports preserve supplier evidence and
+invalidate only the affected pending proposals. They cannot relocate groups or
+change services with externally confirmed bookings. A reported arrival is not
+proof of landing or airport permission; an unavailable-service report is not a
+supplier cancellation. The forms do not start a search.
+
+Voice/text can submit one such report, optionally followed by an explicitly
+requested recovery search in the same command. For arrival/readiness or a
+follow-up search, name the current case/flight and exact linked groups. Specify
+an unambiguous arrival airport and either the full readiness date, minute and
+UTC/offset, or an explicit interval such as “ready in 30 minutes” or “pregătiți în
+30 de minute” (0–10080 integer minutes). Relative readiness uses the server's
+durable command-receipt time, rounded up to a UTC minute; the acknowledgement
+speaks the resulting absolute UTC time. Retries retain that same anchor rather
+than moving readiness forward. Bare “now”, a flight ETA or diversion alone is
+insufficient. For a service outage, use its exact resource ID
+or a unique current name. Ambiguous, conditional or negated reports require
+clarification; selected UI context and conversation history do not authorize the
+missing facts or a call limit.
+
+The acknowledgement separates **report recorded** from **search request
+recorded**. A valid report can remain saved while search is blocked by a missing
+hotel configuration, insufficient allowance or an occupied queue. That outcome
+makes no supplier-search calls. The default total allowance remains eight,
+including interpretation; the complete saved hotel flow still needs eleven and
+revalidates its inputs after the report. A changed location may invalidate the
+saved hotel setup instead of silently choosing new pickup coordinates or times.
+
+A repeated request uses its original receipt and says already recorded; inspect
+the case panel for current progress. If the connection leaves the outcome
+unknown, use **Recover request**, which reuses the same transcript, request and
+ID. Do not treat the spoken acknowledgement as a completed journey, a current
+supplier hold or a booking. Report-plus-search and acknowledgement handling have
+offline tests; they have not established successful paid spoken recovery or
+physical microphone behavior.
+
 ## Planning and confirmation
 
 The solver uses sourced resources, exact whole-group quote totals, capacities,

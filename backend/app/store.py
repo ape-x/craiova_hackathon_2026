@@ -350,9 +350,11 @@ class Store:
             world.version+=1
             self._save(conn,world)
             response={"world":self._with_observations(conn,world).model_dump(mode="json"),**result,"replayed":False}
-            conn.execute("INSERT INTO idempotency VALUES(?,?,?,?)",(key,self.fingerprint(payload),json.dumps(self._without_observations(response)),utcnow().isoformat()))
             if on_commit is not None:
+                # A callback may enqueue dependent work and enrich the receipt.
+                # Both must persist atomically with this world, including replay.
                 on_commit(conn,response)
+            conn.execute("INSERT INTO idempotency VALUES(?,?,?,?)",(key,self.fingerprint(payload),json.dumps(self._without_observations(response)),utcnow().isoformat()))
             conn.commit()
             if request_started is not None and response.get("decision"):
                 finished=time.perf_counter()

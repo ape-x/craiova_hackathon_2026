@@ -221,6 +221,10 @@ class LiveCommands:
     def route(self, request, world, interpreted):
         if interpreted.get("_zero_allowance"):
             return self._reply(request, world, interpreted["explanation"], calls=0)
+        from .live_operational_commands import route_operational_report
+        reported = route_operational_report(self, request, world, interpreted)
+        if reported is not None:
+            return reported
         raw = interpreted.get("recovery")
         if raw is None:
             # A dropped recovery intent must never turn an explicitly named

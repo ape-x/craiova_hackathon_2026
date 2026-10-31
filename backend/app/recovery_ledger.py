@@ -59,42 +59,51 @@ class RecoveryLedger:
             return {"job": self._public(conn, json.loads(row[1])), "replayed": True}
 
     def create(self, incident_id, request, scope_hash, scenario_id, *, on_created=None):
-        payload = {**request.model_dump(mode="json"), "incident_id": incident_id}
-        key = "recovery-job:" + request.idempotency_key
         with self.store.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute("SELECT fingerprint,data FROM recovery_jobs WHERE request_key=?", (key,)).fetchone()
-            if row:
-                if row[0] != Store.fingerprint(payload):
-                    raise DomainError(409, "This recovery-job key already identifies a different request")
-                result = {"job": self._public(conn,json.loads(row[1])), "replayed": True}
-                if on_created is None:
-                    return result
-                world = self.store._load(conn)
-                if world.version != request.expected_version or world.scenario_id != scenario_id:
-                    raise DomainError(409, "Operation changed before the command receipt could be recorded; inspect the existing job")
-                return on_created(conn, world, result)
             world = self.store._load(conn)
-            if world.version != request.expected_version or world.scenario_id != scenario_id:
-                raise DomainError(409, "Operation changed before this recovery job was queued")
-            active = [json.loads(row[0]) for row in conn.execute("SELECT data FROM recovery_jobs WHERE status IN ('queued','running')")]
-            if len(active) >= 20:
-                raise DomainError(429, "Recovery queue is full; wait for an existing job to finish")
-            if any(set(request.group_ids).intersection(job["group_ids"]) for job in active):
-                raise DomainError(409, "A recovery job already owns one of these passenger groups; inspect or cancel it first")
-            now = utcnow().isoformat()
-            job = {"id": "JOB-"+secrets.token_hex(10).upper(), "incident_id":incident_id,
-                   "group_ids":request.group_ids, "objective":request.objective, "modes":request.modes,
-                   "max_provider_calls":request.max_provider_calls, "calls_dispatched":0,
-                   "status":"queued", "stage":"queued", "message":"Recovery job queued; no supplier request has been dispatched.",
-                   "created_at":now, "updated_at":now, "source_version":world.version, "applied_version":None,
-                   "cancel_requested":False, "gaps":[], "result":None,
-                   "_request":payload, "_scope_hash":scope_hash, "_scenario_id":scenario_id}
-            conn.execute("INSERT INTO recovery_jobs VALUES(?,?,?,?,?,?,?)", (job["id"],key,Store.fingerprint(payload),"queued",None,0,json.dumps(job)))
-            result = {"job":self._public(conn,job), "replayed":False}
-            # The command receipt and queued job commit together. In particular,
-            # a process failure cannot leave a paid job without its replay key.
-            return on_created(conn, world, result) if on_created else result
+            result = self.create_in_transaction(conn, world, incident_id, request, scope_hash, scenario_id)
+            if on_created is not None:
+                if world.version != request.expected_version or world.scenario_id != scenario_id:
+                    raise DomainError(409, "Operation changed before the command receipt could be recorded; inspect the existing job",
+                        {"code": "recovery_world_changed"})
+                return on_created(conn, world, result)
+            return result
+
+    def create_in_transaction(self, conn, world, incident_id, request, scope_hash, scenario_id):
+        """Queue using the caller's transaction; never commit or dispatch here."""
+        if not conn.in_transaction:
+            raise RuntimeError("Recovery job creation requires an active transaction")
+        payload = {**request.model_dump(mode="json"), "incident_id": incident_id}
+        key = "recovery-job:" + request.idempotency_key
+        row = conn.execute("SELECT fingerprint,data FROM recovery_jobs WHERE request_key=?", (key,)).fetchone()
+        if row:
+            if row[0] != Store.fingerprint(payload):
+                raise DomainError(409, "This recovery-job key already identifies a different request",
+                    {"code": "recovery_job_key_conflict"})
+            return {"job": self._public(conn,json.loads(row[1])), "replayed": True}
+        persisted = self.store._load(conn)
+        if (world.version != request.expected_version or world.scenario_id != scenario_id
+                or persisted.version != world.version or persisted.scenario_id != world.scenario_id):
+            raise DomainError(409, "Operation changed before this recovery job was queued",
+                {"code": "recovery_world_changed"})
+        active = [json.loads(row[0]) for row in conn.execute("SELECT data FROM recovery_jobs WHERE status IN ('queued','running')")]
+        if len(active) >= 20:
+            raise DomainError(429, "Recovery queue is full; wait for an existing job to finish",
+                {"code": "recovery_queue_full"})
+        if any(set(request.group_ids).intersection(job["group_ids"]) for job in active):
+            raise DomainError(409, "A recovery job already owns one of these passenger groups; inspect or cancel it first",
+                {"code": "recovery_group_active"})
+        now = utcnow().isoformat()
+        job = {"id": "JOB-"+secrets.token_hex(10).upper(), "incident_id":incident_id,
+               "group_ids":request.group_ids, "objective":request.objective, "modes":request.modes,
+               "max_provider_calls":request.max_provider_calls, "calls_dispatched":0,
+               "status":"queued", "stage":"queued", "message":"Recovery job queued; no supplier request has been dispatched.",
+               "created_at":now, "updated_at":now, "source_version":world.version, "applied_version":None,
+               "cancel_requested":False, "gaps":[], "result":None,
+               "_request":payload, "_scope_hash":scope_hash, "_scenario_id":scenario_id}
+        conn.execute("INSERT INTO recovery_jobs VALUES(?,?,?,?,?,?,?)", (job["id"],key,Store.fingerprint(payload),"queued",None,0,json.dumps(job)))
+        return {"job":self._public(conn,job), "replayed":False}
 
     def _recover_expired(self, conn):
         now = utcnow().timestamp()

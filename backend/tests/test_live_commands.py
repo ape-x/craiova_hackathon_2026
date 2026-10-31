@@ -26,7 +26,7 @@ def intent(**changes):
 
 def interpretation(**changes):
     return {"events": [], "strategies": [], "explanation": "Mock interpretation, not a completed search.",
-            "focus_id": None, "recovery": intent(), **changes}
+            "focus_id": None, "recovery": intent(), "operational_report": None, **changes}
 
 
 class FakeAI:
