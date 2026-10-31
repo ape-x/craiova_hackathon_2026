@@ -1,8 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, request, TransportError } from './api';
+import { api, ApiError, request, TransportError } from './api';
+import type { World } from './types';
 
 afterEach(() => vi.unstubAllGlobals());
 describe('mutation transport boundary', () => {
+  it('sends a clarification reply separately from prior commands and verified results', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ applied: false })));
+    vi.stubGlobal('fetch', fetch);
+    const context = 'Cerere anterioară: adaugă un autocar. Backend: câte locuri?';
+    await api.command({ version: 7 } as World, '52 de locuri, pleacă la 18:00.', context);
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.text).toBe('52 de locuri, pleacă la 18:00.');
+    expect(body.context).toBe(context);
+    expect(body.expected_version).toBe(7);
+    expect(body.idempotency_key).toEqual(expect.any(String));
+  });
   it('recovers a truncated successful response without changing the original payload', async () => {
     const payload = { expected_version: 7, idempotency_key: 'request-truncated-123', value: 13 };
     const fetch = vi

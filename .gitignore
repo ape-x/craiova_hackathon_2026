@@ -11,6 +11,11 @@ __pycache__/
 *.sqlite*
 *.db*
 data/
+# Public offline airport reference data; other runtime data remains ignored.
+!/backend/app/data/
+/backend/app/data/*
+!/backend/app/data/airports.json
+!/backend/app/data/README.md
 node_modules/
 dist/
 .DS_Store

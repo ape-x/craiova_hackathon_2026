@@ -81,9 +81,10 @@ export const api = {
       expected_version: world.version,
       idempotency_key: key(),
     }),
-  command: (world: World, text: string) =>
+  command: (world: World, text: string, context = '') =>
     request<MutationResult>('/commands', {
       text,
+      context,
       expected_version: world.version,
       idempotency_key: key(),
     }),

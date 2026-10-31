@@ -6,13 +6,10 @@ import type { World } from '../types';
 import { makeAircraft, PALETTE } from './geometry';
 import Html from './ProjectedHtml';
 import { useSceneAsset } from './lifecycle';
+import { buildNetworkProjection, inIllustratedRegion, regionalPoint } from './networkProjection';
 
 // Real geographic coordinates; the elevation artwork is deliberately illustrative.
-export const geoPoint = (lat: number, lon: number, height = 0): [number, number, number] => [
-  (lon - 24.95) * 79,
-  height,
-  -(lat - 44.9) * 111,
-];
+export const geoPoint = regionalPoint;
 const cities = [
   ['Craiova', 44.3302, 23.7949],
   ['București', 44.4268, 26.1025],
@@ -172,17 +169,31 @@ export default function Region({
     [terrain, terrainTexture, contours, urban],
   );
   useSceneAsset(plane);
-  const airports = world.airports.filter((a) => ['CRA', 'OTP', 'SBZ'].includes(a.code));
-  const byCode = new Map(
-    airports.map((a) => {
-      const p = geoPoint(a.lat, a.lon);
-      p[1] = terrainHeight(p[0], p[2]) + 2;
-      return [a.code, p];
-    }),
-  );
-  const cra = byCode.get('CRA') || geoPoint(44.3181, 23.8886, 2);
+  const projection = useMemo(() => buildNetworkProjection(world.airports), [world.airports]);
+  const airports = world.airports.filter((a) => projection.points.has(a.id));
+  const byCode = new Map<string, [number, number, number]>();
+  for (const airport of airports) {
+    const source = projection.points.get(airport.id)!;
+    const p: [number, number, number] = [...source];
+    p[1] = projection.regional ? terrainHeight(p[0], p[2]) + 2 : 2;
+    byCode.set(airport.id, p);
+    byCode.set(airport.code, p);
+  }
   const activeOffers = world.offers.filter((o) => ['held', 'confirmed'].includes(o.status));
-  const routeStates = new Map<string, 'held' | 'confirmed'>();
+  const routeStates = new Map<string, 'held' | 'confirmed' | 'scheduled' | 'unavailable'>();
+  for (const resource of world.resources) {
+    if (
+      resource.kind !== 'bus' ||
+      resource.origin === resource.destination ||
+      !byCode.has(resource.origin) ||
+      !byCode.has(resource.destination)
+    )
+      continue;
+    const key = JSON.stringify([resource.origin, resource.destination].sort());
+    if (!routeStates.has(key) || resource.available) {
+      routeStates.set(key, resource.available ? 'scheduled' : 'unavailable');
+    }
+  }
   for (const offer of activeOffers)
     for (const leg of offer.itinerary.legs) {
       if (
@@ -191,64 +202,89 @@ export default function Region({
         byCode.has(leg.origin) &&
         byCode.has(leg.destination)
       ) {
-        const key = [leg.origin, leg.destination].sort().join('-');
+        const key = JSON.stringify([leg.origin, leg.destination].sort());
         if (routeStates.get(key) !== 'confirmed')
           routeStates.set(key, offer.status as 'held' | 'confirmed');
       }
     }
-  const regionFlights = world.resources
-    .filter((r) => r.kind === 'flight' && r.origin === 'LTN')
-    .slice(0, 3);
+  const regionFlights = world.resources.filter(
+    (r) => r.kind === 'flight' && byCode.has(r.origin) && byCode.has(r.destination),
+  );
   return (
     <group>
-      <mesh geometry={terrain} receiveShadow>
-        <meshStandardMaterial vertexColors map={terrainTexture} roughness={1} envMapIntensity={0} />
-      </mesh>
-      <lineSegments geometry={contours}>
-        <lineBasicMaterial color="#94b7a8" transparent opacity={0.14} />
-      </lineSegments>
-      <lineSegments geometry={urban}>
-        <lineBasicMaterial color="#b4b8a3" transparent opacity={0.36} />
-      </lineSegments>
-      {cities.map(([name, lat, lon]) => {
-        const [x, , z] = geoPoint(lat, lon);
-        return (
-          <group key={name} position={[x, terrainHeight(x, z) + 0.3, z]}>
-            <mesh rotation={[-Math.PI / 2, 0, 0]}>
-              <circleGeometry args={[name === 'București' ? 7 : 3, 32]} />
-              <meshBasicMaterial color="#b4af91" transparent opacity={0.2} />
-            </mesh>
-            <Html position={[0, 1, 0]} center distanceFactor={190} zIndexRange={[8, 0]}>
-              <span className="scene-city">{name}</span>
-            </Html>
-          </group>
-        );
-      })}
-      {[
-        [23.8, 44.33, 24.37, 44.43, 24.87, 44.85, 26.1, 44.43],
-        [24.37, 44.43, 24.37, 45.1, 24.12, 45.8],
-        [24.12, 45.8, 25.6, 45.65],
-      ].map((road, i) => {
-        const pts: THREE.Vector3[] = [];
-        for (let j = 0; j < road.length; j += 2) {
-          const [x, , z] = geoPoint(road[j + 1], road[j]);
-          pts.push(new THREE.Vector3(x, terrainHeight(x, z) + 0.35, z));
-        }
-        const smooth = new THREE.CatmullRomCurve3(pts)
-          .getPoints(90)
-          .map((p) => [p.x, terrainHeight(p.x, p.z) + 0.4, p.z] as [number, number, number]);
-        return (
-          <Line key={i} points={smooth} color="#7d8678" opacity={0.6} transparent lineWidth={1} />
-        );
-      })}
+      {projection.regional ? (
+        <>
+          <mesh geometry={terrain} receiveShadow>
+            <meshStandardMaterial
+              vertexColors
+              map={terrainTexture}
+              roughness={1}
+              envMapIntensity={0}
+            />
+          </mesh>
+          <lineSegments geometry={contours}>
+            <lineBasicMaterial color="#94b7a8" transparent opacity={0.14} />
+          </lineSegments>
+          <lineSegments geometry={urban}>
+            <lineBasicMaterial color="#b4b8a3" transparent opacity={0.36} />
+          </lineSegments>
+          {cities.map(([name, lat, lon]) => {
+            const [x, , z] = geoPoint(lat, lon);
+            return (
+              <group key={name} position={[x, terrainHeight(x, z) + 0.3, z]}>
+                <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                  <circleGeometry args={[name === 'București' ? 7 : 3, 32]} />
+                  <meshBasicMaterial color="#b4af91" transparent opacity={0.2} />
+                </mesh>
+                <Html position={[0, 1, 0]} center distanceFactor={190} zIndexRange={[8, 0]}>
+                  <span className="scene-city">{name}</span>
+                </Html>
+              </group>
+            );
+          })}
+          {[
+            [23.8, 44.33, 24.37, 44.43, 24.87, 44.85, 26.1, 44.43],
+            [24.37, 44.43, 24.37, 45.1, 24.12, 45.8],
+            [24.12, 45.8, 25.6, 45.65],
+          ].map((road, i) => {
+            const pts: THREE.Vector3[] = [];
+            for (let j = 0; j < road.length; j += 2) {
+              const [x, , z] = geoPoint(road[j + 1], road[j]);
+              pts.push(new THREE.Vector3(x, terrainHeight(x, z) + 0.35, z));
+            }
+            const smooth = new THREE.CatmullRomCurve3(pts)
+              .getPoints(90)
+              .map((p) => [p.x, terrainHeight(p.x, p.z) + 0.4, p.z] as [number, number, number]);
+            return (
+              <Line
+                key={i}
+                points={smooth}
+                color="#7d8678"
+                opacity={0.6}
+                transparent
+                lineWidth={1}
+              />
+            );
+          })}
+        </>
+      ) : (
+        <>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.4, 0]}>
+            <planeGeometry args={[650, 520]} />
+            <meshStandardMaterial color="#122a31" roughness={1} />
+          </mesh>
+          <gridHelper args={[520, 26, '#35535b', '#244047']} position={[0, 0, 0]} />
+        </>
+      )}
+      <Html position={[-80, 2, -138]} center zIndexRange={[8, 0]}>
+        <span className="scene-city">
+          {projection.regional
+            ? 'Regiune ilustrată · Conexiuni externe la margine'
+            : 'Rețea schematică · Poziții adaptate pentru lizibilitate'}
+        </span>
+      </Html>
       {airports.map((a) => {
-        const pos = geoPoint(
-          a.lat,
-          a.lon,
-          terrainHeight(
-            ...([geoPoint(a.lat, a.lon)[0], geoPoint(a.lat, a.lon)[2]] as [number, number]),
-          ) + 2,
-        );
+        const pos = byCode.get(a.id)!;
         const color = a.available ? PALETTE.mint : PALETTE.red;
         return (
           <group
@@ -282,26 +318,40 @@ export default function Region({
                 onClick={() => onSelect(a.id)}
               >
                 <strong>{a.code}</strong>
-                <span>{a.available ? 'Disponibil' : 'Indisponibil'}</span>
+                <span>
+                  {projection.regional && !inIllustratedRegion(a.lat, a.lon)
+                    ? 'Conexiune externă · '
+                    : ''}
+                  {a.available ? 'Disponibil' : 'Indisponibil'}
+                </span>
               </button>
             </Html>
           </group>
         );
       })}
       {Array.from(routeStates).map(([key, status]) => {
-        const [a, b] = key.split('-');
+        const [a, b] = JSON.parse(key) as [string, string];
         const p1 = byCode.get(a)!,
           p2 = byCode.get(b)!;
         const p = regionalCurve(p1, p2, 12).map(
-          (v) => new THREE.Vector3(v.x, terrainHeight(v.x, v.z) + 1.3, v.z),
+          (v) =>
+            new THREE.Vector3(v.x, projection.regional ? terrainHeight(v.x, v.z) + 1.3 : 1.3, v.z),
         );
         return (
           <Line
             key={key}
             points={p}
-            color={status === 'confirmed' ? PALETTE.mint : PALETTE.amber}
-            lineWidth={2.8}
-            dashed={status === 'held'}
+            color={
+              status === 'confirmed'
+                ? PALETTE.mint
+                : status === 'unavailable'
+                  ? PALETTE.red
+                  : status === 'scheduled'
+                    ? '#648b96'
+                    : PALETTE.amber
+            }
+            lineWidth={status === 'scheduled' ? 1.5 : 2.8}
+            dashed={status !== 'confirmed'}
             dashSize={3}
             gapSize={2}
             depthTest={false}
@@ -310,41 +360,73 @@ export default function Region({
         );
       })}
       {regionFlights.map((flight, i) => {
-        const end = byCode.get(flight.destination) || cra;
-        const start: [number, number, number] = [-118 + i * 30, 32 + i * 7, -75 - i * 20];
-        const pts = regionalCurve(start, end, 45);
+        const end = byCode.get(flight.destination)!;
+        const start = byCode.get(flight.origin)!;
+        const pts = regionalCurve(start, end, 32 + (i % 6) * 7);
+        const airborne =
+          flight.departure <= world.sim_time &&
+          world.sim_time < flight.arrival &&
+          (flight.available || flight.status === 'needs_diversion');
+        const progress = Math.max(
+          0,
+          Math.min(
+            1,
+            (world.sim_time - flight.departure) / Math.max(1, flight.arrival - flight.departure),
+          ),
+        );
+        const marker = pts[Math.round((airborne ? progress : 0.5) * (pts.length - 1))];
+        const selected = selectedId === flight.id;
+        const color = flight.available ? PALETTE.amber : PALETTE.red;
         return (
           <group key={flight.id}>
             <Line
               points={pts}
-              color={flight.available ? PALETTE.amber : PALETTE.red}
-              lineWidth={2}
+              color={color}
+              lineWidth={selected ? 3 : airborne ? 2 : 1}
               dashed
               dashSize={3}
               gapSize={2}
               depthTest={false}
-            />
-            <group
-              position={start}
-              rotation={[0, -0.45, 0]}
-              scale={0.29}
-              onClick={(e) => {
-                e.stopPropagation();
+              renderOrder={6}
+              onClick={(event) => {
+                event.stopPropagation();
                 onSelect(flight.id);
               }}
-            >
-              <primitive object={plane.clone()} />
-            </group>
-            <Html position={[start[0] - 6, start[1] + 6, start[2] + 5]} zIndexRange={[14, 0]}>
-              <button
-                className="scene-tag region-tag"
-                style={{ '--tag-color': PALETTE.amber } as React.CSSProperties}
-                onClick={() => onSelect(flight.id)}
+            />
+            {airborne && (
+              <group
+                position={marker}
+                rotation={[0, Math.atan2(end[0] - start[0], end[2] - start[2]), 0]}
+                scale={0.29}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelect(flight.id);
+                }}
               >
-                <strong>{flight.name}</strong>
-                <span>Traiectorie de scenariu</span>
-              </button>
-            </Html>
+                <primitive object={plane.clone()} />
+              </group>
+            )}
+            {(airborne || selected) && (
+              <Html
+                position={[
+                  marker.x - 6,
+                  marker.y + (airborne ? 25 : 6),
+                  marker.z + (airborne ? -8 : 5),
+                ]}
+                zIndexRange={[14, 0]}
+              >
+                <button
+                  className={`scene-tag region-tag ${selected ? 'selected' : ''}`}
+                  style={{ '--tag-color': color } as React.CSSProperties}
+                  onClick={() => onSelect(flight.id)}
+                >
+                  <strong>{flight.name}</strong>
+                  <span>
+                    {flight.origin} → {flight.destination} · Simulare
+                  </span>
+                </button>
+              </Html>
+            )}
           </group>
         );
       })}
@@ -354,13 +436,17 @@ export default function Region({
         if (
           !Number.isFinite(lat) ||
           !Number.isFinite(lon) ||
-          lat < 43.5 ||
-          lat > 46.5 ||
-          lon < 22 ||
-          lon > 28
+          Math.abs(lat) > 90 ||
+          Math.abs(lon) > 180 ||
+          (projection.regional && !inIllustratedRegion(lat, lon))
         )
           return null;
-        const pos = geoPoint(lat, lon, 27 + Math.min(25, Number(o.altitude ?? o.alt ?? 0) / 1500));
+        const pos = projection.project(
+          lat,
+          lon,
+          27 + Math.min(25, Number(o.altitude ?? o.alt ?? 0) / 1500),
+        );
+        if (!projection.regional && (Math.abs(pos[0]) > 190 || Math.abs(pos[2]) > 120)) return null;
         const id = String(o.id ?? o.fr24_id ?? `observation-${i}`);
         return (
           <group key={id} position={pos}>

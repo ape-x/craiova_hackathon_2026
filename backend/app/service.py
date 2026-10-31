@@ -6,8 +6,11 @@ import asyncio
 import logging
 import sqlite3
 from datetime import timedelta
+from pydantic import ValidationError
 from .config import Settings
 from .models import Allocation, Decision, Offer, Reservation, ScenarioChange, Strategy, World, canonical_id
+from .scenario_authoring import add_airport, add_passengers, add_resource, airport_reference, validate_route, validate_schedule
+from .scenario_schema import MAX_COMMAND_EVENTS
 from .seed import seed_world
 from .solver import active_offers, build_candidate, default_strategies, units, validate_allocations
 from .store import DomainError, Store, audit, utcnow
@@ -39,12 +42,106 @@ def strict_number(value,minimum=0,maximum=100000,integer=False):
     return int(value) if integer else float(value)
 
 
+def candidate_rank(plan,objective="balanced"):
+    if objective=="fastest":
+        secondary=(plan.average_arrival,plan.total_cost)
+    elif objective=="lowest_cost":
+        secondary=(plan.total_cost,plan.average_arrival)
+    else:
+        secondary=(plan.total_cost+plan.average_arrival*.1,plan.average_arrival)
+    return (-plan.recovered_passengers,*secondary,plan.id)
+
+
+def shortlist_candidates(candidates,limit=8):
+    """Bound model input only after all eligible airport plans are evaluated.
+
+    Retain the global winners for each measured objective, then add the best
+    remaining airport alternatives before filling with other strong candidates.
+    """
+    if len(candidates)<=limit:
+        return candidates
+    chosen=[]
+    seen=set()
+    def include(plan):
+        if plan.id not in seen and len(chosen)<limit:
+            chosen.append(plan)
+            seen.add(plan.id)
+    for objective in ("balanced","fastest","lowest_cost"):
+        include(min(candidates,key=lambda plan:candidate_rank(plan,objective)))
+    represented={plan.strategy.preferred_airport for plan in chosen}
+    for plan in sorted(candidates,key=candidate_rank):
+        if plan.strategy.preferred_airport not in represented:
+            include(plan)
+            represented.add(plan.strategy.preferred_airport)
+    for plan in sorted(candidates,key=candidate_rank):
+        include(plan)
+    return chosen
+
+
 def apply_change(world: World,event: ScenarioChange):
     kind,target,value=event.type,event.target_id,event.value
     impacted_resources=set()
-    impacted_group=None
+    impacted_groups=set()
     diverted_groups=set()
-    if kind in ("resource_unavailable","flight_cancelled","resource_capacity","resource_accessibility","resource_restored"):
+    if kind=="airport_added":
+        airport=add_airport(world,target,value)
+        audit(world,kind,f"Added simulated airport {airport.id}: {airport.name}.",airport.id,{"value":value,"source":"simulation","location_source":"airport_catalog" if value is None else "custom_simulation"})
+        return
+    elif kind=="resource_added":
+        resource=add_resource(world,target,value)
+        audit(world,kind,f"Added synthetic {resource.kind} {resource.id}: {resource.origin} → {resource.destination}, {resource.capacity} {'rooms' if resource.kind=='hotel' else 'seats'}.",resource.id,{"value":value,"source":"simulation"})
+        return
+    elif kind=="passengers_added":
+        groups=add_passengers(world,value)
+        audit(world,kind,f"Added {sum(g.size for g in groups)} synthetic passengers in {len(groups)} whole groups: {groups[0].origin} → {groups[0].destination}.",None,{"value":value,"group_ids":[g.id for g in groups],"source":"simulation"})
+        return
+    elif kind in ("resource_schedule","resource_route","resource_cost"):
+        resource=lookup(world.resources,target,"resource")
+        if kind=="resource_cost":
+            cost=strict_number(value,0,100000)
+            if cost!=resource.cost_per_person:
+                resource.cost_per_person=cost
+                impacted_resources.add(resource.id)
+        elif kind=="resource_schedule":
+            departure,arrival=value["departure"],value["arrival"]
+            airborne=resource.kind=="flight" and resource.departure<=world.sim_time<resource.arrival and (resource.available or resource.status=="needs_diversion")
+            if resource.departure<=world.sim_time and (not airborne or departure!=resource.departure):
+                raise DomainError(409,"A departed service cannot be moved back in time; an airborne flight may only change its arrival time")
+            validate_schedule(world,departure,arrival,allow_airborne=airborne)
+            if (departure,arrival)!=(resource.departure,resource.arrival):
+                resource.departure,resource.arrival=departure,arrival
+                impacted_resources.add(resource.id)
+                if resource.kind=="flight" and (resource.available or resource.status=="needs_diversion"):
+                    for group in world.groups:
+                        if group.original_flight_id==resource.id and group.origin==resource.destination:
+                            group.ready_at=max(world.sim_time,arrival+30)
+                            impacted_groups.add(group.id)
+        else:
+            if resource.departure<=world.sim_time:
+                raise DomainError(409,"A departed service cannot change route; use flight_diverted for an airborne flight")
+            origin,destination=validate_route(world,resource.kind,value["origin"],value["destination"],available=resource.available)
+            if (origin,destination)!=(resource.origin,resource.destination):
+                previous_destination=resource.destination
+                resource.origin,resource.destination=origin,destination
+                impacted_resources.add(resource.id)
+                for group in world.groups:
+                    if group.original_flight_id==resource.id:
+                        if group.origin==previous_destination and resource.kind=="flight" and resource.available:
+                            group.origin=destination
+                            group.ready_at=max(world.sim_time,resource.arrival+30)
+                            impacted_groups.add(group.id)
+                        if group.status=="scheduled" and group.origin!=group.destination:
+                            group.status="waiting"
+    elif kind in ("airport_restored","airport_diversion_eligibility"):
+        airport=airport_reference(world,target)
+        if kind=="airport_restored":
+            # Reopening the location does not silently reinstate cancelled flights.
+            airport.available=True
+        else:
+            if not isinstance(value,bool):
+                raise DomainError(422,"Diversion eligibility must be a boolean")
+            airport.diversion_eligible=value
+    elif kind in ("resource_unavailable","flight_cancelled","resource_capacity","resource_accessibility","resource_restored"):
         r=lookup(world.resources,target,"resource")
         if kind=="flight_cancelled" and r.kind!="flight":
             raise DomainError(422,"flight_cancelled requires a flight")
@@ -86,6 +183,10 @@ def apply_change(world: World,event: ScenarioChange):
         airport.available=False
         for r in world.resources:
             if r.kind=="flight" and airport.id in (r.origin,r.destination):
+                # An airport closing after takeoff cannot undo that departure.
+                # Its airborne outbound flight remains subject to arrival closures.
+                if r.origin==airport.id and r.destination!=airport.id and r.departure<=world.sim_time<r.arrival and (r.available or r.status=="needs_diversion"):
+                    continue
                 airborne=r.destination==airport.id and r.departure<=world.sim_time<r.arrival and r.available
                 pending=r.status=="needs_diversion"
                 r.available=False
@@ -128,17 +229,27 @@ def apply_change(world: World,event: ScenarioChange):
             for offer in list(active_offers(world)):
                 if offer.status=="held":
                     invalidate(world,offer,"Scenario budget changed; unaccepted offer needs reevaluation.")
-    elif kind in ("group_deadline","group_accessibility","group_budget"):
+    elif kind in ("group_deadline","group_accessibility","group_budget","group_destination","group_priority"):
         group=lookup(world.groups,target,"group")
-        impacted_group=group.id
+        impacted_groups.add(group.id)
         if kind=="group_deadline":
             group.deadline=strict_number(value,world.sim_time,10080,True)
         elif kind=="group_budget":
             group.budget=strict_number(value,0,100000)
+        elif kind=="group_destination":
+            if not isinstance(value,str):
+                raise DomainError(422,"Group destination must be an airport ID")
+            group.destination=airport_reference(world,value).id
+            if group.status=="scheduled" and group.destination!=group.origin:
+                group.status="waiting"
+        elif kind=="group_priority":
+            group.priority=strict_number(value,1,10,True)
         else:
             if not isinstance(value,bool):
                 raise DomainError(422,"Accessibility must be a boolean")
             group.accessible=value
+    else:
+        raise DomainError(422,f"Unsupported scenario operation: {kind}")
     for offer in list(active_offers(world)):
         resources={l.resource_id for l in offer.itinerary.legs}
         if offer.group_id in diverted_groups:
@@ -149,11 +260,35 @@ def apply_change(world: World,event: ScenarioChange):
             if kind=="resource_accessibility" and not lookup(world.groups,offer.group_id,"group").accessible:
                 continue
             invalidate(world,offer,f"{target} changed ({kind}); its dependent itinerary requires recovery.")
-        elif offer.group_id==impacted_group:
+        elif offer.group_id in impacted_groups:
             check=validate_allocations(world,[Allocation(group_id=offer.group_id,itinerary=offer.itinerary)],include_confirmed=False)
             if not check["valid"]:
                 invalidate(world,offer,"Passenger constraints changed: "+"; ".join(check["errors"]))
+    if kind=="group_destination" and group.origin==group.destination:
+        group.status="scheduled"
+    if kind=="resource_route":
+        for group in world.groups:
+            if group.id in impacted_groups and group.origin==group.destination:
+                group.status="scheduled"
     audit(world,kind,f"Scenario event: {kind} · {target or 'global'}"+(f" → {value}" if value is not None else ""),target,{"value":value,"source":"simulation"})
+
+
+def validated_candidates(world: World,candidates):
+    valid=[]
+    for plan in candidates:
+        if not plan.validation["valid"]:
+            continue
+        if plan.scenario_changes:
+            projected=world.model_copy(deep=True)
+            try:
+                for change in plan.scenario_changes:
+                    apply_change(projected,ScenarioChange.model_validate(change))
+            except (DomainError,ValidationError):
+                continue
+            if not validate_allocations(projected,plan.allocations)["valid"]:
+                continue
+        valid.append(plan)
+    return valid
 
 
 class RecoveryService:
@@ -186,7 +321,7 @@ class RecoveryService:
         return self.store.mutate("event:"+request.idempotency_key,payload,request.expected_version,
             lambda world:apply_change(world,ScenarioChange(type=request.type,target_id=request.target_id,value=request.value)))
 
-    def _hold_plan(self,world,plan,mode,request,provider,explanation,candidates,latency,focus_id=None,timings=None,apply_started=None):
+    def _hold_plan(self,world,plan,mode,request,provider,explanation,candidates,latency,focus_id=None,timings=None,apply_started=None,candidate_counts=None):
         apply_started=apply_started if apply_started is not None else time.perf_counter()
         for change in plan.scenario_changes:
             apply_change(world,ScenarioChange.model_validate(change))
@@ -214,9 +349,9 @@ class RecoveryService:
             groups[exception["group_id"]].status="exception"
         record=Decision(id="dec_"+secrets.token_hex(10),timestamp=utcnow().isoformat(),source_version=world.version,applied_version=world.version+1,
             mode=mode,provider=provider,request=request,explanation=explanation,selected_plan_id=plan.id,candidates=candidates,latency_ms=latency,focus_id=focus_id,
-            timings_ms={**(timings or {}),"apply_ms":round((time.perf_counter()-apply_started)*1000,2)})
+            timings_ms={**(timings or {}),"apply_ms":round((time.perf_counter()-apply_started)*1000,2)},candidate_counts=candidate_counts or {"computed":len(candidates),"validated":len(candidates),"shortlisted":len(candidates),"submitted":len(candidates) if mode=="ai" else 0})
         world.decisions.append(record)
-        audit(world,"plan_applied",f"{mode.upper()}: {plan.recovered_passengers} passengers offered full journeys; €{plan.total_cost:.2f} held atomically.",plan.id,{"decision_id":record.id,"validation":check,"optimality":plan.optimality})
+        audit(world,"plan_applied",f"{mode.upper()}: {plan.recovered_passengers} passengers offered full journeys; €{plan.total_cost:.2f} held atomically.",plan.id,{"decision_id":record.id,"validation":check,"optimality":plan.optimality,"candidate_counts":record.candidate_counts})
         return {"decision":record.model_dump(mode="json")}
 
     async def replan(self,request):
@@ -233,7 +368,11 @@ class RecoveryService:
             raise DomainError(409,"World changed; refresh before planning",{"current_version":world.version})
         solver_started=time.perf_counter()
         candidates=[build_candidate(world,s) for s in default_strategies(world) or [Strategy()]]
-        candidates=[p for p in candidates if p.validation["valid"]]
+        computed_count=len(candidates)
+        candidates=validated_candidates(world,candidates)
+        validated_count=len(candidates)
+        candidates=shortlist_candidates(candidates)
+        candidate_counts={"computed":computed_count,"validated":validated_count,"shortlisted":len(candidates),"submitted":len(candidates) if request.mode=="ai" else 0}
         timings={"interpretation_ms":0.0,"solver_ms":round((time.perf_counter()-solver_started)*1000,2),"decisions_ms":0.0}
         if not candidates:
             raise DomainError(409,"No candidate passed exact validation")
@@ -251,9 +390,11 @@ class RecoveryService:
         else:
             plan=min(candidates,key=lambda p:(-p.recovered_passengers,p.total_cost+p.average_arrival*.1,p.id))
             provider="deterministic bounded allocator"
-            explanation=f"Deterministic mode compared {len(candidates)} validated allocations. Selected {plan.recovered_passengers} recovered passengers for €{plan.total_cost:.2f}; {sum(e['passengers'] for e in plan.exceptions)} remain exceptions. Full journeys and shared inventory were checked. Global optimality is not proven."
+            explanation=f"Deterministic mode compared {validated_count} validated allocations. Selected {plan.recovered_passengers} recovered passengers for €{plan.total_cost:.2f}; {sum(e['passengers'] for e in plan.exceptions)} remain exceptions. Full journeys and shared inventory were checked. Global optimality is not proven."
+        if validated_count>len(candidates):
+            explanation+=f" Evaluated all {validated_count} valid airport/objective candidates; shortlisted {len(candidates)} for selection, retaining global objective winners and diverse airport alternatives."
         latency=round((time.perf_counter()-started)*1000,2)
-        return self.store.mutate(key,payload,world.version,lambda current:self._hold_plan(current,plan,request.mode,"Replan recovery",provider,explanation,candidates,latency,timings=timings),request_started=started)
+        return self.store.mutate(key,payload,world.version,lambda current:self._hold_plan(current,plan,request.mode,"Replan recovery",provider,explanation,candidates,latency,timings=timings,candidate_counts=candidate_counts),request_started=started)
 
     async def command(self,request):
         return await self._run_claimed("command",request,self._command)
@@ -270,13 +411,19 @@ class RecoveryService:
         if world.version!=request.expected_version:
             raise DomainError(409,"World changed; refresh before sending a command",{"current_version":world.version})
         interpretation_started=time.perf_counter()
-        interpreted=await self.ai.interpret(request.text,world.model_dump(mode="json"))
+        if request.context:
+            interpreted=await self.ai.interpret(request.text,world.model_dump(mode="json"),request.context)
+        else:
+            interpreted=await self.ai.interpret(request.text,world.model_dump(mode="json"))
         timings={"interpretation_ms":round((time.perf_counter()-interpretation_started)*1000,2)}
         if not interpreted.get("events") and not interpreted.get("strategies"):
             return self.store.remember(key,payload,world.version,{"explanation":interpreted.get("explanation","No operational change requested."),"focus_id":interpreted.get("focus_id"),"applied":False,"mode":"ai"})
-        changes=[ScenarioChange.model_validate(e) for e in interpreted.get("events",[])]
-        if len(changes)>12:
-            raise DomainError(422,"At most 12 operational changes are allowed in one command")
+        if len(interpreted.get("events",[]))>MAX_COMMAND_EVENTS:
+            raise DomainError(422,f"At most {MAX_COMMAND_EVENTS} operational changes are allowed in one command")
+        try:
+            changes=[ScenarioChange.model_validate(e) for e in interpreted.get("events",[])]
+        except ValidationError as exc:
+            raise DomainError(422,"AI returned an invalid scenario operation; no changes were applied") from exc
         projected=world.model_copy(deep=True)
         for event in changes:
             apply_change(projected,event)
@@ -290,7 +437,11 @@ class RecoveryService:
             s.id=f"{s.id}-{idx}"
         solver_started=time.perf_counter()
         candidates=[build_candidate(projected,s) for s in strategies]
-        candidates=[c for c in candidates if c.validation["valid"]]
+        computed_count=len(candidates)
+        candidates=validated_candidates(projected,candidates)
+        validated_count=len(candidates)
+        candidates=shortlist_candidates(candidates)
+        candidate_counts={"computed":computed_count,"validated":validated_count,"shortlisted":len(candidates),"submitted":len(candidates)}
         timings["solver_ms"]=round((time.perf_counter()-solver_started)*1000,2)
         if not candidates:
             raise DomainError(409,"No candidate passed exact validation")
@@ -304,7 +455,12 @@ class RecoveryService:
             apply_started=time.perf_counter()
             for event in changes:
                 apply_change(current,event)
-            return self._hold_plan(current,plan,"ai",request.text,selection.get("provider","OpenAI"),selection["explanation"],candidates,round((time.perf_counter()-started)*1000,2),interpreted.get("focus_id"),timings=timings,apply_started=apply_started)
+            explanation=selection["explanation"]
+            if changes and interpreted.get("explanation"):
+                explanation=interpreted["explanation"]+"\n\n"+explanation
+            if validated_count>len(candidates):
+                explanation+=f" Evaluated all {validated_count} valid airport/objective candidates; shortlisted {len(candidates)} for the decision model, retaining global objective winners and diverse airport alternatives."
+            return self._hold_plan(current,plan,"ai",request.text,selection.get("provider","OpenAI"),explanation,candidates,round((time.perf_counter()-started)*1000,2),interpreted.get("focus_id"),timings=timings,apply_started=apply_started,candidate_counts=candidate_counts)
         return self.store.mutate(key,payload,world.version,commit,request_started=started)
 
     def accept(self,offer_id,request):

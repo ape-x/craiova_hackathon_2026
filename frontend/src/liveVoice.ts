@@ -16,7 +16,8 @@ export interface LiveVoiceOptions {
   onEvent?: (event: Record<string, unknown>) => void;
 }
 
-type Fragment = { text: string; start: number; end: number };
+type Fragment = { text: string; start: number; end: number; receivedAt: number };
+type ConversationFragment = Fragment & { role: 'user' | 'assistant' };
 
 /** Context appends allow 500 tokens. A smaller UTF-8 byte budget is a
  * conservative bound without shipping a tokenizer or guessing chars/token.
@@ -54,7 +55,9 @@ export class LiveVoiceClient {
   private handshakeTimer?: ReturnType<typeof setTimeout>;
   private closeTimer?: ReturnType<typeof setTimeout>;
   private fragments: Fragment[] = [];
+  private conversation: ConversationFragment[] = [];
   private consumedUntil = -1;
+  private delegatedUntil = -1;
   private transcript = { user: '', assistant: '' };
   private seenDelegations = new Set<string>();
   private seenEvents = new Set<string>();
@@ -78,7 +81,9 @@ export class LiveVoiceClient {
     this.finalized = false;
     this.closing = false;
     this.fragments = [];
+    this.conversation = [];
     this.consumedUntil = -1;
+    this.delegatedUntil = -1;
     this.transcript = { user: '', assistant: '' };
     this.seenDelegations.clear();
     this.seenEvents.clear();
@@ -280,9 +285,26 @@ export class LiveVoiceClient {
       if (typeof event.delta !== 'string') return;
       this.transcript[role] = (this.transcript[role] + event.delta).slice(-6000);
       this.options.onTranscript(this.transcript[role], role);
-      if (role === 'user' && Number.isFinite(event.start_ms) && Number.isFinite(event.end_ms)) {
-        this.fragments.push({ text: event.delta, start: event.start_ms, end: event.end_ms });
-        this.fragments = this.fragments.slice(-200);
+      if (
+        Number.isFinite(event.start_ms) &&
+        Number.isFinite(event.end_ms) &&
+        event.start_ms >= 0 &&
+        event.end_ms >= event.start_ms
+      ) {
+        // A retired turn must not leak a late transcription into a newer task.
+        if (role === 'user' && event.start_ms <= this.consumedUntil) return;
+        const fragment = {
+          text: event.delta,
+          start: event.start_ms,
+          end: event.end_ms,
+          receivedAt: Date.now(),
+        };
+        this.conversation.push({ ...fragment, role });
+        this.conversation = this.conversation.slice(-300);
+        if (role === 'user') {
+          this.fragments.push(fragment);
+          this.fragments = this.fragments.slice(-200);
+        }
       }
     } else if (
       event.type === 'session.delegation.created' &&
@@ -291,10 +313,23 @@ export class LiveVoiceClient {
       const id = event.delegation.id;
       if (typeof id !== 'string' || this.seenDelegations.has(id) || this.closing) return;
       this.seenDelegations.add(id);
+      const offset = event.offset_ms;
+      if (!Number.isFinite(offset) || offset < 0 || offset <= this.delegatedUntil) {
+        this.send({
+          type: 'session.commentary.append',
+          event_id: crypto.randomUUID(),
+          delegation_id: id,
+          content:
+            'Această cerere nu are un interval vocal valid. Repetă comanda explicit; nu am modificat simulatorul pentru ea.',
+        });
+        return;
+      }
+      // Reserve the interval now, not when the preceding backend call finishes.
+      const after = this.delegatedUntil;
+      this.delegatedUntil = offset;
       const generation = this.generation;
-      const offset = Number.isFinite(event.offset_ms) ? event.offset_ms : Infinity;
       this.delegationQueue = this.delegationQueue
-        .then(() => this.delegate(id, offset, generation))
+        .then(() => this.delegate(id, after, offset, generation))
         .catch(() => {
           if (generation === this.generation)
             this.fail('Procesarea comenzii vocale a eșuat; sesiunea a fost oprită.');
@@ -302,7 +337,12 @@ export class LiveVoiceClient {
     }
   }
 
-  private async delegate(id: string, offset: number, generation: number): Promise<void> {
+  private async delegate(
+    id: string,
+    after: number,
+    offset: number,
+    generation: number,
+  ): Promise<void> {
     if (generation !== this.generation || this.closing) return;
     this.send({
       type: 'session.thinking.append',
@@ -310,24 +350,42 @@ export class LiveVoiceClient {
       delegation_id: id,
       content: 'Cererea este verificată în simulator. Încă nu există un rezultat confirmat.',
     });
-    // Transcripts and delegation are distinct events; allow queued fragments to
-    // arrive, but execute only once for this delegation, never for each delta.
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    if (generation !== this.generation || this.closing) return;
-    const relevant = this.fragments.filter(
-      (part) => part.end > this.consumedUntil && part.start <= offset,
-    );
+    // Delegation and transcript delivery may arrive out of order. Allow up to
+    // two seconds for this interval, then require a short quiet period before
+    // sending its accumulated text once. A transcript delta is not a user turn.
+    let relevant: Fragment[] = [];
+    let settled = false;
+    for (let elapsed = 0; elapsed < 2000; elapsed += 250) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      if (generation !== this.generation || this.closing) return;
+      relevant = this.fragments.filter((part) => part.start > after && part.start <= offset);
+      if (
+        relevant.length &&
+        Date.now() - Math.max(...relevant.map((part) => part.receivedAt)) >= 250
+      ) {
+        settled = true;
+        break;
+      }
+    }
     const text = relevant
       .map((part) => part.text)
       .join('')
       .trim();
-    const context = this.fragments
-      .filter((part) => part.end <= this.consumedUntil)
-      .map((part) => part.text)
-      .join('')
+    const earlier: Array<{ role: 'user' | 'assistant'; text: string }> = [];
+    for (const part of this.conversation) {
+      if (part.start > offset || (part.role === 'user' && part.start > after)) continue;
+      const last = earlier.at(-1);
+      if (last?.role === part.role) last.text += part.text;
+      else earlier.push({ role: part.role, text: part.text });
+    }
+    // Spoken assistant text may contain a clarification, but is never proof of
+    // execution. App adds the authoritative backend request/result history.
+    const context = earlier
+      .map((part) => `${part.role}: ${part.text}`)
+      .join('\n')
       .slice(-2000);
-    if (relevant.length) this.consumedUntil = Math.max(...relevant.map((part) => part.end));
-    if (!text) {
+    this.consumedUntil = offset;
+    if (!text || !settled) {
       this.send({
         type: 'session.commentary.append',
         event_id: crypto.randomUUID(),

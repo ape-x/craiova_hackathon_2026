@@ -4,7 +4,7 @@ Centru de operațiuni pentru recuperarea pasagerilor, cu **FastAPI, React/TypeSc
 
 ![Aplicația rulată cu hartă Google și operațiuni simulate](docs/verification/google-models-live.jpg)
 
-Captură din aplicația funcțională: imaginile geografice sunt reale, iar pasagerii, incidentele și rezervările sunt simulate. **167 de teste trecute**; interpretarea Sol Ultrafast, selecția Decisions și încărcarea Google Maps au fost verificate cu furnizorii reali. [Rezultate și limite](docs/verification/report.md).
+Captură din aplicația funcțională: imaginile geografice sunt reale, iar pasagerii, incidentele și rezervările sunt simulate. **268 de teste trecute**; interpretarea Sol Ultrafast, selecția Decisions și încărcarea Google Maps au fost verificate cu furnizorii reali. [Rezultate și limite](docs/verification/report.md).
 
 Specificația originală și imaginile de referință sunt în [docs/product-spec.md](docs/product-spec.md) și [docs/mockups](docs/mockups).
 
@@ -42,7 +42,11 @@ Fără chei API funcționează scena arhitecturală, inventarul, incidentele, so
 
 Apasă **Replan SOLVER** pentru prima alocare locală. Selectează o familie din `Passengers`, deschide linkul sau scanează QR-ul, apoi acceptă oferta. În `Scenario controls`, retrage B12 sau închide CRA: ofertele afectate se invalidează și inventarul este recalculat. Poți introduce capacități, bugete sau termene arbitrare; rezultatul nu este un scenariu precalculat.
 
-`Geographic 3D` activează separat Google Maps. Modelul propriu al terminalului este ilustrativ și este etichetat astfel. O randare reală a imaginilor și terenului Google la CRA, cu rute și marcaje de simulare, a fost verificată. Fotogrammetria detaliată a terminalului și alinierea modelelor GLB rămân de verificat.
+## Scenarii libere, nu doar exemple
+
+Prin voce sau text poți adăuga aeroporturi, curse de avion/autocar, cazare și familii noi, apoi să le schimbi condițiile în aceeași conversație. Agentul păstrează contextul clarificărilor și aplică împreună operațiile validate. Catalogul offline include 4.589 de aeroporturi reale; inventarul creat rămâne simulat. [Exemple, arhitectură și limite](docs/freeform-scenarios.md).
+
+`Geographic 3D` activează separat Google Maps. Modelul propriu al terminalului este ilustrativ și este etichetat astfel. O randare reală a imaginilor și terenului Google la CRA, cu rute și marcaje de simulare, a fost verificată. Suprapunerea modelelor GLB a fost verificată vizual; terminalul propriu este ilustrativ, iar alinierea nu reprezintă o măsurătoare topografică.
 
 ## Configurarea integrărilor
 

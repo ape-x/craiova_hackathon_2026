@@ -10,6 +10,9 @@
 **/*.sqlite*
 **/*.db*
 **/data
+!backend/app/data
+!backend/app/data/*.json
+!backend/app/data/*.md
 backups
 **/*.log
 docs/mockups
