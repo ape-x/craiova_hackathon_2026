@@ -175,6 +175,10 @@
   line-height: 1.5;
   margin: 4px 0;
 }
+.entity-heading > div:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .entity-heading h3 span {
   font-size: 10px;
   font-weight: 400;
@@ -202,6 +206,39 @@
   letter-spacing: -0.06em;
   color: var(--text);
 }
+.destination-line.named-destination {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.named-destination strong {
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.record-references {
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.record-references summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+.record-references dl {
+  margin: 8px 0 0;
+}
+.record-references dt {
+  margin-top: 9px;
+}
+.record-references dd {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
 .fact-list {
   display: flex;
   flex-direction: column;
@@ -221,6 +258,8 @@
   color: var(--text);
   font-size: 11px;
   font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .inspector-section {
   padding: 22px 0 7px;

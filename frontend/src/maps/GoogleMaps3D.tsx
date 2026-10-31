@@ -12,6 +12,8 @@ import type { ModelLayer } from './modelLayer';
 import { moveCamera } from './camera';
 import { createMapInitialization, overlayFailureMessage } from './initialization';
 import type { MapInitialization, MapLoadingState, OverlayStage } from './initialization';
+import { transferReview } from '../resourceLabels';
+import { privateTransfer } from '../priceEvidence';
 import './maps.css';
 
 export interface GoogleMaps3DProps {
@@ -272,6 +274,11 @@ export default function GoogleMaps3D({
       clock - Date.parse(stamp) <= 90000
     );
   }).length;
+  const selectedTransfer =
+    world.mode === 'live'
+      ? world.resources.find((item) => item.id === selectedId && privateTransfer(item))
+      : undefined;
+  const selectedReview = selectedTransfer ? transferReview(world, selectedTransfer, clock) : null;
 
   return (
     <section className="geographic-map" aria-label="Geographic 3D operations view">
@@ -307,6 +314,15 @@ export default function GoogleMaps3D({
             <b>{fresh} fresh aircraft observations</b>
           </div>
           <div className="geographic-map-legend">
+            {selectedReview && (
+              <div className="geographic-route-review" role="status">
+                <strong>{selectedReview.title}</strong>
+                <span>{selectedReview.status}</span>
+                <small>
+                  {selectedReview.sourceTime}. Dated prediction, not a vehicle position.
+                </small>
+              </div>
+            )}
             <span>
               <i className="geo-observed" />
               Received observations

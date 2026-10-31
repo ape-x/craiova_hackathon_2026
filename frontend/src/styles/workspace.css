@@ -271,6 +271,26 @@
   color: var(--muted);
   font-size: 10px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.resource-row.private-transfer-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px 10px;
+}
+.private-transfer-row .resource-name small {
+  white-space: normal;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.private-transfer-row .resource-value {
+  grid-column: 2;
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.5;
 }
 .resource-value {
   font: 10px var(--mono);

@@ -5,6 +5,7 @@ import { parkedPoint, passengerPoint, resourcePoint, sceneHeading, scenePoint } 
 export { resourcePoint } from './placement';
 import type { Camera, GeoPoint } from './contracts';
 import { groundCamera, groundPath } from './groundPaths';
+import { transferReview } from '../resourceLabels';
 
 export const COLORS = {
   observed: '#58ddeb',
@@ -258,9 +259,14 @@ export function buildOverlays(
       const road = groundPath(item, liveWorld);
       if (!road) continue;
       const selected = item.id === selectedId || allocated.has(item.id);
+      const review = transferReview(liveWorld, item, now);
       const identity = `${item.origin}:${item.destination}:${item.departure}:${road.geometry}`;
       if (drawnGround.has(identity) && !selected) continue;
       drawnGround.add(identity);
+      if (selected)
+        for (const marker of markers) {
+          if (marker.id === item.origin || marker.id === item.destination) marker.selected = true;
+        }
       routes.push({
         id: item.id,
         ...road,
@@ -272,11 +278,11 @@ export function buildOverlays(
       if (selected || road.geometry === 'connection_only')
         markers.push({
           id: item.id,
-          label: `${item.id} · ${road.geometry === 'sourced_road' ? 'ROAD PREDICTION' : 'CONNECTION ONLY'}`,
+          label: `${review.title} · ${review.status} · ${road.geometry === 'sourced_road' ? 'ROAD PREDICTION' : 'CONNECTION ONLY'}`,
           title:
             road.geometry === 'sourced_road'
-              ? 'Google Routes road geometry for the requested pickup time. Driving prediction, not vehicle telemetry or a booking.'
-              : 'Road geometry is missing or invalid. This straight line shows endpoints only, not a driving path.',
+              ? `${review.sourceTime}. Dated Google Routes driving prediction, not vehicle telemetry. ${review.status}. Record: ${item.id}.`
+              : `Road geometry is missing or invalid. This straight line shows endpoints only, not a driving path. ${review.status}. Record: ${item.id}.`,
           point: road.path[Math.floor((road.path.length - 1) / 2)],
           color: COLORS.muted,
           observed: false,
@@ -355,6 +361,16 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
   const road = world.mode === 'live' && resource ? groundPath(resource, world) : null;
   if (road)
     return { ...groundCamera(road.path), tilt: 48, heading: 0, altitudeMode: 'RELATIVE_TO_GROUND' };
+  if (resource && world.mode === 'live') {
+    const origin = world.airports.find((node) => node.id === resource.origin);
+    return {
+      center: origin ? pointOf(origin) : fallback,
+      range: 1000,
+      tilt: 48,
+      heading: 0,
+      altitudeMode: 'RELATIVE_TO_GROUND',
+    };
+  }
   if (resource && mode !== 'region')
     return {
       center: resourcePoint(resource, world) ?? fallback,

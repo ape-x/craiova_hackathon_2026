@@ -28,6 +28,7 @@ import { airportWeatherState } from './weather';
 import { passengerSourceLabel } from './liveData';
 import { isAirportNode, locationKindLabel } from './locationNodes';
 import { flightSegments, waitingTime } from './journeyPresentation';
+import { locationName, resourceTitle } from './resourceLabels';
 import {
   costPresentation,
   EstimatedCostNote,
@@ -41,6 +42,7 @@ import {
   resourceFreshness,
   useFreshnessClock,
   type ResourceFreshness,
+  sourceInstant,
 } from './resourceFreshness';
 
 export function ItineraryView({
@@ -352,20 +354,65 @@ function ResourceFacts({
 }) {
   const planningCurrent =
     !freshness || liveResourceStatus(resource, freshness, booked).planningCurrent;
+  const transfer = privateTransfer(resource);
+  const route = resource.provenance?.google_route as Record<string, unknown> | undefined;
+  const routeReceived = route?.source === 'Google Routes' ? sourceInstant(route.fetched_at) : null;
+  const operationEpoch = sourceInstant(world.epoch);
   return (
     <>
-      <div className="destination-line">
-        <strong>{resource.origin}</strong>
+      <div className={`destination-line${transfer ? ' named-destination' : ''}`}>
+        <strong>{transfer ? locationName(world, resource.origin) : resource.origin}</strong>
         <ArrowRight size={20} />
-        <strong>{resource.destination}</strong>
+        <strong>
+          {transfer ? locationName(world, resource.destination) : resource.destination}
+        </strong>
       </div>
+      {transfer && (
+        <>
+          <p className="field-hint">
+            {booked
+              ? 'A supplier booking is recorded separately.'
+              : 'Unbooked planning quote; importing this leg did not allocate a complete journey.'}{' '}
+            The pickup point is reported by operations. No vehicle position is observed.
+          </p>
+          <details className="record-references">
+            <summary>Record identifiers</summary>
+            <dl>
+              <dt>Transfer record</dt>
+              <dd>{resource.id}</dd>
+              <dt>Meeting point</dt>
+              <dd>{resource.origin}</dd>
+              <dt>Hotel property</dt>
+              <dd>{resource.destination}</dd>
+            </dl>
+          </details>
+        </>
+      )}
       <div className="fact-list">
         <span>
-          Departure <b>{formatWorldTime(world, resource.departure)}</b>
+          {transfer ? 'Requested pickup' : 'Departure'}{' '}
+          <b>
+            {transfer && operationEpoch !== null
+              ? freshnessTime(operationEpoch + resource.departure * 60_000)
+              : formatWorldTime(world, resource.departure)}
+          </b>
         </span>
         <span>
-          Arrival <b>{formatWorldTime(world, resource.arrival)}</b>
+          {transfer ? 'Predicted road arrival' : 'Arrival'}{' '}
+          <b>
+            {transfer && operationEpoch !== null
+              ? freshnessTime(operationEpoch + resource.arrival * 60_000)
+              : formatWorldTime(world, resource.arrival)}
+          </b>
         </span>
+        {transfer && (
+          <span>
+            Road prediction received{' '}
+            <b>
+              {routeReceived !== null ? freshnessTime(routeReceived) : 'Source time unavailable'}
+            </b>
+          </span>
+        )}
         <span>
           {resource.capacity_scope === 'private_vehicle_quote'
             ? planningCurrent
@@ -420,7 +467,7 @@ function ResourceFacts({
               {String(
                 resource.provenance?.source_reference ??
                   resource.external_offer_id ??
-                  'Recorded by operations',
+                  (transfer ? 'Supplier reference not provided' : 'Recorded by operations'),
               )}
             </b>
           </span>
@@ -868,7 +915,7 @@ export default function Inspector({
                     : 'SIMULATED RESOURCE'}
                 </span>
                 <h3>
-                  {resource.id}{' '}
+                  {resourceTitle(resource)}{' '}
                   <span
                     className={
                       liveStatus
@@ -885,10 +932,7 @@ export default function Inspector({
                         : 'Unavailable'}
                   </span>
                 </h3>
-                <span>
-                  {privateTransfer(resource) ? 'Private transfer · ' : ''}
-                  {resource.name}
-                </span>
+                <span>{privateTransfer(resource) ? resource.source : resource.name}</span>
               </div>
             </div>
             {resourceImpact ? (

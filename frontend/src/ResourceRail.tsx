@@ -21,6 +21,7 @@ import RealDataDialog from './RealDataDialog';
 import RecoveryCases from './RecoveryCases';
 import { isAirportNode, locationKindLabel } from './locationNodes';
 import { privateTransfer } from './priceEvidence';
+import { locationName, resourceTitle } from './resourceLabels';
 import {
   liveResourceStatus,
   recordedBooking,
@@ -60,7 +61,9 @@ export default function ResourceRail({
   const resources = world.resources.filter(
     (item) =>
       item.kind === tab &&
-      `${item.id} ${item.name} ${item.origin} ${item.destination}`.toLowerCase().includes(search),
+      `${item.id} ${item.name} ${item.origin} ${item.destination} ${locationName(world, item.origin)} ${locationName(world, item.destination)}`
+        .toLowerCase()
+        .includes(search),
   );
   const groups = world.groups.filter((item) =>
     `${item.id} ${item.name} ${item.destination}`.toLowerCase().includes(search),
@@ -282,10 +285,10 @@ export default function ResourceRail({
                     onSelect(resource.id);
                     onMode(resource.kind === 'flight' ? 'region' : 'airport');
                   }}
-                  className={`resource-row ${selectedId === resource.id ? 'selected' : ''}`}
+                  className={`resource-row ${privateTransfer(resource) ? 'private-transfer-row' : ''} ${selectedId === resource.id ? 'selected' : ''}`}
                   title={
                     liveStatus
-                      ? `${liveStatus.label}. ${freshness.detail}${booked ? ' A booking confirmation is recorded separately.' : ''}`
+                      ? `${resourceTitle(resource)} · ${resource.id}. ${liveStatus.label}. ${freshness.detail}${booked ? ' A booking confirmation is recorded separately.' : ''}`
                       : undefined
                   }
                 >
@@ -302,10 +305,11 @@ export default function ResourceRail({
                     }
                   />
                   <span className="resource-name">
-                    <strong>{resource.id}</strong>
+                    <strong>{resourceTitle(resource)}</strong>
                     {privateTransfer(resource) && <small>Private transfer</small>}
                     <small>
-                      {resource.origin} <span aria-hidden="true">→</span> {resource.destination} ·{' '}
+                      {locationName(world, resource.origin)} <span aria-hidden="true">→</span>{' '}
+                      {locationName(world, resource.destination)} ·{' '}
                       {formatWorldTime(world, resource.departure)}
                     </small>
                     {booked && (!liveStatus?.planningCurrent || !resource.available) && (

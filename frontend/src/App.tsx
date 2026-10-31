@@ -33,6 +33,7 @@ import ScenarioDialog from './ScenarioDialog';
 import LiveDataDialog from './LiveDataDialog';
 import RecoveryCaseDialog from './RecoveryCaseDialog';
 import { locationKindLabel } from './locationNodes';
+import { geographicContext } from './resourceLabels';
 import { WeatherNetworkOverlay } from './WeatherStatus';
 import { Brand, Dot, Modal, Tag } from './ui';
 import ThemeToggle from './ThemeToggle';
@@ -420,16 +421,10 @@ function Operations() {
       <LoadingPage />
     );
   const live = world.mode === 'live';
-  const mapSelectionId = live
-    ? (world.resources.find((resource) => resource.id === selectedId && resource.kind === 'hotel')
-        ?.origin ?? selectedId)
-    : selectedId;
-  const homeAirport =
-    world.airports.find((airport) => airport.id === mapSelectionId) ?? world.airports[0];
+  const mapContext = geographicContext(world, selectedId);
+  const mapSelectionId = mapContext.selectionId;
+  const homeAirport = mapContext.home;
   const geographic = live || mapStyle === 'geographic';
-  const mapWorld = live
-    ? { ...world, resources: [], groups: [], offers: [], reservations: [] }
-    : world;
   const lastDecision = world.decisions.at(-1);
   const isVoiceActive = !['idle', 'closed', 'error', 'disconnected'].includes(voiceState);
   return (
@@ -438,15 +433,7 @@ function Operations() {
     >
       <WorkspaceHeader
         mode={world.mode}
-        locationLabel={
-          homeAirport
-            ? homeAirport.kind === 'hotel'
-              ? `${homeAirport.name} · accommodation`
-              : `${homeAirport.code} recovery operations`
-            : live
-              ? 'Live recovery operations'
-              : 'Simulation workspace'
-        }
+        locationLabel={mapContext.locationLabel}
         connected={connection === 'connected'}
         sidebarOpen={sidebarOpen}
         showLog={showLog}
@@ -529,7 +516,7 @@ function Operations() {
                 </div>
               ) : geographic && (!live || config.google_maps_api_key) ? (
                 <GoogleMaps3D
-                  world={mapWorld}
+                  world={mapContext.world}
                   mode={mode}
                   selectedId={mapSelectionId}
                   onSelect={select}
@@ -631,7 +618,7 @@ function Operations() {
                       : 'No airport selected'}
                 </span>
                 <span className="map-site-code">
-                  {mode === 'region' ? 'NETWORK' : (homeAirport?.code ?? 'NETWORK')}
+                  {mode === 'region' ? 'NETWORK' : mapContext.siteLabel}
                 </span>
               </div>
               <div className="map-legend">
