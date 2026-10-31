@@ -15,6 +15,7 @@ import type { Airport, Offer, PassengerGroup, Resource } from './types';
 import { Brand, Dot, Tag } from './ui';
 import { ItineraryView } from './Inspector';
 import ThemeToggle from './ThemeToggle';
+import PassengerHistory from './PassengerHistory';
 import { sourcedArrival } from './journeyPresentation';
 import { costPresentation, EstimatedCostNote } from './priceEvidence';
 import {
@@ -32,6 +33,9 @@ interface PassengerState {
   last_offer: Offer | null;
   airports: Airport[];
   resources: Resource[];
+  history_resources?: Resource[];
+  history_airports?: Airport[];
+  history_archived_resource_ids?: string[];
   simulated: boolean;
   currency: string;
 }
@@ -396,6 +400,15 @@ function PassengerJourney({ token }: { token: string }) {
                 </div>
               )}
             </section>
+            {live && !offer && (
+              <PassengerHistory
+                offer={state.last_offer}
+                epoch={state.epoch}
+                resources={state.history_resources}
+                airports={state.history_airports}
+                archivedResourceIds={state.history_archived_resource_ids}
+              />
+            )}
             {(loadError || error) && (
               <p className="form-error" role="alert">
                 {loadError || error}

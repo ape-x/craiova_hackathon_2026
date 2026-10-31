@@ -395,7 +395,8 @@ class RecoveryJobs:
             group=group_map[option["group_id"]]
             try:
                 trial=projected.model_copy(deep=True)
-                added=append_travel_quote(trial,quote,option["query"],group,"flight")
+                added=append_travel_quote(trial,quote,option["query"],group,"flight",
+                    keep_resource_ids={identity for _,_,identity in imported})
                 resource=next(item for item in trial.resources if item.id==added["resource_ids"][0])
                 if resource_blocked_by_incident(trial,resource,group) or resource.departure<option["earliest_departure"] or resource.arrival>option["latest_arrival"]:
                     raise DomainError(422,"Sourced offer does not meet this incident's route or timing constraints")
@@ -405,7 +406,8 @@ class RecoveryJobs:
             except DomainError as exc:
                 if isinstance(exc.details,dict) and exc.details.get("quote_revision_conflict"):
                     raise
-                reason=gap("quote_not_usable",exc.message,[group.id])
+                capacity = isinstance(exc.details,dict) and exc.details.get("inventory_capacity_exhausted")
+                reason=gap("inventory_capacity_exhausted" if capacity else "quote_not_usable",exc.message,[group.id])
                 if reason not in gaps:
                     gaps.append(reason)
         await self._update(job,owner,stage="evaluating",message="Validating complete sourced journeys and preserving every out-of-scope allocation.",gaps=gaps)
@@ -447,7 +449,7 @@ class RecoveryJobs:
                 if resource_id not in chosen_resources:
                     continue
                 group=next(item for item in current.groups if item.id==option["group_id"])
-                append_travel_quote(current,quote,option["query"],group,"flight")
+                append_travel_quote(current,quote,option["query"],group,"flight", keep_resource_ids=chosen_resources)
             before_ids={offer.id for offer in current.offers}
             answer=self.service._hold_plan(current,plan,"ai",decision_request["text"],choice.get("provider","OpenAI Decisions"),choice["explanation"],candidates,round((time.perf_counter()-started)*1000,2),timings=timings,scope_group_ids=scope)
             commit_result.update(decision_id=answer["decision"]["id"],plan_id=plan.id,recovered_passengers=plan.recovered_passengers,

@@ -36,6 +36,7 @@ from .service import RecoveryService
 from .store import DomainError, Store, utcnow
 from .voice_context import VoiceScope, build_voice_context
 from .operational_reports import ArrivalReportInput, OperationalReports, ResourceUnavailabilityInput
+from .inventory_history import create_inventory_history_router
 
 
 class VoiceRequest(Model):
@@ -189,6 +190,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
 
     app.include_router(create_transfer_router(ground_transfers,operator))
     app.include_router(create_planning_transfer_router(ground_planning,operator))
+    app.include_router(create_inventory_history_router(store,operator))
 
     @app.middleware("http")
     async def security_headers(request,call_next):

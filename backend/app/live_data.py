@@ -21,7 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .airport_catalog import lookup_airport
 from .models import Airport, Mutation, PassengerGroup, Resource, World
-from .scenario_schema import MAX_AIRPORTS, MAX_GROUPS, MAX_PASSENGERS, MAX_RESOURCES
+from .scenario_schema import MAX_GROUPS, MAX_PASSENGERS
+from .inventory_lifecycle import archived_location, ensure_inventory_capacity, resource_history, validate_location_identity
 from .planning_window import planning_horizon_end
 from .store import DomainError
 
@@ -215,21 +216,29 @@ def _evidence(value: EvidenceInput, *, digest: str | None = None) -> dict:
     return result
 
 
-def _new_airports(world: World, codes: list[str]) -> list[Airport]:
+def _new_airports(world: World, codes: list[str], *, keep_resource_ids=(), keep_location_ids=()) -> list[Airport]:
     known = {airport.id for airport in world.airports}
     airports = []
     for code in dict.fromkeys(codes):
         if code in known:
+            continue
+        archived = archived_location(world, code)
+        if archived is not None:
+            validate_location_identity(world, archived)
+            airports.append(archived)
+            known.add(code)
             continue
         reference = lookup_airport(code)
         if reference is None:
             raise DomainError(422, f"Airport {code} is not present in the reference catalog")
         code = reference["code"]
         if code not in known:
-            airports.append(Airport(id=code, code=code, name=reference["name"], lat=reference["lat"], lon=reference["lon"], available=False, operational_status="unknown"))
+            node = Airport(id=code, code=code, name=reference["name"], lat=reference["lat"], lon=reference["lon"], available=False, operational_status="unknown")
+            validate_location_identity(world, node)
+            airports.append(node)
             known.add(code)
-    if len(known) > MAX_AIRPORTS:
-        raise DomainError(422, f"Operation limit is {MAX_AIRPORTS} airports")
+    ensure_inventory_capacity(world, extra_locations=len(airports), keep_resource_ids=keep_resource_ids,
+        keep_location_ids={*codes, *keep_location_ids})
     return airports
 
 
@@ -343,12 +352,11 @@ def prepare_resource(world: World, value: ManualResourceInput) -> dict:
     now = utcnow()
     if value.valid_until <= now or value.departure_at < now:
         raise DomainError(422, "Inventory confirmation must be valid now and departure must not be in the past")
-    if len(world.resources) >= MAX_RESOURCES:
-        raise DomainError(422, f"Operation limit is {MAX_RESOURCES} resources")
-    if any(item.id == value.id for items in (world.airports, world.resources, world.groups) for item in items):
+    if (any(item.id == value.id for items in (world.airports, world.resources, world.groups) for item in items)
+            or resource_history(world, resource_id=value.id) or archived_location(world, value.id)):
         raise DomainError(409, "Resource ID already exists")
     def endpoint(code):
-        known = next((node for node in world.airports if node.id == code or node.code == code), None)
+        known = next((node for node in world.airports if node.id == code or node.code == code), None) or archived_location(world, code)
         if known is not None:
             if value.kind == "flight" and getattr(known, "kind", "airport") != "airport":
                 raise DomainError(422, "Flight endpoints must be airports")
@@ -375,6 +383,7 @@ def prepare_resource(world: World, value: ManualResourceInput) -> dict:
     airports = _new_airports(world, [origin, destination])
     if resource.id in {airport.id for airport in airports}:
         raise DomainError(409, "A resource ID cannot also be an airport ID")
+    ensure_inventory_capacity(world, extra_resources=1, extra_locations=len(airports), keep_location_ids=(origin, destination))
     return {"airports": airports, "resources": [resource], "provenance": evidence}
 
 

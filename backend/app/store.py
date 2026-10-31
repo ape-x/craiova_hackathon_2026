@@ -14,6 +14,7 @@ from typing import Callable
 from .models import AuditEvent, FlightSelection, World
 from .seed import seed_world, empty_live_world
 from .pricing import cost_summary
+from .inventory_lifecycle import ARCHIVE_SCHEMA, bind_inventory, persist_inventory, resource_detail
 
 
 def utcnow() -> datetime:
@@ -96,6 +97,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS flight_lookups (id TEXT PRIMARY KEY, query_key TEXT NOT NULL, select_until REAL NOT NULL, retain_until REAL NOT NULL, data TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS flight_lookup_query ON flight_lookups(query_key);
             """)
+            conn.executescript(ARCHIVE_SCHEMA)
             conn.execute("BEGIN IMMEDIATE")
             if not conn.execute("SELECT 1 FROM controls WHERE key='fr24_credits_reserved'").fetchone():
                 previous_usage=conn.execute("SELECT count FROM leases WHERE name='fr24'").fetchone()
@@ -114,6 +116,7 @@ class Store:
                 world=empty_live_world() if operation_mode=="live" else seed_world()
                 world.version=previous.version+1
                 refresh_stats(world)
+                persist_inventory(conn, world)
                 conn.execute("UPDATE world SET data=? WHERE id=1",(world.model_dump_json(),))
                 conn.execute("DELETE FROM idempotency")
                 conn.execute("DELETE FROM request_claims")
@@ -153,6 +156,7 @@ class Store:
     def _load(self,conn):
         conn.execute("DELETE FROM flight_lookups WHERE retain_until<=?",(utcnow().timestamp(),))
         world=World.model_validate_json(conn.execute("SELECT data FROM world WHERE id=1").fetchone()[0])
+        bind_inventory(world, self.path, conn)
         if world.mode=="live":
             world.sim_time=max(0,int((utcnow()-datetime.fromisoformat(world.epoch)).total_seconds()//60))
         for incident in world.incidents:
@@ -165,12 +169,21 @@ class Store:
         conn.executemany("INSERT OR IGNORE INTO audit VALUES(?,?,?,?)",[(e.id,world.scenario_id,e.version,e.model_dump_json()) for e in world.events])
 
     def _save(self,conn,world):
+        persist_inventory(conn, world)
         refresh_stats(world)
         self._save_audit(conn,world)
         world.events=world.events[-200:]
         world.decisions=world.decisions[-6:]
         persisted=self._without_observations({"world":world.model_dump(mode="json")})["world"]
         conn.execute("UPDATE world SET data=? WHERE id=1",(json.dumps(persisted),))
+
+    def resource_detail(self, resource_id: str, *, scenario_id: str):
+        """Resolve one current-operation resource; caller still owns authorization."""
+        with self.connect() as conn:
+            world = self._load(conn)
+            if world.scenario_id != scenario_id:
+                raise DomainError(409, "Operation changed; refresh the inventory reference")
+            return resource_detail(world, resource_id)
 
     @staticmethod
     def _without_observations(response):

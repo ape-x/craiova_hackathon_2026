@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 from .scenario_schema import STRUCTURED_PAYLOADS, WeatherDefinition
 from .pricing import AplPriceEvidence, AplQuoteFreshness, CostEvidence
 from .initial_position import InitialPositionAssumption
@@ -242,6 +242,8 @@ class RecoveryIncident(Model):
 
 
 class World(Model):
+    # Lazy server-only inventory history; never serialized into API/model payloads.
+    _inventory_context: Any = PrivateAttr(default=None)
     scenario_id: str
     version: int = 1
     epoch: str

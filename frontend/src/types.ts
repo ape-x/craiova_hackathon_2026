@@ -104,6 +104,15 @@ export interface Resource {
   booking_status?: string;
   capacity_scope?: 'quoted_request' | 'private_vehicle_quote' | 'operator_confirmed';
 }
+export interface InventoryResourceRecord {
+  scenario_id: string;
+  resource: Resource;
+  locations: Airport[];
+  archived: boolean;
+  archived_at: string | null;
+  archived_version: number | null;
+  archive_reason: string | null;
+}
 export interface PassengerGroup {
   incident_id?: string | null;
   id: string;

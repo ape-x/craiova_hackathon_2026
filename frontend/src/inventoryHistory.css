@@ -1,0 +1,102 @@
+.historical-source {
+  margin: 6px 0;
+}
+.source-record-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.source-record-toggle > svg {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+.source-record-toggle[aria-expanded='true'] > svg {
+  transform: none;
+}
+.source-record-toggle:hover {
+  background: var(--hover);
+}
+.source-record-toggle:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+.source-record-action {
+  margin-left: auto;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.source-record {
+  border-left: 2px solid var(--line-strong);
+  padding: 13px;
+  margin: 10px 0 16px;
+}
+.source-record-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.source-record-heading > span {
+  color: var(--amber);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.source-record-heading > strong {
+  overflow-wrap: anywhere;
+}
+.source-record p,
+.source-record dl,
+.historical-source > div > p {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.source-record-notice {
+  color: var(--muted);
+}
+.source-record dl > div {
+  margin: 10px 0;
+}
+.source-record dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.source-record dd {
+  margin: 3px 0 0;
+}
+.passenger-journey-history {
+  margin: 20px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px;
+}
+.passenger-journey-history > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.passenger-journey-history p,
+.passenger-journey-history li {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.passenger-history-sources {
+  padding-left: 18px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.passenger-history-warning {
+  color: var(--amber);
+  border-left: 2px solid var(--amber);
+  padding-left: 10px;
+}

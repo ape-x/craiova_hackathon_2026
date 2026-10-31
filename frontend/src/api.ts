@@ -3,6 +3,7 @@ import type {
   FlightLookup,
   IncidentInput,
   IncidentResult,
+  InventoryResourceRecord,
   RecoveryJob,
   RecoveryJobInput,
   RecoveryJobResponse,
@@ -124,6 +125,12 @@ export const api = {
   recoveryJobs: (incidentId: string, signal?: AbortSignal) =>
     request<{ jobs: RecoveryJob[] }>(
       `/incidents/${encodeURIComponent(incidentId)}/recovery-jobs`,
+      undefined,
+      signal,
+    ),
+  inventoryResource: (resourceId: string, scenarioId: string, signal?: AbortSignal) =>
+    request<InventoryResourceRecord>(
+      `/inventory/resources/${encodeURIComponent(resourceId)}?scenario_id=${encodeURIComponent(scenarioId)}`,
       undefined,
       signal,
     ),

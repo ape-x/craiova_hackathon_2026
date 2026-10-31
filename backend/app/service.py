@@ -612,8 +612,26 @@ class RecoveryService:
             raise DomainError(404,"Passenger link not found")
         offers=[o for o in world.offers if o.group_id==group.id]
         active=next((o for o in reversed(offers) if o.status in ("held","proposed","accepted","confirmed")),None)
+        # History is resolved only through this passenger's own last offer.
+        # Archived supply is never mixed into the active itinerary's inventory.
+        history_resources, history_airports, archived_ids = [], {}, []
+        if not active and offers:
+            from .inventory_lifecycle import resource_detail
+            by_node = {node.id:node for node in world.airports}
+            for leg in offers[-1].itinerary.legs:
+                detail = resource_detail(world, leg.resource_id)
+                if detail:
+                    history_resources.append(detail["resource"].model_dump(mode="json"))
+                    history_airports.update({node.id:node.model_dump(mode="json") for node in detail["locations"]})
+                    if detail["archived"]:
+                        archived_ids.append(leg.resource_id)
+                for node_id in (leg.origin, leg.destination):
+                    if node_id in by_node and node_id not in history_airports:
+                        history_airports[node_id] = by_node[node_id].model_dump(mode="json")
         return {"version":world.version,"epoch":world.epoch,"sim_time":world.sim_time,"group":group.model_dump(exclude={"token"}),
             "offer":active.model_dump(mode="json") if active else None,"last_offer":offers[-1].model_dump(mode="json") if offers else None,
+            "history_resources":history_resources,"history_airports":list(history_airports.values()),
+            "history_archived_resource_ids":archived_ids,
             "airports":[a.model_dump() for a in world.airports],"resources":[r.model_dump() for r in world.resources if active and r.id in {l.resource_id for l in active.itinerary.legs}],"simulated":world.mode=="simulation","mode":world.mode,"currency":world.currency}
 
     def constraints(self,token,request):

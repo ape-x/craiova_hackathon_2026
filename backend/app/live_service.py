@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import hashlib
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 
@@ -18,9 +17,9 @@ from .live_data import (
 )
 from .models import Allocation, Mutation, Resource
 from .real_data import RealDataRequest
-from .scenario_schema import MAX_AIRPORTS, MAX_RESOURCES
+from .inventory_lifecycle import archive_resources, ensure_inventory_capacity, resource_history, validate_location_identity
 from .solver import units, validate_allocations
-from .store import DomainError, audit, utcnow
+from .store import DomainError, Store, audit, utcnow
 
 
 def _hotel_budget_total(quote: dict, booking_amount: Decimal) -> Decimal | None:
@@ -257,27 +256,31 @@ class LiveOperations:
 
         def apply(current):
             self._hotel_context(current, request)
+            incoming = {resource.id for resource in resources}
             protected = {leg.resource_id for offer in current.offers if offer.status == "confirmed" for leg in offer.itinerary.legs}
             replaced = {resource.id for resource in current.resources if (
                 group.id in resource.eligible_group_ids and resource.kind == "hotel" and resource.requires_revalidation
-                and resource.id not in protected and resource.booking_status != "confirmed"
+                and resource.id not in protected and resource.id not in incoming and resource.booking_status != "confirmed"
             )}
             _invalidate_pending(current, "Hotel offers changed; request a fresh recovery plan.",
                                 group_ids={group.id}, resource_ids=replaced)
-            current.resources = [resource for resource in current.resources if resource.id not in replaced]
-            if len(current.resources) + len(resources) > MAX_RESOURCES:
-                raise DomainError(422, f"Operation limit is {MAX_RESOURCES} resources")
-            current.airports.extend(_new_airports(current, [request.airport_code]))
+            for resource in current.resources:
+                if resource.id in replaced:
+                    resource.available = False
+            archive_resources(current, replaced, reason="hotel_quotes_replaced")
+            nodes = {node.id: node for node in _new_airports(current, [request.airport_code],
+                keep_resource_ids=incoming, keep_location_ids={resource.origin for resource in resources})}
             for resource in resources:
                 node, _ = property_location(resource.provenance)
+                validate_location_identity(current, node)
                 existing = next((item for item in current.airports if item.id == node.id), None)
-                if existing and (existing.kind != "hotel" or existing.lat != node.lat or existing.lon != node.lon):
-                    raise DomainError(409, "Supplier property location changed; review the existing property before replacing it")
                 if not existing:
-                    current.airports.append(node)
-            if len(current.airports) > MAX_AIRPORTS:
-                raise DomainError(422, f"Operation limit is {MAX_AIRPORTS} airport, station and property locations")
-            current.resources.extend(resources)
+                    nodes[node.id] = node
+            additions = [resource for resource in resources if not any(item.id == resource.id for item in current.resources)]
+            ensure_inventory_capacity(current, extra_resources=len(additions), extra_locations=len(nodes),
+                keep_resource_ids=incoming, keep_location_ids={request.airport_code, *(resource.origin for resource in resources)})
+            current.airports.extend(nodes.values())
+            current.resources.extend(additions)
             audit(current, "live-hotel-quotes", "Imported supplier hotel quotes for the selected group; no booking or room hold was made.", group.id,
                   {"resource_ids": [resource.id for resource in resources], "rooms": request.rooms, "supplier": "Nuitee / LiteAPI", "skipped_incomplete_pricing": skipped,
                    "skipped_stay_policy": len(exclusions), "hotel_exclusions": exclusions})
@@ -333,8 +336,7 @@ class LiveOperations:
                 except HotelPolicyError as exc:
                     exclusions.append({"hotel_id": hotel_id, "code": exc.code, "message": exc.message})
                     continue
-            local_id = "HQ-" + hashlib.sha256((group.id + "|" + hotel_id + "|" + reference).encode()).hexdigest()[:28].upper()
-            resources.append(Resource(id=local_id, kind="hotel", name=name[:140], origin=node.id,
+            resource = Resource(id="HQ-PENDING", kind="hotel", name=name[:140], origin=node.id,
                 destination=node.id, departure=departure, arrival=arrival, capacity=request.rooms,
                 cost_per_person=0, room_capacity=1, accessible=False, source="Nuitee / LiteAPI", status="quoted",
                 eligible_group_ids=[group.id], quote_total_cost=float(amount), budget_total_cost=float(budget_total), quote_rooms=request.rooms,
@@ -345,7 +347,21 @@ class LiveOperations:
                     "stay_times_confirmed": request.stay_times_confirmed, "stay_policy_validation": policy_validation,
                     "property_location": location, "search_airport": request.airport_code,
                     "ground_connections_verified": False,
-                }))
+                })
+            resource.id = "HQ-" + Store.fingerprint(resource.model_dump(mode="json", exclude={"id"}))[:28].upper()
+            previous = resource_history(world, source=resource.source, external_offer_id=reference, group_id=group.id, kind="hotel")
+            for old in previous:
+                try:
+                    newer = aware(old.provenance["quoted_at"]) > quoted_at
+                except (KeyError, ValueError, TypeError):
+                    newer = False
+                if newer:
+                    raise DomainError(409, "An older hotel quote cannot replace a newer source revision, including archived history", {"quote_revision_conflict": True})
+            active = next((item for item in world.resources if item.id == resource.id), None)
+            if (active is not None and not active.available) or (active is None and resource_history(world, resource_id=resource.id)):
+                raise DomainError(409, "This hotel quote was retired or archived; retrieve a new supplier quote", {"quote_revision_conflict": True})
+            validate_location_identity(world, node)
+            resources.append(resource)
         if quotes and not resources:
             if exclusions:
                 raise DomainError(422, "No hotel quote passed the sourced stay-policy checks. " + " ".join(dict.fromkeys(item["message"] for item in exclusions)),

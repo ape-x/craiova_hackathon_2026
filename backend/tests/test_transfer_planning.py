@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.hotel_location import property_location
+from app.inventory_lifecycle import resource_history
 from app.main import create_app
 from app.models import Airport, PassengerGroup
 from app.providers.base import ProviderError
@@ -215,7 +216,8 @@ async def test_repricing_creates_immutable_revision_and_retires_only_same_group(
     second_id=service.import_quote(next_quote["quote_id"],import_request(store,"import-test-2"))["resource_ids"][0]
     resources={item.id:item for item in store.read().resources}
     assert second_id!=first_id and resources[second_id].budget_total_cost==110
-    assert resources[first_id].model_dump(mode="json")=={**original,"available":False}
+    assert first_id not in resources
+    assert resource_history(store.read(), resource_id=first_id)[0].model_dump(mode="json")=={**original,"available":False}
 
 
 @pytest.mark.asyncio
@@ -267,9 +269,13 @@ async def test_physical_node_limit_rolls_back_quote_retirement_and_import(setup)
     store,sources,service,request,clock=setup
     quote=await service.quote(request())
     def fill(world):
+        from app.models import Resource
         while len(world.airports)<MAX_AIRPORTS:
             name=f"LIMIT-{len(world.airports)}"
             world.airports.append(Airport(id=name,code=name,name=name,lat=51,lon=0,kind="station"))
+            world.resources.append(Resource(id="PIN-"+name,kind="bus",name="Current sourced service",origin=name,destination="LHR",
+                departure=world.sim_time+60,arrival=world.sim_time+120,capacity=1,cost_per_person=10,
+                source="operator_confirmed",valid_until=(clock[0]+timedelta(hours=1)).isoformat()))
     store.mutate("fill-reference-nodes",{},store.read().version,fill)
     before=store.read().model_dump(mode="json")
     with pytest.raises(DomainError) as full:

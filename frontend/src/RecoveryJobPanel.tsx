@@ -18,6 +18,7 @@ import {
 } from './recoveryJobs';
 import { Tag } from './ui';
 import HotelRecoveryFields from './HotelRecoveryFields';
+import HistoricalSource from './HistoricalSource';
 import {
   emptyHotelRecoveryForm,
   hotelRecoveryGroupIssue,
@@ -131,7 +132,18 @@ export function RecoveryJobDetails({ job, world }: { job: RecoveryJob; world: Wo
             </div>
             <div>
               <dt>Service references</dt>
-              <dd>{result.resource_ids.join(', ') || 'None'}</dd>
+              <dd>
+                {world.mode === 'live' && result.resource_ids.length
+                  ? result.resource_ids.map((resourceId) => (
+                      <HistoricalSource
+                        key={resourceId}
+                        scenarioId={world.scenario_id}
+                        resourceId={resourceId}
+                        epoch={world.epoch}
+                      />
+                    ))
+                  : result.resource_ids.join(', ') || 'None'}
+              </dd>
             </div>
           </dl>
           {result.hotel_recovery && (

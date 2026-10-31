@@ -25,7 +25,8 @@ from .models import Airport, Model, Mutation, Resource
 from .pricing import AplQuoteFreshness, build_apl_price_evidence, aware_timestamp
 from .providers.apl import APLQuoteRequest, LONDON
 from .providers.base import ProviderError
-from .scenario_schema import HORIZON_MINUTES, MAX_AIRPORTS, MAX_RESOURCES
+from .scenario_schema import HORIZON_MINUTES
+from .inventory_lifecycle import archived_location, ensure_inventory_capacity, resource_history, validate_location_identity
 from .planning_window import planning_horizon_end
 from .store import DomainError, Store, audit, utcnow
 
@@ -182,10 +183,10 @@ def transfer_context(world, request, *, now):
         raise DomainError(422, "The declared airport point is over 10 km from the airport reference. This app geographic screen does not verify a terminal or pedestrian access; no source request was sent")
     if len(terminal_ids(point.label)) > 1:
         raise DomainError(422, "Declare one terminal or airport point, not conflicting terminal alternatives")
-    hotel = next((item for item in world.airports if item.id == request.hotel_node_id and item.kind == "hotel"), None)
-    if hotel is None:
+    hotel = next((item for item in world.airports if item.id == request.hotel_node_id), None) or archived_location(world, request.hotel_node_id)
+    if hotel is None or hotel.kind != "hotel":
         raise DomainError(404, "Select an existing sourced hotel property")
-    properties = [resource.provenance.get("property_location") for resource in world.resources if resource.source == "Nuitee / LiteAPI" and resource.kind == "hotel"]
+    properties = [resource.provenance.get("property_location") for resource in resource_history(world, source="Nuitee / LiteAPI", kind="hotel", origin=hotel.id)]
     matches = [item for item in properties if isinstance(item, dict) and item.get("node_id") == hotel.id and item.get("latitude") == hotel.lat and item.get("longitude") == hotel.lon and isinstance(item.get("hotel_id"), str) and item["hotel_id"]]
     ids = {item["hotel_id"] for item in matches}
     if len(ids) != 1:
@@ -253,6 +254,13 @@ def build_transfer_resource(world, context, response, option_id, *, now):
         raise DomainError(409, "The quote or ECB reference is no longer usable; revalidate before planning") from exc
     fingerprint = Store.fingerprint({"quote_id":response["quote_id"],"option_id":option_id,"context":context["assumption"],"quote":quote,"route":route})
     resource_id = "APL-"+fingerprint[:28].upper()
+    active = next((item for item in world.resources if item.id == resource_id), None)
+    if (active is not None and not active.available) or (active is None and resource_history(world, resource_id=resource_id)):
+        raise DomainError(409, "This APL quote was retired or archived; retrieve a new source quote")
+    direction = context.get("direction", "initial_airport_to_hotel")
+    previous = resource_history(world, source="Airport Pickups London", group_id=context["group_id"])
+    if any(resource_direction(item) == direction and item.provenance.get("quote_sequence", 0) > context["quote_sequence"] for item in previous):
+        raise DomainError(409, "A newer APL source revision was already imported for this group and direction; an older cached quote cannot replace it")
     is_return = context.get("direction") == "hotel_to_airport"
     assumption, initial, point = None, None, None
     if is_return:
@@ -261,11 +269,11 @@ def build_transfer_resource(world, context, response, option_id, *, now):
     else:
         initial = InitialPositionAssumption.model_validate(context["assumption"])
         origin, destination = initial.point_id,context["hotel_node_id"]
+        candidate = Airport(id=initial.point_id,code=initial.point_id,name=initial.label,lat=initial.coordinates.latitude,lon=initial.coordinates.longitude,kind="meeting_point",diversion_eligible=False)
+        validate_location_identity(world, candidate)
         existing = next((item for item in world.airports if item.id == initial.point_id), None)
-        if existing and (existing.kind != "meeting_point" or existing.lat != initial.coordinates.latitude or existing.lon != initial.coordinates.longitude):
-            raise DomainError(409, "Meeting-point identity conflicts with stored geography")
         if existing is None:
-            point = Airport(id=initial.point_id,code=initial.point_id,name=initial.label,lat=initial.coordinates.latitude,lon=initial.coordinates.longitude,kind="meeting_point",diversion_eligible=False)
+            point = candidate
     option = next(item for item in quote["options"] if item["id"] == option_id)
     arrival = context["departure"]+int((Decimal(route["duration_seconds"])/60).to_integral_value(rounding=ROUND_CEILING))
     resource = Resource(id=resource_id,kind="bus",transport_mode="private_transfer",name="APL "+option["car_type"],origin=origin,destination=destination,
@@ -278,7 +286,13 @@ def build_transfer_resource(world, context, response, option_id, *, now):
             "geographic_screening":copy.deepcopy(response["geographic_screening"]),"direction":context.get("direction","initial_airport_to_hotel"),
             "quote_id":response["quote_id"],"quote_sequence":context["quote_sequence"],"estimated_arrival":True,"supplier_booked":False})
     group = next(item for item in world.groups if item.id == context["group_id"])
-    if is_return and not valid_airport_arrival(world,resource,group,now=now):
+    validation_world = world
+    if is_return and not any(item.id == context["hotel_node_id"] for item in world.airports):
+        hotel = archived_location(world, context["hotel_node_id"])
+        if hotel is not None:
+            validation_world = world.model_copy(deep=True)
+            validation_world.airports.append(hotel)
+    if is_return and not valid_airport_arrival(validation_world,resource,group,now=now):
         raise DomainError(409, "The source return route no longer supports the exact onward flight and declared airport processing")
     return resource, point
 
@@ -598,16 +612,20 @@ class GroundPlanning:
             direction = resource_direction(resource)
             same_direction = [item for item in world.resources if item.source=="Airport Pickups London"
                 and item.eligible_group_ids==[context["group_id"]] and resource_direction(item)==direction]
-            if any(item.provenance.get("quote_sequence",0)>context["quote_sequence"] for item in same_direction):
-                raise DomainError(409,"A newer APL source revision was already imported for this group and direction; an older cached quote cannot replace it")
-            if len(world.resources) >= MAX_RESOURCES:
-                raise DomainError(422,f"Operation limit is {MAX_RESOURCES} resources")
-            if point is not None and len(world.airports) >= MAX_AIRPORTS:
-                raise DomainError(422,f"Operation limit is {MAX_AIRPORTS} airport, station, property and meeting-point locations")
             old = [item.id for item in same_direction if item.booking_status != "confirmed" and item.available]
             retire_travel_quotes(world,context["group_id"],old)
-            if point is not None:
-                world.airports.append(point)
+            nodes = [point] if point is not None else []
+            if not any(item.id == context["hotel_node_id"] for item in world.airports):
+                hotel = archived_location(world, context["hotel_node_id"])
+                if hotel is None:
+                    raise DomainError(409, "The sourced hotel location is no longer retained")
+                nodes.append(hotel)
+            for node in nodes:
+                validate_location_identity(world, node)
+            keep_resources = [resource.airport_arrival_assumption.onward_resource_id] if resource.airport_arrival_assumption else []
+            ensure_inventory_capacity(world, extra_resources=1, extra_locations=len(nodes), keep_resource_ids=keep_resources,
+                keep_location_ids=(resource.origin, resource.destination))
+            world.airports.extend(nodes)
             world.resources.append(resource)
             audit(world,"transfer_quote_imported","Imported a group-only APL planning quote with declared position/airport-processing assumptions and estimated EUR cost; no vehicle is reserved.",resource.id,
                 {"group_id":context["group_id"],"quote_id":quote_id,"policy_id":request.policy_id,"direction":direction})

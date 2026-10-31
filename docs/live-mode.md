@@ -143,6 +143,31 @@ All input routes are operator-authenticated, versioned and idempotent:
 `/hotel-quotes`, `/travel/import`, and `/offers/{id}/confirm`, under the
 `/api/live` prefix. `/api/live/travel/search` is a read-only supplier lookup.
 
+## Repeated recovery and source history
+
+Expired or explicitly retired, unbooked quotes can leave the active planning
+inventory without losing their complete source and geographic evidence. Replaced
+flight, hotel and APL revisions are archived in the same SQLite transaction as
+the operation and its retry receipt. When an import needs space, the same cleanup
+rules apply to its projected candidate world and the final commit. The 150-service
+and 32-location limits remain limits on the active working set; protected or
+still-current inventory is never silently discarded to fit a new request.
+
+Active proposals and reservations, supplier-confirmed references, original flight
+dependencies, exact onward flights and declared pickup points remain protected.
+Unused property/station/meeting-point nodes may be archived; airport operating
+restrictions remain in the operation. Archived quote identity and supplier revision
+checks prevent old cached prices or changed coordinates from returning as fresh
+supply. Property identity remains available for a newly sourced transfer even
+after its old room price has expired.
+
+Recorded recovery results expose **View source** for each service. This reads
+saved evidence, including original GBP and ECB planning estimates, without a
+supplier request or booking. Passengers can inspect their own previous itinerary
+as a historical record; it has no acceptance controls. Source details already
+lost before archival was introduced remain explicitly unavailable, rather than
+being reconstructed from an itinerary's total.
+
 ## Activation limits
 
 Nuitee hotel and flight quotes, APL in both directions, Google dated routes and

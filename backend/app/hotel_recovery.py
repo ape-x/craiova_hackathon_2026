@@ -21,7 +21,8 @@ from .providers.apl import APLQuoteRequest, LONDON
 from .providers.base import ProviderError
 from .providers.reference_fx import EcbRateTable, SOURCE_URL as ECB_URL
 from .real_data import RealDataRequest
-from .scenario_schema import HORIZON_MINUTES, MAX_AIRPORTS, MAX_RESOURCES
+from .scenario_schema import HORIZON_MINUTES
+from .inventory_lifecycle import ensure_inventory_capacity, validate_location_identity
 from .planning_window import planning_horizon_end
 from .solver import build_candidate, resource_blocked_by_incident, validate_plan
 from .stay_requirements import HotelStayRequirement, REQUIREMENT_KEY
@@ -254,10 +255,12 @@ async def run_hotel_recovery(jobs, job, owner, world, started):
     if await jobs._cancelled(job,owner): return
     imported=[]
     superseded=set()
+    capacity_errors=[]
     for quote in flights["items"]:
         try:
             trial=projected.model_copy(deep=True)
-            result=append_travel_quote(trial,quote,option["query"],group,"flight")
+            result=append_travel_quote(trial,quote,option["query"],group,"flight",
+                keep_resource_ids={identity for _,identity in imported})
             resource=next(item for item in trial.resources if item.id==result["resource_ids"][0])
             # A positive drive needs at least one operation minute after pickup
             # and processing. Check the exact source instant before choosing the
@@ -270,7 +273,14 @@ async def run_hotel_recovery(jobs, job, owner, world, started):
             superseded.update(result.get("superseded_resource_ids",[]))
         except DomainError as exc:
             if isinstance(exc.details,dict) and exc.details.get("quote_revision_conflict"): raise
+            if isinstance(exc.details,dict) and exc.details.get("inventory_capacity_exhausted"):
+                capacity_errors.append(exc)
+    # Multiple supplier rows can revise the same offer identity in one batch.
+    # Only its surviving revision may seed hotel/return-transfer assembly.
+    current_flights = {item.id for item in projected.resources if item.available}
+    imported = [item for item in imported if item[1] in current_flights]
     if not imported:
+        if capacity_errors: raise capacity_errors[0]
         raise DomainError(422,"No sourced flight fits the requested post-stay route and deadline; no hotel or transfer connection was invented")
     complete=[]
     for quote in rates["items"]:
@@ -291,14 +301,16 @@ async def run_hotel_recovery(jobs, job, owner, world, started):
     group=next(item for item in projected.groups if item.id==group_id)
     hotel=_immutable_hotel(projected,hotel_request,group,located)
     node,_=property_location(hotel.provenance)
+    validate_location_identity(projected, node)
     existing=next((item for item in projected.airports if item.id==node.id),None)
-    if existing and (existing.kind!="hotel" or existing.lat!=node.lat or existing.lon!=node.lon):
-        raise DomainError(409,"The sourced property conflicts with existing hotel geography")
+    fresh_ids={identity for _,identity in imported}|{hotel.id}
+    new_hotel = not any(item.id == hotel.id for item in projected.resources)
+    ensure_inventory_capacity(projected, extra_resources=int(new_hotel), extra_locations=int(existing is None),
+        keep_resource_ids=fresh_ids, keep_location_ids=(node.id,))
     if not existing: projected.airports.append(node)
-    projected.resources.append(hotel)
+    if new_hotel: projected.resources.append(hotel)
     # Restrict this package to its new sourced candidates, without changing the
     # real operation or any other group's inventory commitments.
-    fresh_ids={identity for _,identity in imported}|{hotel.id}
     for resource in projected.resources:
         if resource.id not in fresh_ids and resource.eligible_group_ids==[group_id] and resource.booking_status!="confirmed":
             resource.available=False
@@ -371,16 +383,28 @@ async def run_hotel_recovery(jobs, job, owner, world, started):
             usable.sort(key=lambda item:(Decimal(by_id[item["option_id"]]["eur_reference_estimate"]["amount"]),item["option_id"]))
             for item in usable[:MAX_VEHICLE_OPTIONS]:
                 resource,point=build_transfer_resource(projected,context,response,item["option_id"],now=utcnow())
+                new_resource = not any(value.id == resource.id for value in projected.resources)
+                new_point = point is not None and not any(value.id == point.id for value in projected.airports)
+                if point: validate_location_identity(projected, point)
+                try:
+                    ensure_inventory_capacity(projected, extra_resources=int(new_resource), extra_locations=int(new_point),
+                        keep_resource_ids=fresh_ids | {resource.id}, keep_location_ids=(node.id, resource.origin, resource.destination))
+                except DomainError as exc:
+                    if isinstance(exc.details,dict) and exc.details.get("inventory_capacity_exhausted"):
+                        capacity_errors.append(exc)
+                        continue
+                    raise
+                fresh_ids.add(resource.id)
                 if point and not any(node.id==point.id for node in projected.airports): projected.airports.append(point)
-                projected.resources.append(resource)
+                if new_resource: projected.resources.append(resource)
                 assembled.append((resource.id,context,response,item["option_id"]))
-    if len(projected.resources)>MAX_RESOURCES or len(projected.airports)>MAX_AIRPORTS:
-        raise DomainError(422,"The bounded package exceeds operation resource or location limits")
+    ensure_inventory_capacity(projected, keep_resource_ids=fresh_ids)
     before=time.perf_counter()
     candidates=await asyncio.to_thread(lambda:[build_candidate(projected,strategy,scope_group_ids=scope) for strategy in strategies])
     candidates=[item for item in candidates if item.validation["valid"] and item.recovered_passengers==group.size]
     timings["solver_ms"]=round((time.perf_counter()-before)*1000,2)
     if not candidates:
+        if capacity_errors: raise capacity_errors[0]
         await jobs._update(job,owner,status="blocked",stage="finished",message="The one-property search produced no complete sourced hotel journey under the budget, dates and physical links. No operation changed.",
             gaps=[*{(item["code"],item["message"]):item for item in source_gaps}.values(),gap("no_complete_hotel_journey",disclosure+" Room or transfer evidence, connection time or budget may prevent this package; other properties were not searched.",scope)])
         return
@@ -404,7 +428,8 @@ async def run_hotel_recovery(jobs, job, owner, world, started):
         current_group.provenance[PROFILE_KEY]=copy.deepcopy(profile)
         retire_travel_quotes(current,group_id,superseded)
         for quote,identity in imported:
-            if identity in chosen: append_travel_quote(current,quote,option["query"],current_group,"flight")
+            if identity in chosen:
+                append_travel_quote(current,quote,option["query"],current_group,"flight", keep_resource_ids=chosen)
         checked_hotel=_immutable_hotel(current,hotel_request,current_group,located)
         if checked_hotel.id!=hotel.id or hotel.id not in chosen:
             raise DomainError(409,"The selected package no longer has its exact sourced hotel")
@@ -414,16 +439,25 @@ async def run_hotel_recovery(jobs, job, owner, world, started):
         old_transfers=[item.id for item in current.resources if item.source=="Airport Pickups London" and item.eligible_group_ids==[group_id]
             and item.booking_status!="confirmed" and item.available and resource_direction(item) in contexts]
         retire_travel_quotes(current,group_id,old_transfers)
-        if not any(item.id==node.id for item in current.airports): current.airports.append(node.model_copy(deep=True))
-        if not any(item.id==hotel.id for item in current.resources): current.resources.append(checked_hotel)
+        validate_location_identity(current, node)
+        new_node = not any(item.id == node.id for item in current.airports)
+        new_hotel = not any(item.id == hotel.id for item in current.resources)
+        ensure_inventory_capacity(current, extra_resources=int(new_hotel), extra_locations=int(new_node),
+            keep_resource_ids=chosen, keep_location_ids=(node.id,))
+        if new_node: current.airports.append(node.model_copy(deep=True))
+        if new_hotel: current.resources.append(checked_hotel)
         for identity,context,response,option_id in assembled:
             if identity not in chosen: continue
             resource,point=build_transfer_resource(current,context,response,option_id,now=utcnow())
             if resource.id!=identity: raise DomainError(409,"Transfer source identity changed before commit")
+            new_resource = not any(item.id == resource.id for item in current.resources)
+            new_point = point is not None and not any(item.id == point.id for item in current.airports)
+            if point: validate_location_identity(current, point)
+            ensure_inventory_capacity(current, extra_resources=int(new_resource), extra_locations=int(new_point),
+                keep_resource_ids=chosen, keep_location_ids=(node.id, resource.origin, resource.destination))
             if point and not any(item.id==point.id for item in current.airports): current.airports.append(point)
-            current.resources.append(resource)
-        if len(current.resources)>MAX_RESOURCES or len(current.airports)>MAX_AIRPORTS:
-            raise DomainError(422,"Operation inventory limits prevent this package")
+            if new_resource: current.resources.append(resource)
+        ensure_inventory_capacity(current, keep_resource_ids=chosen)
         validation=validate_plan(current,plan,scope_group_ids=scope)
         if not validation["valid"]: raise DomainError(409,"Package failed current independent validation",validation)
         old_offers={item.id for item in current.offers}

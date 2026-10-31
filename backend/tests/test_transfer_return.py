@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.live_travel import append_travel_quote
+from app.inventory_lifecycle import resource_history
 from app.models import Strategy
 from app.solver import build_candidate
 from app.store import DomainError, Store
@@ -146,13 +147,16 @@ async def test_outbound_and_return_revisions_replace_only_their_own_direction(re
     new_return=await service.quote(request("return-quote-new"))
     new_return_id=service.import_quote(new_return["quote_id"],import_request(store,"return-import-new"))["resource_ids"][0]
     resources={item.id:item for item in store.read().resources}
-    assert not resources[return_id].available and resources[new_return_id].available
+    assert return_id not in resources and resources[new_return_id].available
+    old_return = next(item for item in before.resources if item.id == return_id)
+    assert resource_history(store.read(), resource_id=return_id)[0].model_dump(mode="json") == {**old_return.model_dump(mode="json"), "available": False}
     assert resources[outbound_id].model_dump(mode="json")==outbound_snapshot
     return_snapshot=resources[new_return_id].model_dump(mode="json")
     new_outbound=await service.quote(initial("initial-quote-new"))
     service.import_quote(new_outbound["quote_id"],import_request(store,"initial-import-new"))
     resources={item.id:item for item in store.read().resources}
-    assert not resources[outbound_id].available
+    assert outbound_id not in resources
+    assert resource_history(store.read(), resource_id=outbound_id)[0].model_dump(mode="json") == {**outbound_snapshot, "available": False}
     assert resources[new_return_id].model_dump(mode="json")==return_snapshot
 
 

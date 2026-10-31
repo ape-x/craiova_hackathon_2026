@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app import live_travel
+from app.inventory_lifecycle import resource_history
 from app.models import Strategy
 from app.solver import build_candidate
 from test_recovery_jobs import FakeTravel, request, run_next, setup
@@ -78,7 +79,8 @@ async def test_fresh_same_id_repricing_never_reuses_old_fare_or_changes_other_gr
     selected = next(resource for resource in after.resources if resource.id == active.itinerary.legs[0].resource_id)
     assert selected.id != old.id and selected.external_offer_id == old.external_offer_id
     assert selected.provenance["total_price"] == "150.00" and selected.available
-    retired = next(resource for resource in after.resources if resource.id == old.id)
+    assert old.id not in {resource.id for resource in after.resources}
+    retired = resource_history(after, resource_id=old.id)[0]
     assert not retired.available and retired.model_dump(exclude={"available"}) == old.model_dump(exclude={"available"})
     old_offer = next(offer for offer in after.offers if offer.group_id == "G1" and offer.id != active.id)
     assert old_offer.status == "invalidated"
@@ -108,8 +110,9 @@ async def test_unused_stale_revision_does_not_abort_fresh_plan_and_still_retires
     result = await run_next(jobs)
     assert result["status"] == "completed", result
     after = store.read()
-    assert len(after.resources) == 2  # Original A and selected B; never expired unused A.
-    assert next(resource for resource in after.resources if resource.id == old_id).available is False
+    assert len(after.resources) == 1  # Selected B only; original A is retained outside planning.
+    assert resource_history(after, resource_id=old_id)[0].available is False
+    assert len({item.id for item in resource_history(after)}) == 2  # Never imported the expired unused new A revision.
     active = next(offer for offer in after.offers if offer.status == "proposed")
     assert active.itinerary.total_cost == 150
     assert result["result"]["resource_ids"] == [active.itinerary.legs[0].resource_id]

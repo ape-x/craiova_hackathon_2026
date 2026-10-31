@@ -51,6 +51,36 @@ Operator endpoints require operator authentication. Mutations use `expected_vers
 
 Legacy scenario events and `/api/reset` remain implementation support for the internal simulation mode. Synthetic reset is rejected in live; it is not an operator step in the live recovery workflow.
 
+## Inventory lifetime and historical evidence
+
+Active inventory is bounded separately from immutable source history. The
+server-only `World` archive context supports targeted reads and pending snapshots;
+it is excluded from JSON, model input, SSE and domain equality. Complete resource
+and location snapshots are stored by scenario, entity ID and revision hash in
+the same SQLite transaction as world/version/idempotency changes. Archive writes
+roll back with failed mutations or final receipt insertion. Read-only candidate
+projection never writes archive rows. Supplier identity, earlier-quote rejection,
+APL sequence ordering and geographic collision checks include archived evidence.
+
+Cleanup preserves active offers/reservations, external booking references,
+confirmed resources, original flights, onward-flight dependencies, declared
+position references, group endpoints and explicit location restrictions. Only
+stale or retired unprotected resources can leave active inventory. Unreferenced
+nonairport nodes may be removed under location pressure. Required incoming
+candidates and locations are pinned through package assembly; protected-capacity
+exhaustion remains an explicit failure with no partial world change.
+
+`GET /api/inventory/resources/{resource_id}?scenario_id=…` is operator-authenticated
+and reads a current-operation source record with its geographic snapshots and
+archive metadata. A different operation returns 409; unavailable evidence returns
+404. Reading history never restores supply or calls a provider. The recovery UI
+fetches a record only on explicit expansion and rejects cancelled or mismatched
+responses. Passenger responses supply separate `history_resources`,
+`history_airports` and `history_archived_resource_ids` only for the authenticated
+token's last offer when no active offer exists. Historical views have no booking,
+import or acceptance action. Earlier deletions without retained evidence are not
+silently reconstructed.
+
 ## Operator reports and continued live operation
 
 The case panel accepts an explicit arrival report with `group_ids`, known `airport_code`, minute-precision timezone-aware `ready_at`, `description`, version and idempotency key. Only reciprocally linked groups move to the declared starting airport/readiness; destination, deadline, passenger identity and original flight remain unchanged. A readiness after the deadline stays visible as an unmet constraint. An arrival report is operator data, not FR24 landing confirmation or airport operating permission. A newly referenced airport is catalog geography with unknown operational status. Only the selected groups' proposed/accepted offers are invalidated. Existing hotel profile bytes remain as history; changed route identity prevents stale reuse.
