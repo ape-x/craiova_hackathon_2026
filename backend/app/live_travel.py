@@ -108,6 +108,33 @@ class LiveTravel:
         return self.store.mutate("travel-import:"+request.idempotency_key,request.model_dump(mode="json"),request.expected_version,apply)
 
 
+def retire_travel_quotes(world, group_id, resource_ids):
+    """Retire only a selected group's unbooked quote revisions, not their facts."""
+    resources = [item for item in world.resources if item.id in resource_ids]
+    protected = {leg.resource_id for offer in world.offers
+        if offer.status == "confirmed" or (offer.group_id != group_id and offer.status in ("held", "proposed", "accepted"))
+        for leg in offer.itinerary.legs}
+    if any(item.eligible_group_ids != [group_id] or item.booking_status == "confirmed" or item.id in protected for item in resources):
+        raise DomainError(409, "A refreshed quote conflicts with protected bookings or another group's inventory; operator review is required",
+                          {"quote_revision_conflict": True})
+    retired = {item.id for item in resources}
+    for resource in resources:
+        resource.available = False
+    invalidated = set()
+    for offer in world.offers:
+        if offer.group_id == group_id and offer.status in ("held", "proposed", "accepted") and any(leg.resource_id in retired for leg in offer.itinerary.legs):
+            offer.status, offer.reason = "invalidated", "A new supplier quote superseded this unbooked quote; request a current proposal."
+            invalidated.add(offer.id)
+    for reservation in world.reservations:
+        if reservation.offer_id in invalidated and reservation.status != "confirmed":
+            reservation.status = "released"
+    if invalidated:
+        passenger = next(item for item in world.groups if item.id == group_id)
+        if passenger.status != "confirmed":
+            passenger.status = "waiting"
+    return sorted(retired)
+
+
 def append_travel_quote(world, quote, query, group, kind):
     """Validate one sourced quote and append it to an in-memory world only.
 
@@ -170,7 +197,9 @@ def append_travel_quote(world, quote, query, group, kind):
     arrival = math.ceil((arrival_time-epoch).total_seconds()/60)
     if departure < world.sim_time or arrival <= departure or arrival > 7*1440:
         raise DomainError(422, "Provider schedule is past or outside the seven-day planning horizon")
-    identity = "Q-" + hashlib.sha256((quote["provider"]+quote["provider_offer_id"]+group.id).encode()).hexdigest()[:24].upper()
+    # A supplier identifier can survive a price/time/expiry refresh. Preserve
+    # each received quote as its own snapshot instead of reusing older facts.
+    identity = "Q-" + Store.fingerprint({"group_id": group.id, "kind": kind, "quote": quote})[:24].upper()
     if any(r.id == identity for r in world.resources):
         return {"resource_ids": [identity], "already_imported": True}
     if len(world.resources) >= MAX_RESOURCES:
@@ -183,10 +212,21 @@ def append_travel_quote(world, quote, query, group, kind):
         eligible_group_ids=[group.id], quote_total_cost=float(price),
         external_offer_id=quote["provider_offer_id"], capacity_scope="quoted_request",
         requires_revalidation=True, status="quoted")
+    previous = [item for item in world.resources if item.kind == kind and item.source == quote["provider"]
+        and item.external_offer_id == quote["provider_offer_id"] and group.id in item.eligible_group_ids]
+    for item in previous:
+        try:
+            newer = aware(item.provenance["quoted_at"]) > quoted
+        except (KeyError, ValueError, TypeError):
+            newer = False
+        if newer:
+            raise DomainError(409, "Supplier returned an older revision of an already observed offer; no older fare was restored",
+                              {"quote_revision_conflict": True})
+    retired = retire_travel_quotes(world, group.id, {item.id for item in previous})
     world.airports.extend(refs)
     if resource.kind == "flight":
         for airport in world.airports:
             if airport.id in (origin, destination):
                 airport.available = True
     world.resources.append(resource)
-    return {"resource_ids": [identity]}
+    return {"resource_ids": [identity], "superseded_resource_ids": retired}

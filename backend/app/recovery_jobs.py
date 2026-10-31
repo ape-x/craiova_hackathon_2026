@@ -14,7 +14,7 @@ from pydantic import Field, field_validator
 from .airport_catalog import lookup_airport
 from .hotel_location import coordinate_timezone, property_zone
 from .live_data import identifier
-from .live_travel import append_travel_quote
+from .live_travel import append_travel_quote, retire_travel_quotes
 from .models import Model, Mutation, Strategy
 from .providers.base import ProviderError
 from .recovery_ledger import RecoveryLedger, TERMINAL
@@ -366,6 +366,7 @@ class RecoveryJobs:
             return
         projected=world.model_copy(deep=True)
         imported=[]
+        superseded={}
         group_map={item.id:item for item in groups}
         for option,quote in staged:
             group=group_map[option["group_id"]]
@@ -376,8 +377,11 @@ class RecoveryJobs:
                 if resource_blocked_by_incident(trial,resource,group) or resource.departure<option["earliest_departure"] or resource.arrival>option["latest_arrival"]:
                     raise DomainError(422,"Sourced offer does not meet this incident's route or timing constraints")
                 projected=trial
-                imported.append((option,quote))
+                imported.append((option,quote,resource.id))
+                superseded.setdefault(group.id,set()).update(added.get("superseded_resource_ids",[]))
             except DomainError as exc:
+                if isinstance(exc.details,dict) and exc.details.get("quote_revision_conflict"):
+                    raise
                 reason=gap("quote_not_usable",exc.message,[group.id])
                 if reason not in gaps:
                     gaps.append(reason)
@@ -408,10 +412,17 @@ class RecoveryJobs:
             gaps.append(gap("overnight_wait_without_accommodation","The sourced itinerary includes a wait across local midnight with no accommodation included for that interval. No mandatory rest requirement was assumed; review the recorded wait durations.",overnight_groups))
         await self._update(job,owner,stage="applying",message="Checking current version and quote freshness before the atomic scoped commit.",gaps=gaps)
         commit_result={}
+        chosen_resources={leg.resource_id for allocation in plan.allocations for leg in allocation.itinerary.legs}
         def apply(current):
             if scope_fingerprint(current,job["incident_id"],job["group_ids"])!=job["_scope_hash"]:
                 raise DomainError(409,"Passenger or incident constraints changed; sourced results were not applied")
-            for option,quote in imported:
+            # A newer observation retires an old fare even when another offer
+            # wins. This does not import unused quotes that expired meanwhile.
+            for group_id,resource_ids in superseded.items():
+                retire_travel_quotes(current,group_id,resource_ids)
+            for option,quote,resource_id in imported:
+                if resource_id not in chosen_resources:
+                    continue
                 group=next(item for item in current.groups if item.id==option["group_id"])
                 append_travel_quote(current,quote,option["query"],group,"flight")
             before_ids={offer.id for offer in current.offers}
