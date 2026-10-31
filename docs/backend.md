@@ -35,6 +35,8 @@ SSE connections are intentionally long-lived. Keep the five-second graceful-shut
 | `app/main.py` | HTTP, SSE, authentication, lifecycle, input limits and shared observation polling |
 | `app/providers/` | Actual provider contracts; no direct authority to mutate the world |
 | `app/transfer_planning.py` | Manual UK airport–hotel transfer receipts, short-lived cache and atomic direction-scoped import |
+| `app/recovery_jobs.py`, `app/hotel_recovery.py` | Durable scoped searches and bounded four-leg hotel packages with separately counted source dispatches |
+| `app/stay_requirements.py`, `app/hotel_recovery_profile.py` | Validated full-stay constraints and stable, case-bound operator inputs saved with successful hotel plans |
 | `app/pricing.py`, `app/initial_position.py`, `app/airport_arrival.py` | Typed GBP/ECB evidence, receipt freshness, first-leg operator positions and exact-flight return allowances |
 
 An AI command is interpreted into typed events and strategies, applied to a private projection, solved against current inventory, and passed to Decisions for selection. The server rechecks the world version and exact feasibility before applying the events and all holds in one transaction. Model calls happen outside that transaction. An unknown ID, malformed response, provider error or stale version prevents partial application. A visual-only or ambiguous interpretation with no events/strategies produces an idempotent explanation and leaves the operational world unchanged.
@@ -57,6 +59,20 @@ An AI command is interpreted into typed events and strategies, applied to a priv
 The allocator enumerates at most 64 complete routes per party, up to four legs, and compares four group orderings per strategy. Recovery count is ranked first within a candidate, then party priority and the strategy objective. AI may choose a feasible lower-recovery candidate to reflect a stated tradeoff; feasibility remains mandatory. **Global optimality is not proved**, and an exception can mean the bounded allocator did not find a shared allocation, not that mathematical impossibility was proved. No airline fare rules, crew legality, runway performance, fuel planning or certified diversion suitability are modeled.
 
 ## Persistence, concurrency and events
+
+### Automatic hotel packages and saved inputs
+
+An optional `hotel_recovery` request runs for exactly one linked, explicitly adult-only group. It requires flight, hotel and bus modes, supported UK initial/onward airports, complete declared pickup/drop-off inputs and at least ten job calls. The default eight-call limit is unchanged and is never silently increased. Unsupported accessibility or missing physical inputs stop the request. The flight-only path remains available without this option.
+
+The bounded pipeline requests one onward flight date (the checkout date in Europe/London), obtains hotel rates and examines one cheapest complete-price property. It validates the exact property's location, postal address, local stay policy and requested occupancy. Outbound and return APL quotes, two future Google driving routes and one ECB reference are separate durable steps; no combined callback conceals supplier calls. The conservative ten-call total also includes Responses query selection, the flight search, hotel rates, exact property metadata and Decisions. At most three source requests run together, and every already-dispatched outcome is recorded before a failed or cancelled job ends. No unknown dispatch is automatically repeated.
+
+The typed `hotel_stay_requirement` requires one actual room quote covering the whole requested stay and room count; waiting or a hotel-only route cannot satisfy recovery. Return pickup is checkout plus a ten-minute application allowance. The declared airport processing buffer and exact onward flight are validated against the sourced drive. Candidates contain four resources: initial private transfer, hotel, return private transfer and onward flight. They compare at most three fitting vehicle options per direction. Incomplete pricing, missing links, source-policy exclusions and unaffordable packages stop visibly without a hidden second-property search.
+
+All assembly happens in a projected world. The final transaction rechecks version/scope, current sources and independent feasibility, then applies only chosen resources/nodes, the selected group's stay requirement, profile and complete proposal. Out-of-scope offers and confirmed records remain fixed. No supplier hold or booking is created. Automatic transfers reserve their quote ordinals in the same persistent sequence domain as manual searches, so old/new revision ordering remains comparable.
+
+After a successful complete plan, `hotel_recovery_profile` stores stable operator inputs with a version and case/group scope fingerprint; it contains no job IDs, rotating timestamps or saved fares. The same profile is installed before transfer fingerprints in projection and commit. Failed, cancelled, unknown, stale or rolled-back jobs cannot overwrite it. Voice/text reuse requires one exact linked group, all three modes and at least eleven total calls: one command interpretation plus ten job calls. Default command allowance remains eight. No profile means the typed setup is required; current readiness, deadlines, budget, source access and exact saved dates/points are revalidated before job dispatch. Changed inputs require the typed form, not inferred dates or coordinates.
+
+A real automatic run on API `95a0606` with web `03112f6` completed all ten calls and applied four new resources for two passengers with zero unresolved requirements. Queue-to-apply time was 9.495 seconds (9.16 seconds displayed for the job), a single measurement. The world advanced from 47 to 48, the out-of-scope group was unchanged, and no bookings were recorded. Normal quote expiry later advanced the world to 49. Browser review restored exact saved inputs without supplier calls, cleared both point confirmations and kept the chosen ten-call cap. This verifies the typed automatic source path and saved-input review, not a spoken hotel rerun or browser microphone acceptance. See the [verification report](verification/report.md).
 
 ### Manual private-transfer boundary
 
@@ -108,9 +124,10 @@ its node/resource, group-and-direction-scoped retirement, audit and idempotency 
 import replay survives cache expiry. Newer imported revisions cannot be replaced
 by an older cached fare, and unrelated/confirmed records remain protected.
 
-Import alone creates no complete offer, supplier hold or booking. Both directions
-remain manual; automatic full recovery with hotel and both transfers is still in
-development. Implementation and mocked checks are distinct from live evidence in
+Import alone creates no complete offer, supplier hold or booking. These endpoints
+remain manual; the separate automatic package path above validates a complete chain
+against newly sourced flight, hotel and transfer evidence. Implementation and
+mocked checks are distinct from live evidence in
 the [verification report](verification/report.md).
 
 The backup script removes transient transfer source caches and marks dispatched

@@ -164,12 +164,57 @@ plus 120 seconds and Google prediction receipt plus 120 seconds. Missing, malfor
 or future Google receipts do not establish current return evidence. The UI keeps
 both UTC receipt times, the combined cutoff and recorded-booking status separate.
 
-These are manual legs, not automatic hotel recovery or verified terminal-to-flight
-connections. Each import by itself creates no complete offer, supplier hold or
-booking. Automatic full recovery with hotel and both transfers remains in
-development. Browser and provider evidence is tracked in the
+These are manual legs, not verified terminal-to-flight connections. Each import
+by itself creates no complete offer, supplier hold or booking. The separate
+automatic hotel package flow below sources and validates a full chain. Browser
+and provider evidence is tracked in the
 [verification report](verification/report.md), separately from implementation and
 mocked tests.
+
+## Automatic sourced hotel package
+
+The case form can request one adult-only group's complete initial transfer →
+hotel stay → return transfer → onward flight plan. Initial and onward airports
+must be supported UK airports. The operator supplies exact offset-bearing stay
+and pickup times, rooms/minimum rest, initial/drop-off points, bags and airport
+processing allowance. All three modes are required. Unsupported accessibility,
+missing inputs or a cap below ten job calls stop before source dispatch; the
+default eight is not increased.
+
+The job obtains current flight and room offers, shortlists one cheapest property
+with complete mandatory EUR costs, and fetches its exact metadata. Local stay
+policy, occupancy, postal address and coordinates must reconcile. It sources two
+APL quotes, two future Google driving routes and one ECB reference separately,
+with every dispatch counted. Responses query selection and Decisions bring the
+conservative complete pipeline to ten calls. The bounded search covers one
+onward flight date (checkout's Europe/London date) and at most three fitting
+vehicles per direction; it does not silently move to another property on failure.
+
+The full requested stay is mandatory; a wait or disconnected room quote cannot
+satisfy it. Return pickup is checkout plus ten minutes, an application allowance.
+Exact driving evidence and the operator's processing buffer must fit the sourced
+flight. The same physical-source, GBP/estimated-EUR and receipt-freshness rules as
+manual transfers apply. Only a complete validated chosen chain is committed with
+the selected group's requirements, proposal and saved configuration. Unrelated
+allocations stay unchanged; no supplier holds or bookings are made.
+
+After success, text/voice can reuse that exact case/group-bound configuration
+with at least eleven total calls including interpretation. The default stays
+eight. Without a saved profile, use the typed form first. Reuse revalidates
+current constraints and exact times/points, then launches new counted source
+searches. It does not treat old fares as current, shift dates or infer missing
+input. Failed/unknown jobs preserve the prior profile.
+
+One real automatic run on API `95a0606`/web `03112f6` completed exactly ten calls
+and applied the four-resource proposal for two passengers, with zero unresolved
+requirements and no bookings. It took 9.495 seconds from queue to apply and
+preserved the other group. The selected hotel, flight and two transfer quotes
+totalled approximately EUR934.86, including explicitly estimated ECB transfer
+components; the quotes expired normally afterwards. Saved-input browser review
+preserved exact times and the cap, required both point confirmations again and
+made no supplier calls. This single run verifies the typed source assembly, not
+general availability, latency guarantees or a spoken/browser-voice hotel run.
+See the [verification report](verification/report.md) for the bounded evidence.
 
 ## Verification and limits
 

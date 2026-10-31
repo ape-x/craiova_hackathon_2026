@@ -1,0 +1,236 @@
+{
+  "observed_at": "2026-10-31",
+  "environment": "sole local Compose application at http://localhost:8080",
+  "api_revision": "95a0606",
+  "frontend_revision": "03112f6",
+  "entry": "Actual browser case form; explicit automatic hotel workflow",
+  "incident_reference": {
+    "flight": "EK5",
+    "date_utc": "2026-10-31",
+    "constraint_source": "operator assumption; expired FR24 context was disclosed"
+  },
+  "party": {
+    "adults": 2,
+    "suitcases": 2,
+    "rooms": 1,
+    "budget_eur": 1000,
+    "arrival_deadline_utc": "2026-11-02T20:00:00Z",
+    "input_source": "explicit planning assumptions"
+  },
+  "requested_inputs": {
+    "pickup_at_utc": "2026-11-01T13:30:00Z",
+    "checkin_at_utc": "2026-11-01T15:00:00Z",
+    "checkout_at_utc": "2026-11-02T06:30:00Z",
+    "minimum_rest_minutes": 480,
+    "initial_and_dropoff_reference": "Public Heathrow Terminal 5 short-stay parking reference; operator-declared, not verified passenger location or terminal assignment",
+    "airport_processing_minutes": 120,
+    "onward_airport": "LHR",
+    "return_pickup_at_utc": "2026-11-02T06:40:00Z",
+    "return_pickup_basis": "checkout plus ten-minute application allowance"
+  },
+  "outcome": {
+    "status": "completed",
+    "world_before": 47,
+    "world_applied": 48,
+    "provider_calls": 10,
+    "provider_call_cap": 10,
+    "passengers_proposed": 2,
+    "passengers_unresolved": 0,
+    "new_resources": 4,
+    "foreign_groups_unchanged": true,
+    "confirmed_resources": 0,
+    "confirmed_offers": 0,
+    "booking_or_payment_performed": false,
+    "estimated_total_eur": "934.86"
+  },
+  "timing": {
+    "queued_at": "2026-10-31T21:19:31.745123+00:00",
+    "applied_at": "2026-10-31T21:19:41.240286+00:00",
+    "queue_to_apply_seconds": 9.495,
+    "displayed_server_seconds": 9.16,
+    "meaning": "One observation, not a latency guarantee or voice end-to-end timing"
+  },
+  "hotel": {
+    "name": "Park Avenue Bayswater Inn Hyde Park",
+    "source": "Nuitee / LiteAPI",
+    "total_eur": 73.0,
+    "policy_basis": "supplier_policy"
+  },
+  "flight": {
+    "source": "Nuitee",
+    "total_eur": 720.34,
+    "segments": [
+      {
+        "origin": "LHR",
+        "destination": "AMS",
+        "departure_at": "2026-11-02T10:00:00+00:00",
+        "arrival_at": "2026-11-02T11:25:00+00:00",
+        "carrier": "KLM",
+        "flight_number": "1004"
+      },
+      {
+        "origin": "AMS",
+        "destination": "OTP",
+        "departure_at": "2026-11-02T12:20:00+00:00",
+        "arrival_at": "2026-11-02T15:00:00+00:00",
+        "carrier": "KLM",
+        "flight_number": "1375"
+      }
+    ]
+  },
+  "transfers": [
+    {
+      "direction": "initial_airport_to_hotel",
+      "provider": "Airport Pickups London",
+      "vehicle": "APL Saloon",
+      "original_price": {
+        "amount": "61",
+        "currency": "GBP"
+      },
+      "estimated_eur": {
+        "amount": "73.16",
+        "currency": "EUR"
+      },
+      "road_source": "Google Routes",
+      "duration_seconds": 3103,
+      "distance_metres": 29520,
+      "road_received_at": "2026-10-31T21:19:39.992804+00:00",
+      "road_endpoint_offsets_metres": {
+        "origin": 4.75,
+        "destination": 0.98
+      },
+      "warnings": [
+        "This route includes a highway."
+      ],
+      "encoded_polyline_characters": 1074
+    },
+    {
+      "direction": "hotel_to_airport",
+      "provider": "Airport Pickups London",
+      "vehicle": "APL Saloon",
+      "original_price": {
+        "amount": "57",
+        "currency": "GBP"
+      },
+      "estimated_eur": {
+        "amount": "68.36",
+        "currency": "EUR"
+      },
+      "road_source": "Google Routes",
+      "duration_seconds": 2044,
+      "distance_metres": 27725,
+      "road_received_at": "2026-10-31T21:19:40.162997+00:00",
+      "road_endpoint_offsets_metres": {
+        "origin": 0.98,
+        "destination": 4.75
+      },
+      "warnings": [
+        "This route has tolls.",
+        "This route includes a highway."
+      ],
+      "encoded_polyline_characters": 968
+    }
+  ],
+  "fx": {
+    "source": "European Central Bank",
+    "date": "2026-10-30",
+    "gbp_per_eur": "0.83380",
+    "settlement_guaranteed": false,
+    "revalidation_required": true
+  },
+  "steps": [
+    {
+      "stage": "planning_queries",
+      "provider": "OpenAI Responses",
+      "status": "succeeded",
+      "started_at": "2026-10-31T21:19:32.091230+00:00",
+      "finished_at": "2026-10-31T21:19:34.927135+00:00",
+      "quote_count": 0
+    },
+    {
+      "stage": "searching_flights",
+      "provider": "Nuitee",
+      "status": "succeeded",
+      "started_at": "2026-10-31T21:19:34.935481+00:00",
+      "finished_at": "2026-10-31T21:19:38.645406+00:00",
+      "quote_count": 10
+    },
+    {
+      "stage": "searching_hotels",
+      "provider": "Nuitee / LiteAPI",
+      "status": "succeeded",
+      "started_at": "2026-10-31T21:19:34.945495+00:00",
+      "finished_at": "2026-10-31T21:19:39.292259+00:00",
+      "quote_count": 10
+    },
+    {
+      "stage": "locating_hotel",
+      "provider": "Nuitee / LiteAPI",
+      "status": "succeeded",
+      "started_at": "2026-10-31T21:19:39.323333+00:00",
+      "finished_at": "2026-10-31T21:19:39.421323+00:00",
+      "quote_count": 0
+    },
+    {
+      "stage": "reference_fx",
+      "provider": "European Central Bank",
+      "status": "succeeded",
+      "started_at": "2026-10-31T21:19:39.437190+00:00",
+      "finished_at": "2026-10-31T21:19:39.676950+00:00",
+      "quote_count": 0
+    },
+    {
+      "stage": "quoting_initial_airport_to_hotel",
+      "provider": "Airport Pickups London",
+      "status": "succeeded",
+      "started_at": "2026-10-31T21:19:39.439944+00:00",
+      "finished_at": "2026-10-31T21:19:39.816272+00:00",
+      "quote_count": 6
+    },
+    {
+      "stage": "routing_initial_airport_to_hotel",
+      "provider": "Google Routes",
+      "status": "succeeded",
+      "started_at": "2026-10-31T21:19:39.445394+00:00",
+      "finished_at": "2026-10-31T21:19:39.994698+00:00",
+      "quote_count": 0
+    },
+    {
+      "stage": "quoting_hotel_to_airport",
+      "provider": "Airport Pickups London",
+      "status": "succeeded",
+      "started_at": "2026-10-31T21:19:40.008680+00:00",
+      "finished_at": "2026-10-31T21:19:40.169649+00:00",
+      "quote_count": 6
+    },
+    {
+      "stage": "routing_hotel_to_airport",
+      "provider": "Google Routes",
+      "status": "succeeded",
+      "started_at": "2026-10-31T21:19:40.020100+00:00",
+      "finished_at": "2026-10-31T21:19:40.165305+00:00",
+      "quote_count": 0
+    },
+    {
+      "stage": "deciding",
+      "provider": "OpenAI Decisions",
+      "status": "succeeded",
+      "started_at": "2026-10-31T21:19:40.225865+00:00",
+      "finished_at": "2026-10-31T21:19:41.216120+00:00",
+      "quote_count": 0
+    }
+  ],
+  "saved_input_review": {
+    "browser_verified": true,
+    "exact_times_preserved": true,
+    "both_point_confirmations_cleared": true,
+    "call_cap_remained": 10,
+    "additional_source_calls": 0
+  },
+  "limits": [
+    "One selected adult group, one property shortlist and one onward-flight date.",
+    "No supplier holds, bookings, payment, terminal verification or pedestrian access verification.",
+    "Quotes expired normally after the local freshness window; world later advanced to49.",
+    "This typed run does not establish spoken-profile reuse or browser-microphone acceptance."
+  ]
+}
