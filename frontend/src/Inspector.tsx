@@ -25,18 +25,64 @@ import { AirportWeatherStatus } from './WeatherStatus';
 import { airportWeatherState } from './weather';
 import { passengerSourceLabel } from './liveData';
 import { isAirportNode, locationKindLabel } from './locationNodes';
+import { flightSegments, waitingTime } from './journeyPresentation';
 
 export function ItineraryView({
   offer,
   world,
 }: {
   offer: Offer;
-  world?: Pick<World, 'mode' | 'epoch'>;
+  world?: Pick<World, 'mode' | 'epoch'> & Partial<Pick<World, 'resources'>>;
 }) {
   return (
     <div className="itinerary">
       {offer.itinerary.legs.map((leg, index) => {
         const Icon = leg.kind === 'bus' ? BusFront : leg.kind === 'hotel' ? BedDouble : Plane;
+        const segments =
+          world?.mode === 'live'
+            ? flightSegments(world.resources?.find((resource) => resource.id === leg.resource_id))
+            : [];
+        if (segments.length)
+          return (
+            <div className="sourced-flight-journey" key={`${leg.resource_id}-${index}`}>
+              {segments.map((segment, position) => (
+                <div key={`${segment.origin}-${position}`}>
+                  {segment.waitBeforeMinutes > 0 && (
+                    <div className="itinerary-connection">
+                      <Clock3 size={14} aria-hidden="true" />
+                      <span>
+                        {waitingTime(segment.waitBeforeMinutes)} connection at {segment.origin}
+                      </span>
+                    </div>
+                  )}
+                  <div className="itinerary-leg">
+                    <div className="itinerary-icon">
+                      <Plane size={16} />
+                    </div>
+                    <div>
+                      <strong>
+                        {segment.origin} → {segment.destination}
+                      </strong>
+                      {(segment.carrier || segment.flightNumber) && (
+                        <span>
+                          {segment.carrier}
+                          {segment.carrier && segment.flightNumber ? ' · ' : ''}
+                          {segment.flightNumber ? `Flight ${segment.flightNumber}` : ''}
+                        </span>
+                      )}
+                      <span>Departs {segment.departure.label}</span>
+                      <span>Arrives {segment.arrival.label}</span>
+                      {Boolean(segment.technicalStops) && (
+                        <span>
+                          {segment.technicalStops} technical stop(s) reported by the supplier
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
         return (
           <div className="itinerary-leg" key={`${leg.resource_id}-${index}`}>
             <div className="itinerary-icon">
@@ -52,6 +98,7 @@ export function ItineraryView({
                 {leg.resource_id} <b>·</b>{' '}
                 {world ? formatWorldTime(world, leg.departure) : formatTime(leg.departure)}–
                 {world ? formatWorldTime(world, leg.arrival) : formatTime(leg.arrival)}
+                {world?.mode === 'live' ? ' · Europe/Bucharest operations time' : ''}
               </span>
             </div>
           </div>

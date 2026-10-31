@@ -372,6 +372,17 @@ summary::-webkit-details-marker {
 .itinerary {
   padding: 22px 0 5px;
 }
+.sourced-flight-journey {
+  min-width: 0;
+}
+.itinerary-connection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 10px 13px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .itinerary-leg {
   display: flex;
   align-items: flex-start;

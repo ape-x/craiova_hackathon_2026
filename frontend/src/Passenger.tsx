@@ -23,6 +23,7 @@ import type { Airport, Offer, PassengerGroup, Resource } from './types';
 import { Brand, Dot, Tag } from './ui';
 import { ItineraryView } from './Inspector';
 import ThemeToggle from './ThemeToggle';
+import { sourcedArrival } from './journeyPresentation';
 
 interface PassengerState {
   version: number;
@@ -307,7 +308,11 @@ function PassengerJourney({ token }: { token: string }) {
                 <>
                   <ItineraryView
                     offer={offer}
-                    world={{ mode: live ? 'live' : 'simulation', epoch: state.epoch }}
+                    world={{
+                      mode: live ? 'live' : 'simulation',
+                      epoch: state.epoch,
+                      resources: state.resources,
+                    }}
                   />
                   <div className="boarding-facts">
                     <span>
@@ -322,7 +327,8 @@ function PassengerJourney({ token }: { token: string }) {
                     <span>
                       <Clock3 size={15} /> Arrival{' '}
                       {live
-                        ? formatOperationTime(state.epoch, offer.itinerary.arrival)
+                        ? (sourcedArrival(offer, state.resources) ??
+                          `${formatOperationTime(state.epoch, offer.itinerary.arrival)} · Europe/Bucharest operations time`)
                         : formatTime(offer.itinerary.arrival)}
                     </span>
                   </div>
