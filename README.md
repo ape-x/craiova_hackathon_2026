@@ -10,7 +10,7 @@ Problema inițială și cerințele pasagerilor pot fi ipoteze introduse de echip
 2. Înregistrează incidentul și leagă grupurile afectate. Datele inițiale pot proveni dintr-un manifest sau din cerințe de planificare introduse explicit. Grupurile trebuie să indice același zbor original; operațiunile existente sunt păstrate.
 3. Din caz, pornește căutarea pentru grupurile selectate și stabilește limita de apeluri. Sol Ultrafast alege căutări eligibile, sunt cerute cotații reale de zbor, iar Decisions selectează dintre planurile validate. Alocările celorlalte grupuri sunt păstrate.
 4. Verifică sursele, propunerile și cerințele rămase fără soluție. Cazarea și legăturile terestre pot fi căutate separat și completate prin cotații importate sau servicii documentate de operator.
-5. Descrie condițiile prin voce sau text. AI-ul propune strategii; backendul verifică fezabilitatea și alocările.
+5. Folosește comenzile existente pentru condițiile suportate; backendul verifică fezabilitatea și alocările. Legătura directă voce/text → căutare durabilă în cazul selectat este în curs de implementare. Intrarea verificată pentru căutarea automată este formularul cazului.
 6. Pasagerul acceptă sau refuză o propunere. Acceptarea înregistrează preferința. Confirmarea rezervării necesită referințele externe pentru fiecare segment.
 
 Căutările pe incident păstrează progresul și fiecare apel într-un registru persistent. Repetarea aceleiași cereri nu retrimite apelurile. Un rezultat necunoscut după întrerupere necesită o încercare nouă, explicită; nu este reluat automat. Căutarea automată acoperă momentan zborurile și inventarul deja documentat. Lipsa legăturilor până la hotel sau stație rămâne vizibilă. Cotațiile pot expira și nu rezervă locuri.
@@ -58,6 +58,8 @@ Pozițiile Flightradar24 au timestamp și sursă. Nu indică disponibilitatea bi
 
 O rută rutieră calculată nu este un vehicul disponibil. Stațiile de autocar păstrează pozițiile reale; transferurile aeroport–stație trebuie obținute separat. Lipsa unui serviciu sau a accesului la furnizor rămâne vizibilă.
 
+Cotațiile APL sunt afișate în GBP per vehicul și rămân separate de inventarul planificabil: nu au durată/sosire verificată sau decontare EUR garantată. Adaptoarele pure Google TRANSIT și ECB au teste offline, dar nu sunt conectate la fluxul operațional. Un orar de transport public fără locuri/tarif complet și un curs valutar de referință nu satisfac automat capacitățile sau bugetul unui itinerar.
+
 ## Decizii și voce
 
 GPT-Live transmite cererea către backend. Sol Ultrafast interpretează cerințele; solverul construiește alternative și verifică familiile, timpii, capacitățile, accesibilitatea și bugetele. Decisions alege dintre variantele fezabile. Backendul reverifică versiunea înainte de aplicare și transmite actualizarea către operator și pasageri.
@@ -97,7 +99,9 @@ Testele backend acoperă alocarea și concurența, versiuni depășite, familii,
 
 Verificarea vizuală urmărește fluxul complet în browser, la dimensiuni desktop și telefon. [Raportul de verificare](docs/verification/report.md) separă testele executate de integrările încă neverificate. Capturile efective sunt în [docs/verification](docs/verification); imaginile din `docs/mockups` sunt concepte, nu rezultate ale testelor.
 
-La verificarea din 31 octombrie 2026 au reușit apeluri reale pentru interpretare **Sol Ultrafast**, selecție **Decisions** și prima randare geografică Google la CRA. Acestea sunt probe limitate de acces și funcționare, nu o validare completă a vocii, a modelelor 3D sau a conturilor pentru exploatare continuă. Credențialele și capturile consolei private de facturare nu sunt publicate; fiecare instalare folosește propriile conturi.
+La 31 octombrie 2026, instanța principală a verificat și fluxul real **FR24 → caz → Responses Ultrafast → Nuitee → Decisions → propunere**: două căutări Nuitee au întors 20 de cotații, iar un plan valid a propus o soluție pentru doi adulți, fără excepții și fără modificarea grupului existent din afara selecției. O singură rulare a durat aproximativ 12,1 secunde; aceasta nu este o promisiune de performanță. Interfața APL a afișat șase cotații reale GBP, fără rezervare. Proba hotelieră LHR a întors zece cotații complete cu coordonate reale; importul prin interfață într-un itinerar complet nu este încă verificat.
+
+Google a randat geografia reală, iar probele anterioare au verificat accesul OpenAI și transportul/închiderea unei sesiuni GPT-Live cu sunet sintetic. Acestea nu validează o conversație reală completă, toate modelele 3D sau exploatarea continuă a conturilor. Credențialele, payloadurile FR24, tokenurile pasagerilor și capturile consolelor private nu sunt publicate.
 
 [Ghidul backend](docs/backend.md) descrie invariantele și limitele. [Măsurătorile locale](docs/benchmark-results.json) includ 180–300 de pasageri, mediană/p95 și mediul CPU; măsoară solverul și SQLite, fără a pretinde latență AI. Poți repeta măsurarea:
 
@@ -141,7 +145,8 @@ Feedul FR24 are un cache separat: `OBSERVATION_RETENTION_SECONDS=3600` implicit.
 ## Ce rămâne de verificat cu echipa
 
 - O sesiune reală GPT-Live cu microfon, delegare, redare, întrerupere și închidere confirmată.
-- O observație FR24 autorizată și afișată cu timestamp original; limitele abonamentului echipei.
+- Fluxul de poziții FR24 pe hartă, separat de lookup-ul de cursă deja verificat; limitele abonamentului echipei.
+- Importul hotelier prin interfață și un itinerar complet cu legături fizice verificate; existența unei cotații nu dovedește un transfer.
 - Verificările de facturare Google și restricțiile cheii; fotogrammetria detaliată a terminalului și randarea/alinierea modelelor GLB.
 - Profilul vizual pe ecranul/proiectorul evenimentului și fidelitatea față de mockupurile fotorealiste.
 

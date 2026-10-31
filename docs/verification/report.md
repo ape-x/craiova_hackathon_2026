@@ -1,6 +1,42 @@
 # Implementation verification — 31 October 2026
 
-This report separates executed tests, bounded real-provider checks and remaining acceptance gates. The application is a synthetic operations simulator. Real Sol Ultrafast interpretation, Decisions selection, GPT-Live transport/closure with synthetic silence and Google geographic rendering have passed. User microphone/delegation, observed traffic, surveyed terminal geometry and photographic fidelity remain open.
+This report separates executed tests, bounded real-provider checks and remaining acceptance gates. The current product is a live assisted recovery application. Initial passenger requirements may be explicit planning assumptions, but live supply comes from real quotes or documented operator services. Earlier simulation records below are historical test evidence, not current live inventory or supplier bookings.
+
+## Current live assisted release — 31 October 2026
+
+Release `7afa194` was deployed to the sole active application at `http://localhost:8080`, preserving the existing operation. The subsequent source-exclusion display fix was committed as `1412aff`; it distinguishes rejected alternatives from unresolved requirements without discarding recorded reasons.
+
+The last full backend run passed **689 tests**. A subsequent focused run passed **29 tests**, including two added regressions. The last full frontend run passed **174 tests**; the subsequent focused job-display run passed **15 tests**, including three added regressions, plus strict TypeScript and changed-file formatting. These focused counts overlap the full suites and are not added together as a new full-suite total. Existing build notices are recorded below.
+
+### Real flight case and sourced recovery
+
+The operator looked up FR24 flight **EK5, DXB→LHR**, selected the exact returned leg and created a recovery case. A new, explicitly generated planning group of two adults was linked to that case; this did not turn the group into verified passenger identities.
+
+The real durable job ran from **18:23:47 to 18:23:59 UTC**, approximately **12.1 seconds** in this single observation. Its ledger recorded four provider calls: Responses query selection, two parallel Nuitee flight searches, and Decisions plan selection. The searches returned **20 quotes**. One validated offer was applied for **two passengers proposed, zero unresolved**. The existing group outside the selected case scope remained unchanged.
+
+This establishes one real case-form → provider searches → validated proposal flow. It is not a latency guarantee, automatic booking, seat hold or proof of universal route coverage. Some returned alternatives were rejected by validation; those exclusions do not invalidate the successful selected proposal. The current UI separates exclusions/search outcomes, actual missing requirements and informational overnight waits.
+
+### Real APL transfer quotes
+
+The configured Airport Pickups London account returned six live vehicle quotes in the actual UI for **Heathrow Terminal 5 → W1K 1LN, 2 November 2026 at 14:00 Europe/London, two passengers and two suitcases**. The amounts were **GBP 76, 88, 112, 88, 117 and 136 per vehicle**, preserving the supplier's currency and price scope. These are a dated verification snapshot, not current offers or recommendations.
+
+No booking, driver dispatch or supplier hold occurred. Supplier expiry, structured journey duration and arrival time were not provided, and EUR settlement was not verified. Consequently these quotes remain a separate price-search workflow, not allocatable EUR transport resources.
+
+### Real hotel metadata and remaining integration boundary
+
+A live Nuitee rate probe for LHR returned **ten complete hotel quotes** with real property coordinates and the coordinate-derived **Europe/London** time zone. The hotel is represented at its own physical node, not at the airport. This verifies the supplier response and location/time-zone path; **UI import and a complete hotel-plus-transfer itinerary have not yet been verified**.
+
+Google TRANSIT and ECB reference FX adapters have offline tests but no connected product endpoint/UI or solver integration. Transit schedules do not establish seat availability; absent fares remain unknown. An ECB estimate or explicit operator allowance is not a supplier EUR charge or guaranteed settlement.
+
+### Voice and public evidence
+
+The scoped voice/text-to-recovery-job bridge is in progress and is not included in the verified case-form result above. The earlier real GPT-Live check used synthetic silence and verified transport/closure only. A real microphone session with delegation, playback, interruption and final close remains a distinct acceptance gate.
+
+This record deliberately publishes no raw FR24 payload, private case/job/group identifier, passenger token, account contact, credential or private account screenshot. The public flight number, route, aggregate counts, times and quote snapshot above are the bounded verification evidence.
+
+## Historical verification records
+
+The following sections preserve earlier implementation and simulator checks. Their inventories, separate QA instances, account-access state and test totals are historical; they do not replace the current live scope above. Auxiliary instances were stopped, and subsequent operation uses only the principal instance on port 8080.
 
 ## Integrated release verification — 2026-10-31
 
@@ -123,7 +159,7 @@ The live failure exposed an initialization-order bug: an overlay error could hid
 
 Before the billing upgrade, a fresh Chrome attempt on the corrected release again logged `BillingNotEnabledMapError` at **2026-10-31T11:05:35.295Z**. The UI correctly reported that no rendered scene was confirmed, with billing/API/key guidance, instead of the misleading overlay error. It did not infer the exact billing cause from callbacks that do not supply it. The current scenario was not reset; the app was returned to its simulation view.
 
-The user plans to supply FR24 access later. No successful real FR24 observation is claimed.
+At the time of those early checks, FR24 access had not been supplied. The later authorized EK5 lookup and case creation are recorded in the current live release section; this does not independently verify continuous position tracking on the map.
 
 ## Timing evidence
 
@@ -150,13 +186,15 @@ The local Three.js scene is an interactive architectural illustration with origi
 ## Remaining acceptance gates
 
 - Real GPT-Live microphone session, delegation, playback, interruption and final session close/usage.
-- Authorized FR24 observation with original timestamp, account credits and agreed usage/retention; access will be supplied later by the user.
+- Continuous FR24 position display with original timestamps and agreed account usage/retention; the authorized flight lookup/case flow is already verified above.
+- Hotel quote import through the UI and a complete sourced itinerary including independently verified property transfers.
+- Scoped voice/text-to-job implementation and its separate end-to-end checks; case-form sourcing is already verified.
 - Determine the cause of Google's billing warning and confirm billing health; configure appropriate key restrictions.
 - Verify surveyed terminal photogrammetry and precise alignment against current airport data; authored GLB rendering/orientation now has browser evidence.
 - Review visual fidelity on the event display.
 - Production host/domain, account budgets and external deployment, if the team chooses to publish.
 
-OpenAI and Google credentials are now configured. The bounded real OpenAI checks above close the interpretation/selection access gate; a configured voice credential still requires an actual microphone session. Google confirmed the billing upgrade and a first real geographic render succeeded, while billing health and detailed geometry remain open. FR24 access is pending. Historical unit tests use explicitly mocked provider transports and do not substitute for these remaining checks.
+The real FR24 lookup, Nuitee flight recovery, APL quote search and hotel metadata checks close only their stated access/flow gates. A configured voice credential and transport check still require an actual microphone session. Google geographic rendering has evidence, while account administration, detailed geometry and photographic fidelity remain separate. Historical unit tests use explicitly mocked provider transports and do not substitute for remaining real checks.
 
 ## Non-failing tool notices
 
