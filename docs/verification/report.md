@@ -4,9 +4,13 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 31 October 2026
 
-Release `15013b1` is deployed to the sole active application at `http://localhost:8080`; its backend implementation remains the verified `0478865` code, with subsequent frontend-only map corrections. It adds a manual, group-scoped APL airport-meeting-point → hotel planning import with exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. It also deploys the flight-date clarification and Decisions response-classification corrections described below. The verified import advanced the operation from world version 44 to 45 without changing either passenger group.
+Frontend `b854917` and backend `0b2e4cb` are deployed to the sole active application at `http://localhost:8080`. They support manual APL airport–hotel transfers in both directions, with exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one current sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The earlier verified outbound import advanced world 44 → 45 without changing either passenger group. Restarting these services preserved world 45 and zero confirmed resources/offers.
 
-The latest committed release passed **989 backend tests and 236 frontend tests**, the production build and frontend formatting. Both map-fix releases (`542d437`, `15013b1`) passed GitHub Actions on both branches. Both GitHub Actions runs for `0478865` passed on `main` and `codex/airport-recovery-live`; the main-branch log reports 989 backend passes and its summary reports 229 frontend passes. Coverage includes source-address identity, dated road endpoints, initial-position scope, exact Decimal price evidence, independent itinerary validation, persistent search receipts, unknown outcomes and import idempotency. Focused counts overlap the full suites and are not added to them. Existing build notices are recorded below.
+The deployed implementation passed **1,053 backend tests and 246 frontend tests**, the production build and frontend formatting. Both GitHub Actions runs passed for the return backend (`0b2e4cb`, runs 72/73) and frontend (`b854917`, runs 74/75) on `main` and `codex/airport-recovery-live`. Coverage includes exact-flight return binding, actual road endpoints, combined APL/Google receipt freshness, source-address identity, declared initial-position scope, Decimal price evidence, independent itinerary validation, persistent receipts and idempotency. Focused counts overlap the full suites and are not added to them. Existing build notices are recorded below.
+
+### Return release: browser checks in progress
+
+The actual browser displays both directions and rejects expired onward-flight choices before another transfer search. One bounded real Nuitee search for **2 November, LHR → OTP, two adults** returned ten priced quotes; all displayed arrivals fell after the selected group's **2 November 20:00 UTC** deadline. No quote was imported, no group deadline was changed, and the operation remained at world 45. Inspection found that the provider normalizer selected the cheapest ten before applying the group's time window; that filtering defect is being corrected before another source check. These results do not establish that no feasible flight exists in the supplier's full response. A real return import and complete hotel recovery remain unverified.
 
 ### Real private-transfer planning import
 
@@ -61,7 +65,7 @@ One property was excluded with a displayed source-policy reason referring to its
 
 Selecting Park Plaza London, Park Royal from the network also moved the Google geographic 3D view to the property's sourced coordinates. The property panel identified it as a reference location and kept room availability and transport verification separate.
 
-Google TRANSIT still has a pure adapter with offline tests and no connected product endpoint/UI or solver integration. Transit schedules do not establish seat availability; absent fares remain unknown. The general APL comparison display remains separate from the scoped initial-point → hotel import. The latter can supply a priced planning leg, but automatic complete hotel recovery and sourced return connections remain unfinished.
+Google TRANSIT still has a pure adapter with offline tests and no connected product endpoint/UI or solver integration. Transit schedules do not establish seat availability; absent fares remain unknown. The general APL comparison display remains separate from the scoped initial-point → hotel import. The latter can supply a priced planning leg, but automatic complete hotel recovery remains unfinished. Manual sourced returns are now implemented; their real end-to-end verification is tracked above.
 
 ### Real scoped text command and passenger itinerary
 

@@ -51,7 +51,7 @@ Pentru dezvoltare și verificări locale sunt necesare Python 3.12 și Node.js 2
 | `LITEAPI_API_KEY`, `LITEAPI_ENVIRONMENT=live`           | Cotații Nuitee pentru cazare și zboruri, conform accesului contului                                     |
 | `DUFFEL_ACCESS_TOKEN`, `DUFFEL_ENVIRONMENT=live`        | Furnizor alternativ pentru zboruri                                                                      |
 | `DISTRIBUSION_API_KEY`, `DISTRIBUSION_ENVIRONMENT=live` | Autocare; necesită și activarea fluxului Offers                                                         |
-| `APL_API_KEY`                                           | Cotații Airport Pickups London în GBP per vehicul și import manual al unui segment inițial aeroport–hotel; fără rezervare |
+| `APL_API_KEY`                                           | Cotații Airport Pickups London în GBP per vehicul și import manual aeroport–hotel sau hotel–aeroport; fără rezervare |
 | `PUBLIC_BASE_URL`, `OPERATOR_TOKEN`                     | URL accesibil pasagerilor și autentificarea operatorilor                                                |
 
 Prezența unei chei înseamnă configurare, nu acces verificat. Conturile sandbox nu furnizează inventar live. Căutările nu efectuează plăți sau rezervări. [Configurare și limite](docs/live-mode.md), [date geografice și hoteliere](docs/real-data.md), [cereri către furnizori](backend/app/providers/README.md).
@@ -66,7 +66,11 @@ Simpla afișare a cotației nu adaugă inventar; importul separat verifică surs
 
 Lista de resurse distinge cotațiile expirate sau cu prospețime necunoscută de inventarul curent. Inspectorul arată ora sursei și fie valabilitatea explicită, fie fereastra locală de 120 de secunde, în UTC. Acest termen local nu este o expirare declarată de furnizor și nu anulează o rezervare înregistrată. Afișarea se actualizează fără apeluri noi către furnizori; backendul decide în continuare eligibilitatea.
 
-## Transfer privat inițial către hotel
+## Transferuri private între aeroport și hotel
+
+Fluxul manual este limitat la aeroporturi din Regatul Unit acceptate de furnizorii conectați. Ambele direcții păstrează prețul original APL în GBP și estimarea ECB în EUR.
+
+Pentru **Airport meeting point → hotel**:
 
 1. În **Operation data → Private transfers**, selectează grupul de adulți și o proprietate hotelieră deja identificată prin surse. Sunt necesare accesul APL, Google Routes pe server și metadatele Nuitee ale proprietății.
 2. Introdu punctul inițial de întâlnire, coordonatele, numărul de bagaje și ora viitoare de preluare. Confirmarea punctului este o ipoteză declarată de operator despre pasageri; nu este o verificare a terminalului făcută de Google sau APL. Originea aeroportuară a grupului rămâne neschimbată.
@@ -75,7 +79,11 @@ Lista de resurse distinge cotațiile expirate sau cu prospețime necunoscută de
 
 Aplicația respinge punctele aflate la peste 10 km de referința aeroportului și conexiunile unde capătul rutier Google se află la peste 100 m de punctul cerut. Aceste limite sunt verificări geografice ale aplicației, nu dovezi de acces pietonal sau în terminal. Sosirea este o estimare de condus; nu inventează timp de încărcare ori mers pe jos. Cotația importată folosește o fereastră locală de 120 de secunde de la primire, păstrând necunoscute ora cotației și expirarea declarate de furnizor.
 
-Fluxul este **manual și numai din punctul inițial al aeroportului către hotel**. Nu reîmprospătează prețul camerei, nu obține returul și nu conectează automat terminalul la un zbor. Importul nu creează o ofertă completă, o rezervare sau pasageri recuperați. Dovezile din browser și de la furnizori sunt consemnate separat în [raportul de verificare](docs/verification/report.md).
+Pentru retur, alege **Hotel → airport for onward flight** în același formular. Selectează exact o cotație de zbor actuală, disponibilă și asociată exclusiv grupului; cele expirate trebuie reîmprospătate. Introdu ora preluării de la proprietate, punctul aeroportuar de coborâre și un interval de procesare de 1–720 de minute, declarat explicit de operator. Serverul verifică dacă sosirea rutieră estimată plus acest interval precedă plecarea zborului ales. Returul poate fi urmat numai de acel zbor în itinerariul validat.
+
+Terminalul de plecare rămâne necunoscut. Punctul și intervalul sunt ipoteze de planificare ale operatorului, nu instrucțiuni ale companiei aeriene sau o garanție de îmbarcare. Traseul Google folosește coordonatele punctului declarat, separat de reperul general al aeroportului. Eventualele instrucțiuni de întâlnire APL sunt afișate separat, ca informații ale furnizorului. Prospețimea unui retur este limitată de primul termen de 120 de secunde dintre răspunsul APL și predicția Google; orele și termenul sunt afișate în UTC. Expirarea lor nu anulează o rezervare înregistrată.
+
+Ambele direcții sunt **manuale**. Nu reîmprospătează prețul camerei și nu verifică automat conexiunea cu terminalul. Importul unui segment nu creează o ofertă completă, o rezervare sau pasageri recuperați. Recuperarea automată completă cu hotel și ambele transferuri rămâne în dezvoltare. Dovezile din browser și de la furnizori sunt consemnate separat în [raportul de verificare](docs/verification/report.md).
 
 ## Decizii și voce
 
@@ -172,7 +180,7 @@ Feedul FR24 are un cache separat: `OBSERVATION_RETENTION_SECONDS=3600` implicit.
 - O sesiune GPT-Live în browser cu microfon fizic, recunoaștere corectă a cererii, recuperare validată, redare și întrerupere; proba Python cu vorbire sintetizată a verificat doar etapele descrise mai sus.
 - Fluxul de poziții FR24 pe hartă, separat de lookup-ul de cursă deja verificat; limitele abonamentului echipei.
 - Un itinerar complet cu hotel și legături fizice verificate; importul hotelier prin interfață este verificat, dar nu dovedește existența unui transfer.
-- Verificarea vizuală și operațională a noului flux APL este urmărită separat în raport; importul inițial către hotel nu dovedește un retur sau o recuperare completă.
+- Verificarea vizuală și operațională a direcțiilor manuale APL este urmărită separat în raport; suportul pentru retur nu dovedește o recuperare automată completă.
 - Verificările de facturare Google și restricțiile cheii; fotogrammetria detaliată a terminalului și randarea/alinierea modelelor GLB.
 - Profilul vizual pe ecranul/proiectorul evenimentului și fidelitatea față de mockupurile fotorealiste.
 

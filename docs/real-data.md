@@ -13,7 +13,7 @@ adds inventory, holds rooms, reserves seats or modifies the recovery scenario.
 | Airport transfer route | OSRM using OpenStreetMap | Road distance and estimated driving time for a car profile. It is not a scheduled coach service, vehicle quote or live-traffic measurement. |
 | Hotel room offers | Booking.com Demand API 3.3, when configured | Full-stay prices returned for the selected dates, adults and rooms, joined with property names from the details endpoint. No booking is placed. |
 | Hotel room offers | Nuitee / LiteAPI, preferred by automatic selection when configured for live use | A validated offer per hotel for all requested rooms and adults, preferring complete mandatory costs. Supplier booking amount and additional mandatory fees remain separately visible; no prebooking or payment is performed. |
-| Private-transfer planning | APL, exact LiteAPI property metadata, dated Google Routes and ECB | A manually selected initial UK airport meeting-point → hotel leg. GBP remains the supplier price; EUR and driving arrival are planning estimates. Import does not book a vehicle or establish a complete itinerary. |
+| Private-transfer planning | APL, exact LiteAPI property metadata, dated Google Routes and ECB | Manual initial UK airport-point → hotel or hotel → UK airport leg. Return binds an exact group-scoped onward flight and operator buffer. GBP is the supplier price; EUR and driving arrival are estimates. No vehicle booking or complete itinerary is implied. |
 
 **Compare hotel prices** opens the public Momondo hotel search and provides a
 copyable summary of the airport, dates, guests and rooms. The search summary is
@@ -89,7 +89,7 @@ server receipt so an import can use verified source results. The
 in-process reference cache holds at most 64 entries and coalesces same-source
 work. Errors are not cached. Results include at most ten hotel records and ten offers.
 
-## Manual initial airport-to-hotel transfer
+## Manual airport–hotel transfers
 
 Open **Private transfers** in the live data dialog. Select an existing adult-only
 group and sourced hotel property, then provide the group's initial meeting-point
@@ -99,6 +99,14 @@ assertion that the passengers are there, and it does not establish an arriving
 flight's terminal connection. Unsupported accessibility or child-seat needs
 block this flow rather than being assumed satisfied.
 
+The same form also offers **Hotel → airport for onward flight**. Select a current,
+available, unbooked sourced flight quoted exclusively for the group; stale quotes
+must be refreshed explicitly. Enter the reported airport drop-off label/coordinates
+and an operator processing allowance of 1–720 minutes. The server checks predicted
+driving arrival plus this allowance against that exact flight's departure. Both
+directions are limited to supported UK airports. The departure terminal remains
+unknown; the allowance is not airline guidance or a boarding guarantee.
+
 The server first retrieves the exact LiteAPI hotel ID's metadata. Coordinates
 must agree with the existing `HP-…` property node; its postal address, city and
 country come from that record, not an editable destination field. Missing usable
@@ -106,27 +114,35 @@ metadata prevents further APL/Routes work. Existing geography can be used even
 when a previous room quote is stale; no bed price or room availability is refreshed
 by the transfer search.
 
-APL receives that property address, the declared airport pickup, party size,
-suitcases and exact London pickup date/time. Google Routes receives the exact
+APL receives that property address, the declared airport endpoint, direction, party
+size, suitcases and exact London pickup date/time. Google Routes receives the exact
 coordinates and future RFC3339 departure time. These independent requests run
 concurrently after property validation. A missing Google server key, provider
 failure or Google's fallback computation is not replaced by an OSRM or
 current-time estimate. Unknown APL terminal/expiry fields remain unknown;
 conflicting airport, direction, terminal or destination evidence blocks import.
+Optional APL `meeting_point.name` and `meeting_point.instructions` are displayed
+separately as supplier pickup guidance; they do not establish the flight terminal.
 
 The response keeps requested and road-snapped coordinates separate, with their
 offsets. Application screening limits are 10 km from the catalog airport
-reference for the initial point and 100 m for either road snap. Passing these
+reference for the declared airport point and 100 m for either road snap. Passing these
 checks does not verify pedestrian access or a terminal connection. Driving
 seconds retain their source precision; only the importer rounds arrival upward
 to an operation minute. Loading and walking are not included unless the source
 establishes them. A bounded Google `OVERVIEW` encoded polyline may be shown as the
 sourced road path; missing geometry stays unavailable rather than being invented.
+Return routes and their separate reported-drop-off marker use the declared
+drop-off coordinates, not the airport's catalog reference position.
 
 Choose an importable vehicle option to add the planning leg. The server-held
-`quote_id` supplies all price and route data. A distinct `MP-…` meeting point is
-eligible only as that group's first leg; the group's airport origin is not
-rewritten. The quoted party capacity is not fleet stock, a supplier reservation
+`quote_id` supplies all price and route data. Outbound import creates a distinct
+`MP-…` meeting point eligible only as that group's first leg; the group's airport
+origin is not rewritten. A return uses the actual hotel node and onward airport
+node, with no first-leg exemption. Its typed airport-arrival assumption binds the
+exact flight revision, drop-off and operator buffer, with a null departure terminal.
+The solver requires that flight immediately after the return. The quoted party
+capacity is not fleet stock, a supplier reservation
 or extra sellable seats. The accepted `ecb_reference_v1` policy preserves original
 GBP and dated estimated EUR through resources, itinerary legs, Decisions and the
 passenger view. Missing/stale FX leaves GBP visible but blocks import. Revalidate
@@ -140,11 +156,18 @@ result without another dispatch. An unknown dispatch is never retried
 automatically; starting another search is an explicit new attempt with possible
 provider cost. Backups omit the transient cache and cannot resume in-flight
 searches. Imports use version checks, immutable revisions and atomic scoped
-updates, preserving unrelated and confirmed allocations.
+updates, preserving unrelated and confirmed allocations. Import retires only
+replaceable source revisions for the same group and direction; it retains the
+other direction's source records.
+For an imported return, planning freshness ends at the earlier of APL receipt
+plus 120 seconds and Google prediction receipt plus 120 seconds. Missing, malformed
+or future Google receipts do not establish current return evidence. The UI keeps
+both UTC receipt times, the combined cutoff and recorded-booking status separate.
 
-This is a manual initial airport-point → hotel leg, not automatic hotel recovery.
-It supplies no return journey or terminal-to-flight connection, and by itself
-creates no offer or booking. Browser and provider evidence is tracked in the
+These are manual legs, not automatic hotel recovery or verified terminal-to-flight
+connections. Each import by itself creates no complete offer, supplier hold or
+booking. Automatic full recovery with hotel and both transfers remains in
+development. Browser and provider evidence is tracked in the
 [verification report](verification/report.md), separately from implementation and
 mocked tests.
 

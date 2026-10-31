@@ -34,8 +34,8 @@ SSE connections are intentionally long-lived. Keep the five-second graceful-shut
 | `app/store.py` | SQLite transactions, version checks, expiry, idempotency, audit, polling ledger and telemetry |
 | `app/main.py` | HTTP, SSE, authentication, lifecycle, input limits and shared observation polling |
 | `app/providers/` | Actual provider contracts; no direct authority to mutate the world |
-| `app/transfer_planning.py` | Scoped private-transfer source receipts, short-lived cache, initial-point creation and atomic import |
-| `app/pricing.py`, `app/initial_position.py` | Typed GBP/ECB evidence, app-receipt freshness and first-leg-only operator position assumptions |
+| `app/transfer_planning.py` | Manual UK airport–hotel transfer receipts, short-lived cache and atomic direction-scoped import |
+| `app/pricing.py`, `app/initial_position.py`, `app/airport_arrival.py` | Typed GBP/ECB evidence, receipt freshness, first-leg operator positions and exact-flight return allowances |
 
 An AI command is interpreted into typed events and strategies, applied to a private projection, solved against current inventory, and passed to Decisions for selection. The server rechecks the world version and exact feasibility before applying the events and all holds in one transaction. Model calls happen outside that transaction. An unknown ID, malformed response, provider error or stale version prevents partial application. A visual-only or ambiguous interpretation with no events/strategies produces an idempotent explanation and leaves the operational world unchanged.
 
@@ -60,14 +60,28 @@ The allocator enumerates at most 64 complete routes per party, up to four legs, 
 
 ### Manual private-transfer boundary
 
-The authenticated `/api/transfers/planning-quotes` flow handles one initial UK
-airport meeting-point → existing sourced hotel leg. It preserves the group's
-airport origin and creates a separate `meeting_point` node. A typed,
+The authenticated `/api/transfers/planning-quotes` flow supports manual UK
+airport-point → hotel and hotel → UK airport directions. The default
+`initial_airport_to_hotel` preserves the group's airport origin and creates a
+separate `meeting_point` node. A typed,
 fingerprinted operator assumption authorizes that point only as the selected
 group's first leg; there is no synthetic airport-to-point edge or later
 terminal-to-flight shortcut. Exact property metadata and a future Google driving
-prediction are sourced before import. A room quote may remain stale, and no
-return transport, hotel booking or complete recovery is implied.
+prediction are sourced before import. A room quote may remain stale; transport
+search does not refresh room availability or establish a hotel booking.
+
+`hotel_to_airport` omits `initial_point` and supplies `airport_dropoff`, the exact
+`onward_resource_id`, and operator `airport_processing_minutes` (1–720). The
+onward flight must be current, available, unbooked, sourced and scoped exclusively
+to the group. Its source identity, departure, airport and incident constraints
+are revalidated. The return starts at the actual property and can be followed
+only by that flight after the declared allowance. `airport_arrival_assumption`
+on Resource and Leg preserves the group/flight fingerprints, reported drop-off,
+buffer and null departure terminal. It provides no first-leg position exemption.
+The allowance is operator input, not airline guidance or guaranteed boarding.
+Google's route destination is the declared drop-off coordinate; the IATA airport
+node remains a separate reference. Optional APL meeting instructions remain
+supplier pickup guidance, not evidence of the departure terminal.
 
 The imported resource uses `transport_mode='private_transfer'`, one eligible
 group and `capacity_scope='private_vehicle_quote'`. Capacity is the quoted party,
@@ -75,7 +89,11 @@ not supplier fleet stock. Typed `price_evidence` preserves the GBP vehicle price
 and ECB EUR estimate in both Resource and Leg; Itinerary/Plan summaries identify
 estimated components. The accepted `ecb_reference_v1` policy permits numeric EUR
 planning comparisons without promising EUR settlement. Supplier quote time and
-expiry stay null; typed app-receipt freshness is 120 seconds. The independent
+expiry stay null; typed app-receipt freshness is 120 seconds. Returns use the
+earlier APL/Google receipt deadline, each plus 120 seconds, inclusive at the
+boundary; missing/malformed/future Google receipts cannot qualify a new plan.
+The UI exposes both UTC receipts and this combined cutoff without cancelling
+historical recorded bookings. The independent
 validator checks the evidence and current policy, and passenger/Decisions
 representations retain the estimate distinction.
 
@@ -86,9 +104,14 @@ polling is paused. One planning search runs at a time across workers. Completed
 search retries replay a retained result; changed payloads conflict. Pending or
 unknown dispatches return `applied:null` and never silently repeat provider work.
 Expired cache cannot be refreshed with the same key. An import atomically writes
-its node/resource, scoped retirement, audit and idempotency receipt; accepted
+its node/resource, group-and-direction-scoped retirement, audit and idempotency receipt; accepted
 import replay survives cache expiry. Newer imported revisions cannot be replaced
 by an older cached fare, and unrelated/confirmed records remain protected.
+
+Import alone creates no complete offer, supplier hold or booking. Both directions
+remain manual; automatic full recovery with hotel and both transfers is still in
+development. Implementation and mocked checks are distinct from live evidence in
+the [verification report](verification/report.md).
 
 The backup script removes transient transfer source caches and marks dispatched
 receipts unknown in the copy. Completed search receipts with no restored cache

@@ -532,7 +532,7 @@ export default function PlanningTransfers({
           {returning && (
             <p className="field-hint">
               Departure terminal unknown. The processing allowance is your planning assumption, not
-              airline guidance. Refresh stale or expired flight quotes under Flight quotes or the
+              airline guidance. Refresh stale or expired flight quotes under Find live travel or the
               case’s recovery search before requesting a return. The server rechecks the exact
               flight, driving duration and group constraints.
             </p>
