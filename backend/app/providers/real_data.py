@@ -223,13 +223,14 @@ def _liteapi_room_terms(rate: dict) -> dict:
 
 
 class RealDataProvider:
-    def __init__(self, settings: Any, *, client: httpx.AsyncClient | None = None):
+    def __init__(self, settings: Any, *, client: httpx.AsyncClient | None = None, now=None):
         self.settings = settings
         self._owns_client = client is None
         self.client = client or httpx.AsyncClient(follow_redirects=False)
         self.timeout = min(20.0, float(getattr(settings, "request_timeout_seconds", 20)))
         self._public_gate = asyncio.Lock()
         self._public_last = 0.0
+        self._now = now or (lambda: datetime.now(timezone.utc))
 
     @property
     def google_configured(self) -> bool:
@@ -399,6 +400,78 @@ class RealDataProvider:
                 link = "https://www.openstreetmap.org/directions?" + urlencode({"engine": "fossgis_osrm_car", "route": f'{airport["latitude"]},{airport["longitude"]};{destination["latitude"]},{destination["longitude"]}'})
             return [{"id": f'{airport["code"]}-{destination["code"]}', "origin": airport["code"], "destination": destination["code"], "distance_km": round(meters/1000, 1), "duration_minutes": round(seconds/60, 1), "source_url": link, "traffic": "live" if google else "none", "vehicle_profile": "driving"}]
         except (ValueError, TypeError, KeyError, InvalidOperation) as exc:
+            raise _invalid(source) from exc
+
+    async def dated_route(self, origin: dict, destination: dict, pickup_at: datetime) -> dict:
+        """A Google prediction for the exact requested future pickup, not a vehicle.
+
+        Source durations retain their decimal seconds. Operation-minute rounding,
+        terminal identity and any road-to-meeting-point connection belong to the
+        importer. Road-snapped endpoints never replace requested coordinates.
+        Contract: developers.google.com/maps/documentation/routes/reference/rest/v2/TopLevel/computeRoutes
+        """
+        source = "Google Routes"
+        def coordinates(value):
+            if not isinstance(value, dict):
+                raise ValueError("Coordinates required")
+            return {"latitude": _number(value["latitude"], -90, 90),
+                    "longitude": _number(value["longitude"], -180, 180)}
+        try:
+            start, end = coordinates(origin), coordinates(destination)
+            if start == end or not isinstance(pickup_at, datetime) or pickup_at.tzinfo is None or pickup_at.utcoffset() is None:
+                raise ValueError("Distinct coordinates and an aware pickup are required")
+            departure = pickup_at.astimezone(timezone.utc)
+            if departure <= self._now():
+                raise ValueError("Pickup must be future")
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise ProviderError("Supply distinct finite coordinates and a future pickup datetime with a UTC offset; no route request was sent.", provider=source, code="invalid_request") from exc
+        if not self.google_configured:
+            raise ProviderError("GOOGLE_MAPS_SERVER_API_KEY is missing; dated driving predictions are unavailable.", provider=source, code="not_configured")
+        departure_text = departure.isoformat().replace("+00:00", "Z")
+        payload = await self._request("POST", "https://routes.googleapis.com/directions/v2:computeRoutes", source,
+            headers={"X-Goog-Api-Key": secret_value(self.settings.google_maps_server_api_key),
+                     "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.legs.startLocation,routes.legs.endLocation,routes.warnings,fallbackInfo"},
+            json={"origin": {"location": {"latLng": start}}, "destination": {"location": {"latLng": end}},
+                  "departureTime": departure_text, "travelMode": "DRIVE", "routingPreference": "TRAFFIC_AWARE",
+                  "computeAlternativeRoutes": False, "units": "METRIC"})
+        fetched_at = self._now().astimezone(timezone.utc)
+        if fetched_at >= departure:
+            raise ProviderError("The requested pickup elapsed before Google returned the route; no current-time substitute was requested.", provider=source, code="pickup_elapsed")
+        if "fallbackInfo" in payload:
+            raise ProviderError("Google returned a fallback computation instead of the requested dated traffic-aware route; it cannot support this planning leg.", provider=source, code="routing_fallback")
+        try:
+            if "error" in payload:
+                raise ValueError("Provider error")
+            # Protobuf JSON may omit an empty repeated routes field.
+            routes = payload.get("routes", [])
+            if not isinstance(routes, list):
+                raise ValueError("Invalid route list")
+            if not routes:
+                raise ProviderError("Google found no driving route for those endpoints and pickup time.", provider=source, code="no_route")
+            if len(routes) != 1 or not isinstance(routes[0], dict):
+                raise ValueError("Exactly one route required")
+            row = routes[0]
+            duration = row.get("duration")
+            if not isinstance(duration, str) or not re.fullmatch(r"(?:0|[1-9][0-9]{0,6})(?:\.[0-9]{1,9})?s", duration) or not 0 < Decimal(duration[:-1]) <= 7*86400:
+                raise ValueError("Invalid duration")
+            meters = row.get("distanceMeters")
+            if type(meters) is not int or not 0 < meters <= 20_000_000:
+                raise ValueError("Invalid distance")
+            legs = row.get("legs")
+            if not isinstance(legs, list) or len(legs) != 1:
+                raise ValueError("Exactly one road leg required")
+            road_start = coordinates(legs[0]["startLocation"]["latLng"])
+            road_end = coordinates(legs[0]["endLocation"]["latLng"])
+            warnings = row.get("warnings", [])
+            if not isinstance(warnings, list) or len(warnings) > 20 or any(not isinstance(item, str) or not item.strip() or len(item) > 2048 for item in warnings):
+                raise ValueError("Invalid route warnings")
+            return {"source": source, "source_url": "https://developers.google.com/maps/documentation/routes/reference/rest/v2/TopLevel/computeRoutes",
+                "fetched_at": fetched_at.isoformat(),
+                "request": {"origin": start, "destination": end, "departure_time": departure_text,
+                            "travel_mode": "DRIVE", "routing_preference": "TRAFFIC_AWARE"},
+                "duration_seconds": duration[:-1], "distance_meters": meters, "duration_guaranteed": False,
+                "road_endpoints": {"origin": road_start, "destination": road_end}, "warnings": warnings}
+        except (ValueError, TypeError, KeyError, InvalidOperation, OverflowError) as exc:
             raise _invalid(source) from exc
 
     async def offers(self, airport: dict, request: Any) -> list[dict]:
