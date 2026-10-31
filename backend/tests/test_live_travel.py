@@ -83,6 +83,50 @@ async def test_search_is_read_only_and_import_preserves_exact_group_quote_then_r
 
 
 @pytest.mark.asyncio
+async def test_search_uses_only_selected_groups_exact_ready_and_deadline(live):
+    def distinct_windows(world):
+        epoch=datetime.fromisoformat(world.epoch)
+        departure=datetime.fromisoformat(quote()["departure_at"])
+        start=int((departure-epoch).total_seconds()/60)
+        world.groups[0].ready_at,world.groups[0].deadline=start-60,start+240
+        world.groups[1].ready_at,world.groups[1].deadline=start+30,start+360
+    live.store.mutate("time-windows",{},live.store.read().version,distinct_windows)
+    before=live.store.read()
+    for group in before.groups:
+        await live.travel.search(search(group_id=group.id))
+    epoch=datetime.fromisoformat(before.epoch)
+    for group,request in zip(before.groups,live.provider.calls):
+        assert request.earliest_departure_at==epoch+timedelta(minutes=group.ready_at)
+        assert request.latest_arrival_at==epoch+timedelta(minutes=group.deadline)
+    assert live.store.read().model_dump()==before.model_dump()
+
+
+@pytest.mark.asyncio
+async def test_search_never_uses_readiness_in_the_past_or_raises_a_passed_deadline(live):
+    started=datetime.now(timezone.utc)
+    await live.travel.search(search())
+    assert live.provider.calls[0].earliest_departure_at>=started
+    def elapsed(world):
+        world.groups[0].ready_at=world.groups[0].deadline=0
+    live.store.mutate("deadline-elapsed",{},live.store.read().version,elapsed)
+    with pytest.raises(DomainError) as failure:
+        await live.travel.search(search())
+    assert failure.value.status==422 and len(live.provider.calls)==1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field",["ready_at","deadline"])
+async def test_cached_search_is_invalidated_when_its_group_time_window_changes(live,field):
+    result=await live.travel.search(search())
+    def update(world):
+        setattr(world.groups[0],field,getattr(world.groups[0],field)+1)
+    live.store.mutate("window-changed",{},live.store.read().version,update)
+    with pytest.raises(DomainError) as failure:
+        live.travel.import_quote(select(live,result))
+    assert failure.value.status==409 and not live.store.read().resources
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("state", ["not_configured", "sandbox", "error"])
 async def test_unavailable_provider_keeps_state_explicit_and_creates_no_search_or_resource(live, state):
     live.provider.state = state

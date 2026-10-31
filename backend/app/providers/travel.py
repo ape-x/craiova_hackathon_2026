@@ -45,6 +45,14 @@ def _identity(value: Any) -> str:
     return _opaque_id(value, required=True)
 
 
+def _bounded_offers(rows: list[dict], request: TravelSearchRequest, *, currency_order=False) -> list[dict]:
+    """Filter exact source instants before cheap ineligible fares consume the cap."""
+    eligible = [row for row in rows
+        if (request.earliest_departure_at is None or _instant(row["departure_at"]) >= request.earliest_departure_at)
+        and (request.latest_arrival_at is None or _instant(row["arrival_at"]) <= request.latest_arrival_at)]
+    return sorted(eligible, key=lambda row: (row["currency"] if currency_order else "", Decimal(row["total_price"])))[:10]
+
+
 @lru_cache(maxsize=1)
 def _airport_timezones() -> dict[str, str]:
     # Offline, licensed reference data; never infer a zone from server location.
@@ -286,7 +294,7 @@ class TravelProvider(RealDataProvider):
                             raise ValueError("Duplicate offer identity")
                         seen.add(identity)
                         result.append({**self._base(request, source, identity, money["amount"], money["currency"], expiry, observed, segments), "provider_journey_id": _identity(journey["journeyKey"]), "content_provider": provider_code, "conditions": _provider_terms(offer.get("terms")), "baggage": _provider_terms(offer.get("baggage")), "segment_fares": _provider_terms(offer.get("segmentFares", [])), "price_breakdown": _provider_terms(price), "reported_seats_left": seats, "passenger_composition_source": "request_reconciled_with_price_breakdown" if omitted_composition else "provider", "reported_passenger_composition": {key: parameters[key] for key in counts}})
-            return sorted(result, key=lambda row: Decimal(row["total_price"]))[:10]
+            return _bounded_offers(result, request)
         except ProviderError:
             raise
         except (KeyError, TypeError, ValueError, AttributeError, InvalidOperation, ZoneInfoNotFoundError) as exc:
@@ -354,7 +362,7 @@ class TravelProvider(RealDataProvider):
                 identity = _identity(offer["id"])
                 result.append({**self._base(request, source, identity, money["amount"], money["currency"], expiry, observed, segments), "provider_search_id": search_id, "conditions": _conditions(offer.get("conditions")), "reported_seats_left": None})
             # Compare only within a currency; do not invent exchange rates.
-            return sorted(result, key=lambda row: (row["currency"], Decimal(row["total_price"])))[:10]
+            return _bounded_offers(result, request, currency_order=True)
         except ProviderError:
             raise
         except (KeyError, TypeError, ValueError, AttributeError, InvalidOperation, ZoneInfoNotFoundError) as exc:
@@ -461,6 +469,6 @@ class TravelProvider(RealDataProvider):
                     fare_class = related(fare, "fare_class") if fare["relationships"]["fare_class"]["data"] is not None else None
                     conditions = [{"id": c["id"], "description": _terms_text(c["attributes"].get("description")), "refundable": c["attributes"].get("refundable"), "exchangeable": c["attributes"].get("exchangeable")} for c in related(fare, "conditions", plural=True)]
                     result.append({**self._base(request, source, identity, money["amount"], "EUR", expiry, observed, segments), "provider_connection_id": connection["id"], "fare_name": _terms_text(fare_class["attributes"]["name"], 1000) if fare_class else None, "conditions": conditions, "reported_seats_left": seats})
-            return sorted(result, key=lambda row: Decimal(row["total_price"]))[:10]
+            return _bounded_offers(result, request)
         except (KeyError, TypeError, ValueError, AttributeError, InvalidOperation, ZoneInfoNotFoundError) as exc:
             raise _invalid(source) from exc

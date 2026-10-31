@@ -5,7 +5,7 @@ import hashlib
 import secrets
 import time
 from collections import OrderedDict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import math
 from typing import Literal
@@ -43,7 +43,7 @@ class TravelQuoteImport(Mutation):
 
 
 def group_identity(group):
-    return (group.id, group.size, group.adult_count, group.source)
+    return (group.id, group.size, group.adult_count, group.source, group.ready_at, group.deadline)
 
 
 class LiveTravel:
@@ -67,11 +67,14 @@ class LiveTravel:
             if group.adult_count is not None and sum(a >= 18 for a in ages) != group.adult_count:
                 raise DomainError(422, "Passenger ages do not match the group's declared adult count")
         try:
+            epoch = aware(world.epoch)
             query = TravelSearchRequest(kind=request.kind, origin_code=request.origin_code,
                 destination_code=request.destination_code, departure_date=request.departure_date,
-                adults=group.size, passenger_ages=request.passenger_ages)
+                adults=group.size, passenger_ages=request.passenger_ages,
+                earliest_departure_at=max(datetime.now(timezone.utc),epoch+timedelta(minutes=max(world.sim_time,group.ready_at))),
+                latest_arrival_at=epoch+timedelta(minutes=group.deadline))
         except ValidationError as exc:
-            raise DomainError(422,"Invalid travel criteria: check airports, departure date and passenger ages") from exc
+            raise DomainError(422,"Invalid travel criteria: check airports, departure date, passenger ages, readiness and arrival deadline") from exc
         result = await self.provider.search(query)
         if result.get("state") != "ready":
             return result

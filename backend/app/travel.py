@@ -1,5 +1,5 @@
 """Dated travel-search input; quotes do not create reservations."""
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -17,6 +17,21 @@ class TravelSearchRequest(BaseModel):
     departure_date: date
     adults: int = Field(default=1, ge=1, le=30, strict=True)
     passenger_ages: list[int] | None = Field(default=None, min_length=1, max_length=30)
+    # Internal eligibility bounds; adapters do not add these to supplier bodies.
+    earliest_departure_at: datetime | None = None
+    latest_arrival_at: datetime | None = None
+
+    @field_validator("earliest_departure_at", "latest_arrival_at", mode="before")
+    @classmethod
+    def aware_bound(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, (str, datetime)):
+            raise ValueError("Search time bounds require explicit timezone-aware instants")
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError("Search time bounds require an explicit UTC offset")
+        return parsed.astimezone(timezone.utc)
 
     @field_validator("origin_code", "destination_code")
     @classmethod
@@ -43,4 +58,6 @@ class TravelSearchRequest(BaseModel):
             raise ValueError("Departure must be today or within the next 330 days")
         if self.passenger_ages is not None and len(self.passenger_ages) != self.adults:
             raise ValueError("Provide one age per requested passenger")
+        if self.earliest_departure_at is not None and self.latest_arrival_at is not None and self.earliest_departure_at > self.latest_arrival_at:
+            raise ValueError("The earliest departure exceeds the latest arrival")
         return self
