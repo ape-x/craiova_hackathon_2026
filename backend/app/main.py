@@ -103,11 +103,11 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     travel=LiveTravel(store,travel_provider)
     ground_transfers=GroundTransfers(settings)
     coach_fares=CoachFares(settings,fx=ground_transfers.fx)
+    airport_cab=AirportCabPlanning(settings,store)
     jobs=RecoveryJobs(settings,store,service,travel_provider,ai,hotel_provider=real_data.provider,
-        apl_provider=ground_transfers.provider,fx_provider=ground_transfers.fx,coach_fares=coach_fares)
+        apl_provider=ground_transfers.provider,fx_provider=ground_transfers.fx,coach_fares=coach_fares,airport_cab=airport_cab)
     service.live_commands=LiveCommands(store,jobs)
     ground_planning=GroundPlanning(store,ground_transfers,real_data.provider)
-    airport_cab=AirportCabPlanning(settings,store)
     operational_reports=OperationalReports(store,jobs)
     airport_restrictions=AirportRestrictions(store,jobs)
     login_attempts=defaultdict(deque)

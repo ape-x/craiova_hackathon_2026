@@ -495,9 +495,9 @@ export default function AirportCabPanel({
           )}
           {form.group_id && groupIssue && <p className="text-amber">{groupIssue}</p>}
           <p className="field-hint">
-            1–7 recorded adults · pickup 9 hours to 31 days ahead. The 9-hour minimum conservatively
-            covers the supplier’s day/night advance-notice rules. Suitability for accessible travel
-            is unverified.
+            1–7 recorded adults · current conservative pickup rule: at least 9 hours ahead, within
+            31 days. Source policy is rechecked for each quote. Suitability for accessible travel is
+            unverified.
           </p>
           <button
             className="primary-button"

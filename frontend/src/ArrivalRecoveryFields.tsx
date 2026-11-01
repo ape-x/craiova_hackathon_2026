@@ -1,4 +1,5 @@
-import type { MutationResult } from './types';
+import type { MutationResult, World } from './types';
+import AirportTransferRecoveryFields from './AirportTransferRecoveryFields';
 import { arrivalRecoveryReceipt } from './arrivalRecoveryData';
 import type { ArrivalRecoveryForm } from './arrivalRecoveryData';
 
@@ -6,10 +7,12 @@ export function ArrivalRecoveryFields({
   value,
   onChange,
   legend = 'Optional recalculation from the reported arrival',
+  transferContext,
 }: {
   value: ArrivalRecoveryForm;
   onChange: (value: ArrivalRecoveryForm) => void;
   legend?: string;
+  transferContext?: { world: World; groupIds: string[]; scopeKey?: string } | null;
 }) {
   return (
     <fieldset className="arrival-recovery-options">
@@ -71,6 +74,23 @@ export function ArrivalRecoveryFields({
         source searches; fare references do not establish seats or new transport inventory. No
         interpretation call is added to this direct request.
       </p>
+      {transferContext &&
+        (value.modes.includes('bus') || Boolean(value.airportTransfers?.length)) && (
+          <AirportTransferRecoveryFields
+            {...transferContext}
+            value={value.airportTransfers ?? []}
+            onChange={(airportTransfers) => onChange({ ...value, airportTransfers })}
+            modes={value.modes}
+            allowance={Number(value.maxProviderCalls)}
+            hotelRecovery={value.modes.includes('hotel')}
+          />
+        )}
+      {transferContext === null && Boolean(value.airportTransfers?.length) && (
+        <p className="case-source-warning">
+          The reported airport or readiness is incomplete. Airport-transfer setup cannot be reused
+          until reviewed.
+        </p>
+      )}
     </fieldset>
   );
 }

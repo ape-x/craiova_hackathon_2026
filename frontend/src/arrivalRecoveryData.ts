@@ -1,15 +1,19 @@
 import type { MutationResult, RecoveryIncident, RecoveryJobInput, World } from './types';
 import { arrivalReportInput } from './operationalReports';
 import type { ArrivalReportForm, ArrivalReportInput } from './operationalReports';
+import { utcInputToIso } from './liveData';
+import { airportTransferInputs, airportTransferScope } from './airportTransferRecovery';
+import type { AirportTransferDraft } from './airportTransferRecovery';
 
 export type ArrivalRecoveryInput = Pick<
   RecoveryJobInput,
-  'objective' | 'modes' | 'max_provider_calls' | 'hotel_recovery'
+  'objective' | 'modes' | 'max_provider_calls' | 'hotel_recovery' | 'airport_transfers'
 >;
 export interface ArrivalRecoveryForm {
   objective: RecoveryJobInput['objective'];
   modes: RecoveryJobInput['modes'];
   maxProviderCalls: string;
+  airportTransfers?: AirportTransferDraft[];
 }
 export const emptyArrivalRecoveryForm = (): ArrivalRecoveryForm => ({
   objective: 'balanced',
@@ -17,7 +21,35 @@ export const emptyArrivalRecoveryForm = (): ArrivalRecoveryForm => ({
   maxProviderCalls: '8',
 });
 
-export function arrivalRecoveryIssue(form: ArrivalRecoveryForm, groupCount: number): string | null {
+export function projectedArrivalRecovery(world: World, form: ArrivalReportForm) {
+  try {
+    const airport = form.airportCode.trim().toUpperCase(),
+      ready = Date.parse(utcInputToIso(form.readyAt)),
+      epoch = Date.parse(world.epoch);
+    if (!/^[A-Z]{3}$/.test(airport) || !Number.isFinite(epoch) || !Number.isFinite(ready))
+      return null;
+    return {
+      world: {
+        ...world,
+        groups: world.groups.map((group) =>
+          form.groupIds.includes(group.id)
+            ? { ...group, origin: airport, ready_at: (ready - epoch) / 60_000 }
+            : group,
+        ),
+      },
+      groupIds: form.groupIds,
+      scopeKey: airportTransferScope(world, form.groupIds, JSON.stringify([airport, form.readyAt])),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function arrivalRecoveryIssue(
+  form: ArrivalRecoveryForm,
+  groupCount: number,
+  context?: { world: World; groupIds: string[]; scopeKey?: string } | null,
+): string | null {
   if (
     !form.modes.length ||
     new Set(form.modes).size !== form.modes.length ||
@@ -36,6 +68,23 @@ export function arrivalRecoveryIssue(form: ArrivalRecoveryForm, groupCount: numb
     return 'Enter a whole-number recovery call limit from 3 to 26.';
   if (!Number.isInteger(groupCount) || groupCount < 1 || groupCount > 24)
     return 'Select 1–24 linked groups for report and recalculation. Report-only supports a larger scope.';
+  if (form.airportTransfers?.length) {
+    if (!context)
+      return 'Complete the reported airport and readiness before reviewing airport-transfer inputs.';
+    try {
+      airportTransferInputs(
+        form.airportTransfers,
+        context.world,
+        context.groupIds,
+        form.modes,
+        Number(form.maxProviderCalls),
+        false,
+        context.scopeKey,
+      );
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : 'Review the airport-transfer inputs.';
+    }
+  }
   return null;
 }
 
@@ -48,14 +97,28 @@ export function arrivalReportSubmission(
 ): ArrivalReportInput {
   const input = arrivalReportInput(world, incident, form);
   if (action === 'report') return input;
-  const issue = arrivalRecoveryIssue(recovery, input.group_ids.length);
+  const projected = projectedArrivalRecovery(world, form);
+  const issue = arrivalRecoveryIssue(recovery, input.group_ids.length, projected);
   if (issue) throw new Error(issue);
+  const transfers =
+    recovery.airportTransfers?.length && projected
+      ? airportTransferInputs(
+          recovery.airportTransfers,
+          projected.world,
+          input.group_ids,
+          recovery.modes,
+          Number(recovery.maxProviderCalls),
+          false,
+          projected.scopeKey,
+        )
+      : [];
   return {
     ...input,
     recovery: {
       objective: recovery.objective,
       modes: [...recovery.modes],
       max_provider_calls: Number(recovery.maxProviderCalls),
+      ...(transfers.length ? { airport_transfers: transfers } : {}),
     },
   };
 }

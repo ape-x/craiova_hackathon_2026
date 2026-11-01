@@ -11,6 +11,7 @@ import unicodedata
 from pydantic import Field, ValidationError, field_validator, model_serializer
 
 from .hotel_recovery import HotelRecoveryInputs, validate_hotel_job
+from .airport_cab_recovery import AirportCabRecoveryInput, validate_airport_transfer_job
 from .live_data import _known_airport_code, _new_airports, aware, relative_minute
 from .live_service import _find, _invalidate_pending, _live
 from .models import Model, Mutation, World
@@ -41,6 +42,14 @@ class ArrivalRecoveryOptions(Model):
     modes: list[Literal["flight", "hotel", "bus"]] = Field(default_factory=lambda: ["flight"], min_length=1, max_length=3)
     max_provider_calls: int = Field(default=8, ge=3, le=26, strict=True)
     hotel_recovery: HotelRecoveryInputs | None = None
+    airport_transfers: list[AirportCabRecoveryInput] = Field(default_factory=list, max_length=12)
+
+    @model_serializer(mode="wrap")
+    def compatible_payload(self, handler):
+        result = handler(self)
+        if not self.airport_transfers:
+            result.pop("airport_transfers", None)
+        return result
 
 
 class ArrivalReportInput(OperationalReportInput):
@@ -211,7 +220,7 @@ class OperationalReports:
                     group_ids=request.group_ids, **options.model_dump(),
                     instructions=f"Recover exactly the reported groups from {request.airport_code} after their operator-reported readiness {request.ready_at.isoformat()}. Preserve their final destinations and current constraints.")
             except ValidationError:
-                blocked("recovery_prerequisite_failed", "Recovery requires 1–24 selected groups with supported exact identifiers. The report was preserved without changing its group scope.")
+                blocked("recovery_prerequisite_failed", "Recovery requires 1–24 selected groups with supported exact identifiers and valid source inputs. The report was preserved without changing its group scope.")
                 return
             if job_request.group_ids != request.group_ids:
                 blocked("recovery_prerequisite_failed", "The recovery identifier normalization would change the reported group scope. The report was preserved; no renamed or substituted groups were queued.")
@@ -222,6 +231,13 @@ class OperationalReports:
                 if exc.status != 422:
                     raise
                 blocked("hotel_setup_required", exc.message + " No saved hotel inputs were substituted.")
+                return
+            try:
+                validate_airport_transfer_job(current, job_request, getattr(self.jobs,"airport_cab",None))
+            except DomainError as exc:
+                if exc.status != 422:
+                    raise
+                blocked("airport_transfer_setup_required", exc.message + " Pickup and luggage were not inferred or reused.")
                 return
             if not self.jobs.ai or not self.jobs.ai.configured:
                 blocked("ai_not_configured", "The real recovery AI is unavailable; no scripted plan or provider call was substituted.")

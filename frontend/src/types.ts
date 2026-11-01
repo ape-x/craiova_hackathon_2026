@@ -394,6 +394,35 @@ export interface HotelRecoveryInput {
   airport_dropoff: { label: string; latitude: number; longitude: number; confirmed: true };
   airport_processing_minutes: number;
 }
+export interface AirportTransferRecoveryInput {
+  group_id: string;
+  destination_airport: 'CRA';
+  pickup_at: string;
+  suitcases: number;
+  handbags: number;
+}
+export interface AirportTransferQuoteSummary {
+  group_id: string;
+  quote_id: string;
+  quote_sequence: number;
+  pickup_at: string;
+  usable_until: string;
+  state: 'ready' | 'blocked';
+  options: {
+    id: string;
+    car_type: string;
+    price: { amount: string; currency: 'EUR' };
+    max_passengers: number;
+    max_suitcases: number;
+    max_handbags: number;
+    fits_request: boolean;
+    importable: boolean;
+  }[];
+  blockers: { code: string; message: string }[];
+  http_request_count: number;
+  arrival_estimated: true;
+  supplier_booked: false;
+}
 export interface RecoveryJobInput {
   group_ids: string[];
   objective: 'balanced' | 'fastest' | 'lowest_cost';
@@ -401,8 +430,10 @@ export interface RecoveryJobInput {
   max_provider_calls: number;
   instructions: string;
   hotel_recovery?: HotelRecoveryInput;
+  airport_transfers?: AirportTransferRecoveryInput[];
 }
 export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions' | 'hotel_recovery'> {
+  airport_transfer_quotes?: AirportTransferQuoteSummary[];
   ground_references?: import('./coachFareData').GroundFareReference[];
   supersedes_job_ids?: string[];
   superseded_by_job_id?: string;

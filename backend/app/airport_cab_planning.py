@@ -141,6 +141,62 @@ def build_airport_cab_resource(world, context, response, option_id, *, now):
     return resource, destination
 
 
+def append_airport_cab_options(world, context, response, option_ids, *, now, stage=False, keep_resource_ids=()):
+    """Stage alternatives or append one chosen category without external I/O.
+
+    Changes publish only after every option and revision passes. Stage copies
+    may exceed persistent capacity by the bounded receipt alternatives; final
+    inventory must fit without compacting any unrelated resource or location.
+    """
+    option_ids = list(option_ids)
+    if (not option_ids or len(option_ids) > 30 or (not stage and len(option_ids) != 1)
+            or any(not isinstance(item, str) or not item or len(item) > 120 for item in option_ids)
+            or len(set(option_ids)) != len(option_ids)):
+        raise DomainError(422, "Select bounded distinct categories from one receipt; only one category can be committed")
+    trial = world.model_copy(deep=True)
+    compiled = [build_airport_cab_resource(trial, context, response, option_id, now=now) for option_id in option_ids]
+    resources = [item[0] for item in compiled]
+    destination = compiled[0][1]
+    history = resource_history(trial, source=SOURCE, group_id=context["group_id"])
+    if any(item.provenance.get("quote_sequence", 0) > response["quote_sequence"] for item in history):
+        raise DomainError(409, "A newer source revision was already imported; this older receipt cannot replace it")
+    active = {item.id: item for item in trial.resources}
+    for resource in resources:
+        previous = active.get(resource.id)
+        if previous is not None:
+            if not previous.available:
+                raise DomainError(409, "This source option was retired; retrieve a new quote")
+            if previous.model_dump(mode="json") != resource.model_dump(mode="json"):
+                raise DomainError(409, "The imported source option changed; its immutable receipt cannot overwrite it")
+        elif resource_history(trial, resource_id=resource.id):
+            raise DomainError(409, "This source option was retired; retrieve a new quote")
+    desired = {item.id for item in resources}
+    old = [item.id for item in trial.resources if item.source == SOURCE
+        and item.eligible_group_ids == [context["group_id"]] and item.available
+        and item.booking_status != "confirmed" and item.id not in desired
+        and (not stage or item.provenance.get("quote_id") != response["quote_id"])]
+    untouched = {item.id for item in trial.resources} - set(old)
+    untouched_locations = {item.id for item in trial.airports}
+    if old:
+        retire_travel_quotes(trial, context["group_id"], old)
+    new_resources = [item for item in resources if item.id not in active]
+    new_location = not any(item.id == destination.id for item in trial.airports)
+    if not stage:
+        ensure_inventory_capacity(trial, extra_resources=len(new_resources), extra_locations=int(new_location),
+            keep_resource_ids=untouched | desired | set(keep_resource_ids),
+            keep_location_ids=untouched_locations | {"OTP", "CRA"})
+    if new_location:
+        trial.airports.append(destination)
+    trial.resources.extend(new_resources)
+    applied = bool(new_resources or new_location or old)
+    if applied:
+        for field in ("resources", "airports", "groups", "offers", "reservations"):
+            setattr(world, field, getattr(trial, field))
+        world._inventory_context = trial._inventory_context
+    return {"applied": applied, "resource_ids": [item.id for item in resources],
+        "location_ids": [destination.id], "superseded_resource_ids": old}
+
+
 class AirportCabPlanning:
     def __init__(self, settings, store, *, provider=None, now=None):
         self.store, self.now = store, now or utcnow
@@ -190,7 +246,7 @@ class AirportCabPlanning:
                     current, _ = cab_context(world, request, self.provider, now=self.now())
                     if current != saved["context"]:
                         raise DomainError(409, "The group's context changed after this search; no source request was repeated")
-                    return {"response": {**saved["response"], "replayed": True}}
+                    return {"response": {**saved["response"], "replayed": True}, "failure": saved.get("failure")}
                 if status in ("dispatched", "unknown"):
                     active = status == "dispatched" and lease > self.now().timestamp()
                     raise DomainError(503, "This source request is processing or has an unknown outcome; it will not be dispatched again with this key",
@@ -217,7 +273,7 @@ class AirportCabPlanning:
             if updated.rowcount != 1:
                 raise DomainError(409, "The source request allowance or lease was exhausted")
 
-    def _finish(self, identity, context, response):
+    def _finish(self, identity, context, response, failure=None, *, unknown=False):
         with self.store.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             # Assess against the current operation in the receipt transaction;
@@ -235,34 +291,49 @@ class AirportCabPlanning:
                 if any(item["importable"] for item in response["options"]):
                     response["state"] = "ready"
             conn.execute("DELETE FROM airport_cab_cache WHERE expires<=?", (self.now().timestamp(),))
-            conn.execute("INSERT INTO airport_cab_cache VALUES(?,?,?)", (identity, aware_timestamp(response["usable_until"]).timestamp(), json.dumps({"context": context, "response": response})))
+            conn.execute("INSERT INTO airport_cab_cache VALUES(?,?,?)", (identity, aware_timestamp(response["usable_until"]).timestamp(), json.dumps({"context": context, "response": response, "failure": failure})))
             conn.execute("DELETE FROM airport_cab_cache WHERE id IN (SELECT id FROM airport_cab_cache ORDER BY expires DESC LIMIT -1 OFFSET 64)")
-            conn.execute("UPDATE airport_cab_receipts SET status='done' WHERE id=?", (identity,))
+            conn.execute("UPDATE airport_cab_receipts SET status=? WHERE id=?", ("unknown" if unknown else "done", identity))
 
-    async def quote(self, request):
+    async def quote(self, request, *, request_runner=None, propagate_errors=False):
         reserved = await asyncio.to_thread(self._reserve, request)
         if "response" in reserved:
+            failure = reserved.get("failure")
+            if propagate_errors and failure:
+                if failure["kind"] == "domain":
+                    raise DomainError(failure["status"], failure["message"])
+                raise ProviderError(failure["message"], provider=SOURCE, code=failure["code"])
             return reserved["response"]
         identity, context, world = reserved["quote_id"], reserved["context"], reserved["world"]
         now = self.now()
         response = {"quote_id": identity, "quote_sequence": reserved["sequence"], "group_id": context["group_id"], "source_version": world.version,
             "created_at": now.isoformat(), "usable_until": (now + timedelta(seconds=120)).isoformat(),
             "state": "blocked", "transfer": None, "options": [], "blockers": [], "replayed": False}
+        failure, source_error = None, None
         try:
             try:
-                quote = await self.provider.quote(reserved["query"], before_dispatch=lambda: asyncio.to_thread(self._dispatch, identity, context, request))
+                arguments = {"before_dispatch": lambda: asyncio.to_thread(self._dispatch, identity, context, request)}
+                if request_runner is not None:
+                    arguments["request_runner"] = request_runner
+                quote = await self.provider.quote(reserved["query"], **arguments)
                 response["transfer"] = quote
                 response["usable_until"] = min(aware_timestamp(response["usable_until"]),
                     aware_timestamp(quote["received_at"]) + timedelta(seconds=120),
                     request.pickup_at - timedelta(hours=quote["policy"]["required_advance_hours"])).isoformat()
             except (ProviderError, DomainError) as exc:
                 response["blockers"].append({"code": getattr(exc, "code", "context_changed"), "message": str(exc)})
-            saving = asyncio.create_task(asyncio.to_thread(self._finish, identity, context, response))
+                source_error = exc
+                failure = {"kind": "domain" if isinstance(exc, DomainError) else "provider", "message": str(exc),
+                    "status": getattr(exc, "status", 502), "code": getattr(exc, "code", "context_changed")}
+            unknown = propagate_errors and failure is not None and failure["code"] in ("timeout", "connection", "http_500", "http_502", "http_503", "http_504")
+            saving = asyncio.create_task(asyncio.to_thread(self._finish, identity, context, response, failure, unknown=unknown))
             try:
                 await asyncio.shield(saving)
             except asyncio.CancelledError:
                 await saving
                 raise
+            if propagate_errors and source_error is not None:
+                raise source_error
             return response
         except BaseException:
             with self.store.connect() as conn:
@@ -277,24 +348,12 @@ class AirportCabPlanning:
                 raise DomainError(409, "Source receipt expired; retrieve a new quote")
             saved = json.loads(cached[0])
             context, response = saved["context"], saved["response"]
-            resource, destination = build_airport_cab_resource(world, context, response, request.option_id, now=self.now())
-            history = resource_history(world, source=SOURCE, group_id=context["group_id"])
-            if any(item.provenance.get("quote_sequence", 0) > response["quote_sequence"] for item in history):
-                raise DomainError(409, "A newer source revision was already imported; this older receipt cannot replace it")
-            existing = next((item for item in world.resources if item.id == resource.id), None)
-            if existing is not None and existing.available:
-                return {"applied": False, "resource_ids": [resource.id], "explanation": "This immutable source option is already imported."}
-            if existing is not None or resource_history(world, resource_id=resource.id):
-                raise DomainError(409, "This source option was retired; retrieve a new quote")
-            old = [item.id for item in world.resources if item.source == SOURCE and item.eligible_group_ids == [context["group_id"]] and item.available and item.booking_status != "confirmed"]
-            retire_travel_quotes(world, context["group_id"], old)
-            nodes = [] if any(item.id == destination.id for item in world.airports) else [destination]
-            ensure_inventory_capacity(world, extra_resources=1, extra_locations=len(nodes), keep_location_ids=(resource.origin, resource.destination))
-            world.airports.extend(nodes)
-            world.resources.append(resource)
-            audit(world, "airport_vehicle_quote_imported", "Imported one group-scoped airport vehicle quote for planning; no vehicle reserved.", resource.id,
+            appended = append_airport_cab_options(world, context, response, [request.option_id], now=self.now())
+            if not appended["applied"]:
+                return {"applied": False, "resource_ids": appended["resource_ids"], "explanation": "This immutable source option is already imported."}
+            audit(world, "airport_vehicle_quote_imported", "Imported one group-scoped airport vehicle quote for planning; no vehicle reserved.", appended["resource_ids"][0],
                 {"group_id": context["group_id"], "quote_id": quote_id, "source": SOURCE})
-            return {"applied": True, "resource_ids": [resource.id], "explanation": "Airport transfer added for initial-journey planning. Driving arrival is estimated; no vehicle or complete journey is booked."}
+            return {"applied": True, "resource_ids": appended["resource_ids"], "explanation": "Airport transfer added for initial-journey planning. Driving arrival is estimated; no vehicle or complete journey is booked."}
         return self.store.mutate("airport-cab-import:" + request.idempotency_key, {"quote_id": quote_id, **request.model_dump(mode="json")}, request.expected_version, apply)
 
 

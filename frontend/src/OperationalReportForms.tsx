@@ -18,6 +18,7 @@ import {
 import {
   arrivalRecoveryIssue,
   arrivalReportSubmission,
+  projectedArrivalRecovery,
   emptyArrivalRecoveryForm,
 } from './arrivalRecoveryData';
 import { ArrivalRecoveryFields, ArrivalRecoveryReceipt } from './ArrivalRecoveryFields';
@@ -167,7 +168,8 @@ export function ArrivalReportPanel({
   const locked = mutation.locked || disabled;
   const epoch = sourceInstant(world.epoch);
   const selected = groups.filter((group) => form.groupIds.includes(group.id));
-  const recoveryIssue = arrivalRecoveryIssue(recovery, selected.length);
+  const transferContext = projectedArrivalRecovery(world, form);
+  const recoveryIssue = arrivalRecoveryIssue(recovery, selected.length, transferContext);
   return (
     <details
       className="operational-report"
@@ -314,7 +316,11 @@ export function ArrivalReportPanel({
             passengers selected. Their unconfirmed proposals will be invalidated. Other groups and
             recorded bookings are preserved.
           </p>
-          <ArrivalRecoveryFields value={recovery} onChange={setRecovery} />
+          <ArrivalRecoveryFields
+            value={recovery}
+            onChange={setRecovery}
+            transferContext={transferContext}
+          />
           {recoveryIssue && selected.length > 0 && (
             <p className="field-hint arrival-recovery-blocked">{recoveryIssue}</p>
           )}
@@ -323,6 +329,7 @@ export function ArrivalReportPanel({
               type="submit"
               name="arrival_action"
               value="report"
+              formNoValidate
               className="secondary-button"
               disabled={locked || !form.groupIds.length}
             >

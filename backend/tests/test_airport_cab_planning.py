@@ -16,12 +16,13 @@ from fastapi.testclient import TestClient
 
 import app.store as store_module
 from app.airport_catalog import lookup_airport
-from app.airport_cab_planning import AirportCabImport, AirportCabPlanning, AirportCabPlanningRequest
+from app.airport_cab_planning import AirportCabImport, AirportCabPlanning, AirportCabPlanningRequest, append_airport_cab_options
 from app.config import Settings
 from app.inventory_lifecycle import resource_history
 from app.main import create_app
 from app.models import Airport, Itinerary, Offer, PassengerGroup, Resource
 from app.providers.bucharest_cab import BucharestCabProvider, LOCAL_ZONE, SOURCE
+from app.providers.base import ProviderError
 from app.store import DomainError, Store
 
 NOW = datetime(2030, 1, 4, tzinfo=timezone.utc)
@@ -132,6 +133,12 @@ def importing(store, quote, *, key="cab-import-one", option=0, **changes):
 def receipt_rows(store):
     with store.connect() as connection:
         return connection.execute("SELECT status,http_requests FROM airport_cab_receipts ORDER BY rowid").fetchall()
+
+
+def source_context(store, quote):
+    with store.connect() as connection:
+        row = connection.execute("SELECT data FROM airport_cab_cache WHERE id=?", (quote["quote_id"],)).fetchone()
+    return json.loads(row[0])["context"]
 
 
 @pytest.mark.asyncio
@@ -531,3 +538,122 @@ async def test_main_router_enforces_auth_body_bounds_and_scoped_import(tmp_path,
             assert app.state.store.read().resources[0].quote_total_cost == 188
     finally:
         await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_automatic_phase_errors_propagate_after_retaining_unknown_receipt(setup):
+    store, service, source, request, _ = setup
+    source.error_status = 503
+    phases = []
+    async def runner(phase, operation):
+        phases.append(phase)
+        return await operation()
+    original = request()
+    with pytest.raises(ProviderError) as error:
+        await service.quote(original, request_runner=runner, propagate_errors=True)
+    assert error.value.code == "http_503" and phases == ["bootstrap"]
+    assert receipt_rows(store) == [("unknown", 1)] and len(source.calls) == 1
+    with store.connect() as connection:
+        saved = json.loads(connection.execute("SELECT data FROM airport_cab_cache").fetchone()[0])
+    assert saved["failure"]["code"] == "http_503" and saved["response"]["state"] == "blocked"
+    assert "upstream-private-token" not in json.dumps(saved)
+    with pytest.raises(DomainError) as replay:
+        await service.quote(original, request_runner=runner, propagate_errors=True)
+    assert replay.value.status == 503 and len(source.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_known_automatic_failure_is_rethrown_on_replay_without_more_requests(setup):
+    store, service, source, request, _ = setup
+    source.error_payload = {"error": "no_vehicle_types_found"}
+    original = request()
+    for _ in range(2):
+        with pytest.raises(ProviderError) as error:
+            await service.quote(original, propagate_errors=True)
+        assert error.value.code == "no_vehicles"
+    assert len(source.calls) == 2 and receipt_rows(store) == [("done", 2)]
+    manual = await service.quote(original)
+    assert manual["state"] == "blocked" and manual["replayed"] is True
+
+
+@pytest.mark.asyncio
+async def test_stage_receipt_categories_together_and_append_only_chosen_option(setup):
+    store, service, source, request, clock = setup
+    original = await service.quote(request())
+    first = service.import_quote(original["quote_id"], importing(store, original))
+    clock[0] += timedelta(seconds=1)
+    refreshed = await service.quote(request("replacement-quote"))
+    context = source_context(store, refreshed)
+    option_ids = [item["id"] for item in refreshed["transfer"]["options"]]
+    unchanged = store.read().model_dump(mode="json")
+    staged = store.read()
+    result = append_airport_cab_options(staged, context, refreshed, option_ids, now=clock[0], stage=True)
+    assert len(result["resource_ids"]) == 4 and result["superseded_resource_ids"] == first["resource_ids"]
+    assert {item.id for item in staged.resources if item.source == SOURCE and item.available} == set(result["resource_ids"])
+    assert store.read().model_dump(mode="json") == unchanged
+    chosen = store.read()
+    imported = append_airport_cab_options(chosen, context, refreshed, [option_ids[2]], now=clock[0])
+    assert imported["superseded_resource_ids"] == first["resource_ids"]
+    assert [item.quote_total_cost for item in chosen.resources if item.source == SOURCE and item.available] == [235]
+    assert chosen.groups[1].model_dump() == store.read().groups[1].model_dump()
+    assert len(source.calls) == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("selection", ["missing_after_valid", "duplicate", "multiple_final"])
+async def test_append_rejects_invalid_option_batches_without_partial_mutation(setup, selection):
+    store, service, _, request, clock = setup
+    quote = await service.quote(request()); context = source_context(store, quote)
+    world = store.read(); before = world.model_dump(mode="json")
+    ids = [item["id"] for item in quote["transfer"]["options"]]
+    selected = [ids[0], "not-a-source-option"] if selection == "missing_after_valid" else [ids[0], ids[0]] if selection == "duplicate" else ids[:2]
+    with pytest.raises(DomainError):
+        append_airport_cab_options(world, context, quote, selected, now=clock[0], stage=selection != "multiple_final")
+    assert world.model_dump(mode="json") == before
+
+
+@pytest.mark.asyncio
+async def test_final_append_never_compacts_unrelated_inventory_and_stage_stays_bounded(setup, monkeypatch):
+    import app.inventory_lifecycle as inventory
+    store, service, _, request, clock = setup
+    quote = await service.quote(request()); context = source_context(store, quote)
+    world = store.read()
+    world.resources.append(Resource(id="UNRELATED", kind="bus", name="Retained unrelated evidence", origin="LHR", destination="OTP",
+        departure=1, arrival=2, capacity=1, cost_per_person=1, available=False, source="Existing source"))
+    before = world.model_dump(mode="json")
+    monkeypatch.setattr(inventory, "MAX_RESOURCES", 1)
+    ids = [item["id"] for item in quote["transfer"]["options"]]
+    with pytest.raises(DomainError) as error:
+        append_airport_cab_options(world, context, quote, ids[:1], now=clock[0])
+    assert error.value.details["inventory_capacity_exhausted"] is True
+    assert world.model_dump(mode="json") == before
+    append_airport_cab_options(world, context, quote, ids, now=clock[0], stage=True)
+    assert len(world.resources) == 5 and any(item.id == "UNRELATED" for item in world.resources)
+    assert len(store.read().resources) == 0
+
+
+@pytest.mark.asyncio
+async def test_staging_older_or_retired_receipt_cannot_restore_source_inventory(setup):
+    store, service, _, request, clock = setup
+    old = await service.quote(request()); old_context = source_context(store, old)
+    clock[0] += timedelta(seconds=1)
+    latest = await service.quote(request("latest-receipt"))
+    latest_import = service.import_quote(latest["quote_id"], importing(store, latest))
+    unchanged = store.read().model_dump(mode="json")
+    with pytest.raises(DomainError, match="newer source revision"):
+        append_airport_cab_options(store.read(), old_context, old, [old["transfer"]["options"][0]["id"]], now=clock[0], stage=True)
+    assert store.read().model_dump(mode="json") == unchanged
+    mutate(store, lambda world: setattr(next(item for item in world.resources if item.id == latest_import["resource_ids"][0]), "available", False))
+    with pytest.raises(DomainError, match="retired"):
+        append_airport_cab_options(store.read(), source_context(store, latest), latest, [latest["transfer"]["options"][0]["id"]], now=clock[0], stage=True)
+
+
+@pytest.mark.asyncio
+async def test_existing_immutable_option_cannot_silently_overwrite_changed_inventory(setup):
+    store, service, _, request, _ = setup
+    quote = await service.quote(request())
+    service.import_quote(quote["quote_id"], importing(store, quote))
+    mutate(store, lambda world: setattr(world.resources[0], "quote_total_cost", 1))
+    with pytest.raises(DomainError, match="immutable receipt"):
+        service.import_quote(quote["quote_id"], importing(store, quote, key="different-import-key"))
+    assert store.read().resources[0].quote_total_cost == 1

@@ -353,9 +353,7 @@ class BucharestCabProvider:
             raise ProviderError("Choose a future pickup within 31 days; no source request was sent.", provider=SOURCE, code="invalid_request")
         return request
 
-    async def _get(self, url, *, cookies, params=None, before_dispatch=None, html=False):
-        if before_dispatch is not None:
-            await before_dispatch()
+    async def _get(self, url, *, cookies, params=None, html=False):
         # Construct requests independently of shared-client default cookies,
         # auth and headers. Only this anonymous quote's cookies are reused.
         request = httpx.Request("GET", url, params=params, cookies=cookies,
@@ -383,25 +381,11 @@ class BucharestCabProvider:
         finally:
             await response.aclose()
 
-    async def quote(self, request: AirportCabQuoteRequest, *, before_dispatch=None):
-        request = self.validate_request(request)
-        if self._closed:
-            raise ProviderError("Bucharest.CAB quote search is closed.", provider=SOURCE, code="not_configured")
+    async def _bounded_operation(self, operation, deadline):
+        """Translate source/parse failures inside the runner's recorded phase."""
         try:
-            async with asyncio.timeout(self.timeout):
-                cookies = httpx.Cookies()
-                token = _bootstrap_token(await self._get(SOURCE_URL, cookies=cookies, before_dispatch=before_dispatch, html=True))
-                params = {"option": "com_tulipbooking", "format": "json", "task": "ajax.getSuitableVehicles", "csrfToken": token,
-                    "start": _SEARCH_LABELS[request.origin_airport], "end": _SEARCH_LABELS[request.destination_airport],
-                    "tripType": "from-airport", "placeIdStart": SOURCE_AIRPORTS[request.origin_airport]["place_id"],
-                    "placeIdEnd": SOURCE_AIRPORTS[request.destination_airport]["place_id"],
-                    "passengers": str(request.passengers), "pickupDateTime": request.pickup_at.astimezone(LOCAL_ZONE).strftime("%Y-%m-%d %H:%M:%S"), "hourlyRent": ""}
-                payload = _json(await self._get(QUOTE_URL, cookies=cookies, params=params, before_dispatch=before_dispatch))
-                if payload.get("error") in ("min_advance_day_booking", "min_advance_night_booking"):
-                    raise ProviderError("The supplier requires more advance notice for this pickup; no later time was substituted.", provider=SOURCE, code="pickup_too_soon")
-                if payload.get("error") == "no_vehicle_types_found":
-                    raise ProviderError("The supplier returned no vehicle categories for the requested journey.", provider=SOURCE, code="no_vehicles")
-                return normalize_quote(payload, request, received_at=self._now())
+            async with asyncio.timeout_at(deadline):
+                return await operation()
         except ProviderError:
             raise
         except (TimeoutError, httpx.TimeoutException):
@@ -410,3 +394,51 @@ class BucharestCabProvider:
             raise ProviderError("Bucharest.CAB could not be reached; no substitute transport was created.", provider=SOURCE, code="connection") from None
         except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError, RecursionError):
             raise ProviderError("Bucharest.CAB returned an unverifiable quote; no substitute transport was created.", provider=SOURCE, code="invalid_response") from None
+
+    async def quote(self, request: AirportCabQuoteRequest, *, before_dispatch=None, request_runner=None):
+        """Run exactly two phases; the bootstrap result is private session data.
+
+        A runner must return the operation's value to this adapter, but must
+        never persist or expose the bootstrap value. It may record only safe
+        bootstrap-received metadata. The vehicles result is normalized public
+        evidence. No runner means the same bounded manual search as before.
+        """
+        request = self.validate_request(request)
+        if self._closed:
+            raise ProviderError("Bucharest.CAB quote search is closed.", provider=SOURCE, code="not_configured")
+        deadline = asyncio.get_running_loop().time() + self.timeout
+        cookies = httpx.Cookies()
+
+        async def phase(name, operation):
+            # The source context guard precedes the job runner, so a rejected
+            # context cannot create a fictitious recovery-ledger HTTP dispatch.
+            if before_dispatch is not None:
+                await self._bounded_operation(before_dispatch, deadline)
+            invoked = False
+            async def bounded():
+                nonlocal invoked
+                if invoked:
+                    raise ProviderError("A source phase cannot be dispatched twice; no retry was made.", provider=SOURCE, code="request_reused")
+                invoked = True
+                return await self._bounded_operation(operation, deadline)
+            return await request_runner(name, bounded) if request_runner is not None else await bounded()
+
+        async def bootstrap():
+            return _bootstrap_token(await self._get(SOURCE_URL, cookies=cookies, html=True))
+
+        token = await phase("bootstrap", bootstrap)
+
+        async def vehicles():
+            params = {"option": "com_tulipbooking", "format": "json", "task": "ajax.getSuitableVehicles", "csrfToken": token,
+                "start": _SEARCH_LABELS[request.origin_airport], "end": _SEARCH_LABELS[request.destination_airport],
+                "tripType": "from-airport", "placeIdStart": SOURCE_AIRPORTS[request.origin_airport]["place_id"],
+                "placeIdEnd": SOURCE_AIRPORTS[request.destination_airport]["place_id"],
+                "passengers": str(request.passengers), "pickupDateTime": request.pickup_at.astimezone(LOCAL_ZONE).strftime("%Y-%m-%d %H:%M:%S"), "hourlyRent": ""}
+            payload = _json(await self._get(QUOTE_URL, cookies=cookies, params=params))
+            if payload.get("error") in ("min_advance_day_booking", "min_advance_night_booking"):
+                raise ProviderError("The supplier requires more advance notice for this pickup; no later time was substituted.", provider=SOURCE, code="pickup_too_soon")
+            if payload.get("error") == "no_vehicle_types_found":
+                raise ProviderError("The supplier returned no vehicle categories for the requested journey.", provider=SOURCE, code="no_vehicles")
+            return normalize_quote(payload, request, received_at=self._now())
+
+        return await phase("vehicles", vehicles)

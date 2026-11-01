@@ -40,7 +40,7 @@ def parsed(data=None, req=None, now=NOW):
     return normalize_quote(payload() if data is None else data, request() if req is None else req, received_at=now)
 
 
-async def fetch(data=None, req=None, *, boot=None, now=NOW, handler=None, before_dispatch=None):
+async def fetch(data=None, req=None, *, boot=None, now=NOW, handler=None, before_dispatch=None, request_runner=None):
     calls = []
     def respond(outbound):
         calls.append(outbound)
@@ -51,7 +51,7 @@ async def fetch(data=None, req=None, *, boot=None, now=NOW, handler=None, before
         return httpx.Response(200, json=payload() if data is None else data, headers={"content-type": "application/json"})
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         provider = BucharestCabProvider(SimpleNamespace(request_timeout_seconds=1), client=client, now=lambda: now)
-        result = await provider.quote(request() if req is None else req, before_dispatch=before_dispatch)
+        result = await provider.quote(request() if req is None else req, before_dispatch=before_dispatch, request_runner=request_runner)
         await provider.aclose()
         assert not client.is_closed and not provider.configured
     return result, calls
@@ -321,3 +321,93 @@ def test_receipt_and_exact_party_are_part_of_offer_identity():
     first = parsed(); second = parsed(now=NOW + timedelta(seconds=1)); different_party = parsed(req=request(passengers=3))
     assert first["options"][0]["id"] != second["options"][0]["id"] != different_party["options"][0]["id"]
     assert len({option["id"] for option in first["options"]}) == 4
+
+
+@pytest.mark.asyncio
+async def test_phase_runner_records_two_operations_without_persisting_bootstrap_session():
+    events, recorded = [], []
+    async def guard():
+        events.append("guard")
+    async def runner(phase, operation):
+        events.append(phase)
+        value = await operation()
+        recorded.append({"bootstrap_received": True} if phase == "bootstrap" else value)
+        return value
+    result, calls = await fetch(before_dispatch=guard, request_runner=runner)
+    assert events == ["guard", "bootstrap", "guard", "vehicles"]
+    assert len(calls) == 2 and recorded[0] == {"bootstrap_received": True}
+    assert recorded[1] == result and TOKEN not in json.dumps(recorded)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid_phase", ["bootstrap", "vehicles"])
+async def test_source_parsing_error_is_translated_inside_its_recorded_phase(invalid_phase):
+    phases, errors = [], []
+    async def runner(phase, operation):
+        phases.append(phase)
+        try:
+            return await operation()
+        except ProviderError as error:
+            errors.append((phase, error.code))
+            raise
+    data = payload()
+    if invalid_phase == "vehicles":
+        data["timezone"] = "invalid"
+    with pytest.raises(ProviderError):
+        await fetch(data, boot="<html>Invalid configuration</html>" if invalid_phase == "bootstrap" else None,
+            request_runner=runner)
+    assert phases == (["bootstrap"] if invalid_phase == "bootstrap" else ["bootstrap", "vehicles"])
+    assert errors == [(invalid_phase, "invalid_response")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reject_phase", [1, 2])
+async def test_source_context_guard_precedes_runner_and_cannot_create_fake_dispatch(reject_phase):
+    guards, phases, requests = [], [], []
+    async def guard():
+        guards.append(True)
+        if len(guards) == reject_phase:
+            raise RuntimeError("Source context changed")
+    async def runner(phase, operation):
+        phases.append(phase)
+        return await operation()
+    def handler(outgoing):
+        requests.append(outgoing)
+        return httpx.Response(200, text=bootstrap(), headers={"content-type": "text/html"})
+    with pytest.raises(RuntimeError, match="Source context changed"):
+        await fetch(handler=handler, before_dispatch=guard, request_runner=runner)
+    assert len(requests) == len(phases) == reject_phase - 1
+
+
+@pytest.mark.asyncio
+async def test_total_source_deadline_becomes_safe_provider_error_inside_runner():
+    errors, requests = [], []
+    async def handler(outgoing):
+        requests.append(outgoing)
+        await asyncio.sleep(.05)
+        return httpx.Response(200, text=bootstrap(), headers={"content-type": "text/html"})
+    async def runner(phase, operation):
+        try:
+            return await operation()
+        except ProviderError as error:
+            errors.append((phase, error.code))
+            raise
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = BucharestCabProvider(SimpleNamespace(request_timeout_seconds=.01), client=client, now=lambda: NOW)
+        with pytest.raises(ProviderError) as failure:
+            await provider.quote(request(), request_runner=runner)
+    assert failure.value.code == "timeout" and errors == [("bootstrap", "timeout")] and len(requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_phase_operation_cannot_be_repeated_by_a_runner():
+    requests = []
+    def handler(outgoing):
+        requests.append(outgoing)
+        return httpx.Response(200, text=bootstrap(), headers={"content-type": "text/html"})
+    async def runner(phase, operation):
+        await operation()
+        return await operation()
+    with pytest.raises(ProviderError) as failure:
+        await fetch(handler=handler, request_runner=runner)
+    assert failure.value.code == "request_reused" and len(requests) == 1

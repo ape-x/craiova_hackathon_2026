@@ -140,7 +140,7 @@ def retire_travel_quotes(world, group_id, resource_ids):
     return sorted(retired)
 
 
-def append_travel_quote(world, quote, query, group, kind, *, keep_resource_ids=(), keep_location_ids=()):
+def append_travel_quote(world, quote, query, group, kind, *, keep_resource_ids=(), keep_location_ids=(), stage=False):
     """Validate one sourced quote and append it to an in-memory world only.
 
     Callers own the atomic commit. No provider requests or reservations occur here.
@@ -231,8 +231,12 @@ def append_travel_quote(world, quote, query, group, kind, *, keep_resource_ids=(
     if existing is not None:
         return {"resource_ids": [identity], "already_imported": True}
     retired = retire_travel_quotes(world, group.id, {item.id for item in previous})
-    ensure_inventory_capacity(world, extra_resources=1, extra_locations=len(refs),
-        keep_resource_ids=keep_resource_ids, keep_location_ids={*keep_location_ids, origin, destination})
+    # A bounded recovery projection can contain mutually exclusive vehicle and
+    # flight alternatives. Only the chosen resources consume persistent capacity;
+    # final imports use the default guard before their atomic proposal commit.
+    if not stage:
+        ensure_inventory_capacity(world, extra_resources=1, extra_locations=len(refs),
+            keep_resource_ids=keep_resource_ids, keep_location_ids={*keep_location_ids, origin, destination})
     world.airports.extend(refs)
     if resource.kind == "flight":
         for airport in world.airports:

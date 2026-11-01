@@ -36,6 +36,7 @@ SSE connections are intentionally long-lived. Keep the five-second graceful-shut
 | `app/providers/` | Actual provider contracts; no direct authority to mutate the world |
 | `app/transfer_planning.py` | Manual UK airport–hotel transfer receipts, short-lived cache and atomic direction-scoped import |
 | `app/recovery_jobs.py`, `app/hotel_recovery.py` | Durable scoped searches and bounded four-leg hotel packages with separately counted source dispatches |
+| `app/airport_cab_recovery.py`, `app/airport_cab_planning.py`, `app/airport_cab_evidence.py` | Explicit initial OTP→CRA source orchestration, shared manual/automatic receipts, chosen-category append and pure evidence validation |
 | `app/stay_requirements.py`, `app/hotel_recovery_profile.py` | Validated full-stay constraints and stable, case-bound operator inputs saved with successful hotel plans |
 | `app/pricing.py`, `app/initial_position.py`, `app/airport_arrival.py` | Typed GBP/ECB evidence, receipt freshness, first-leg operator positions and exact-flight return allowances |
 
@@ -59,6 +60,18 @@ An AI command is interpreted into typed events and strategies, applied to a priv
 The allocator enumerates at most 64 complete routes per party, up to four legs, and compares four group orderings per strategy. Recovery count is ranked first within a candidate, then party priority and the strategy objective. AI may choose a feasible lower-recovery candidate to reflect a stated tradeoff; feasibility remains mandatory. **Global optimality is not proved**, and an exception can mean the bounded allocator did not find a shared allocation, not that mathematical impossibility was proved. No airline fare rules, crew legality, runway performance, fuel planning or certified diversion suitability are modeled.
 
 ## Persistence, concurrency and events
+
+### Automatic initial airport transfer sourcing
+
+Normal recovery and atomic structured arrival/recovery requests accept optional `airport_transfers` (up to 12 distinct selected groups). Entries are `{group_id,destination_airport:'CRA',pickup_at,suitcases,handbags}`. Pickup requires an explicit UTC offset and whole-minute precision; both luggage counts are strict integers 0–7, never inferred. Each group must be explicitly adult-only, 1–7 people, initially available at OTP, with no pending flight arrival or unsupported accessibility. `bus` is required; combining this option with `hotel_recovery` is rejected. The arrival path validates against its projected reported state. Empty lists are omitted for legacy request-fingerprint compatibility. Current voice/text command schemas do not provide these inputs.
+
+For N entries, `2*N+1` is the minimum allowance for two source GETs each and Decisions. It does not pay for new flight discovery: one CAB quote plus Responses, one flight search and Decisions needs at least five calls. The chosen limit is never increased. The worker sources CAB before `flight_query_options`, stages fitting categories together, and lets the solver discover a first-leg OTP→CRA route followed by a newly sourced departure from CRA. No terminal, curb or connection after an arriving flight is inferred. A fixed allocation already using this source prevents additional CAB sourcing; selected and fixed allocations together may use at most one CAB vehicle because fleet stock is unknown.
+
+`BucharestCabProvider.quote(..., request_runner=...)` exposes one-use `bootstrap` and `vehicles` operations. Each operation includes bounded parsing and sanitized error translation. The shared source-context hook runs before the runner; the two HTTP phases receive separate recovery-ledger steps. Bootstrap session data stays in memory, with only `bootstrap_received:true` recorded; the vehicle step records the normalized quote. `AirportCabPlanning.quote(..., propagate_errors=True)` retains source receipt/failure state before propagating errors. Manual and automatic searches share `airport_cab_receipts` and its monotonic rowid revision domain; no separate job sequence can resurrect an older quote.
+
+`append_airport_cab_options` builds a private projection, validates all categories before publishing changes and retires prior eligible same-group CAB revisions once. Staging may temporarily exceed persistent inventory capacity by its bounded alternatives. Final application accepts only the chosen category, revalidates current context, source and revision, protects untouched resource/location IDs and commits with the selected onward resources and proposal in the existing transaction. Native EUR uses the source's cash/no-extras formula. Usability ends at the earliest of creation plus 120 seconds, source receipt plus 120 seconds and pickup minus the required advance notice. Expiry during sourcing or selection blocks stale use without refresh. Cancellation or unknown outcomes do not retry, and no supplier hold/booking is created.
+
+Historical consumer-quote and manual-import evidence remains separate. This new combined automatic CAB-plus-flight pipeline has offline mocked integration verification only; it has not yet passed live end-to-end acceptance. See the [verification report](verification/report.md).
 
 ### Automatic hotel packages and saved inputs
 

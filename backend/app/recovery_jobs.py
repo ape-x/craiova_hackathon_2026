@@ -13,6 +13,7 @@ from pydantic import Field, field_validator, model_serializer
 
 from .airport_catalog import lookup_airport
 from .airport_constraints import case_airport_operation_blocked
+from .airport_cab_recovery import AIRPORT_TRANSFER_CONTEXT, AirportCabRecoveryInput, source_airport_transfers, validate_airport_transfer_job
 from .hotel_location import coordinate_timezone, property_zone
 from .hotel_recovery import HotelRecoveryInputs, _rates, _restore_rates, run_hotel_recovery, validate_hotel_job
 from .live_data import identifier
@@ -32,12 +33,15 @@ class RecoveryJobRequest(Mutation):
     max_provider_calls: int = Field(default=8,ge=3,le=26,strict=True)
     instructions: str = Field(default="",max_length=2000)
     hotel_recovery: HotelRecoveryInputs | None = None
+    airport_transfers: list[AirportCabRecoveryInput] = Field(default_factory=list, max_length=12)
 
     @model_serializer(mode="wrap")
     def compatible_payload(self, handler):
         result = handler(self)
         if self.hotel_recovery is None:
             result.pop("hotel_recovery",None)
+        if not self.airport_transfers:
+            result.pop("airport_transfers",None)
         return result
 
     @field_validator("group_ids")
@@ -226,11 +230,27 @@ def flight_query_options(world,groups):
     return options,gaps
 
 
+def current_flight_connection(world,groups,option):
+    """Require a currently valid ground witness without changing the approved query.
+
+    Different categories can justify the same dated flight search. Rebuilding
+    bounded paths accepts any surviving witness; its window must cover the
+    originally approved one. The moving current-time clamp is not route identity.
+    """
+    def route(query):
+        return {key:value for key,value in query.items() if key not in ("earliest_departure_at","latest_arrival_at")}
+    current,_=flight_query_options(world,groups)
+    return any(item["group_id"]==option["group_id"] and route(item["query"])==route(option["query"])
+        and item["earliest_departure"]<=option["earliest_departure"]
+        and item["latest_arrival"]>=option["latest_arrival"] for item in current)
+
+
 class RecoveryJobs:
-    def __init__(self,settings,store,service,travel_provider,ai,*,hotel_provider=None,apl_provider=None,fx_provider=None,coach_fares=None):
+    def __init__(self,settings,store,service,travel_provider,ai,*,hotel_provider=None,apl_provider=None,fx_provider=None,coach_fares=None,airport_cab=None):
         self.settings,self.store,self.service,self.travel,self.ai=settings,store,service,travel_provider,ai
         self.hotel_provider,self.apl_provider,self.fx_provider=hotel_provider,apl_provider,fx_provider
         self.coach_fares=coach_fares
+        self.airport_cab=airport_cab
         self.ledger=RecoveryLedger(store,settings.request_timeout_seconds+60)
         self.task=None
 
@@ -242,6 +262,7 @@ class RecoveryJobs:
         world=self.store.read()
         digest=scope_fingerprint(world,incident_id,request.group_ids)
         validate_hotel_job(world,request)
+        validate_airport_transfer_job(world,request,self.airport_cab)
         return self.ledger.create(incident_id,request,digest,world.scenario_id,on_created=on_created)
 
     def start_in_transaction(self,conn,world,incident_id,request,*,supersede_active=False):
@@ -250,6 +271,7 @@ class RecoveryJobs:
             raise RuntimeError("Recovery job creation requires an active transaction")
         digest=scope_fingerprint(world,incident_id,request.group_ids)
         validate_hotel_job(world,request)
+        validate_airport_transfer_job(world,request,self.airport_cab)
         return self.ledger.create_in_transaction(conn,world,incident_id,request,digest,world.scenario_id,supersede_active=supersede_active)
 
     def get(self,job_id):
@@ -444,27 +466,39 @@ class RecoveryJobs:
         if job["_request"].get("hotel_recovery") is not None:
             await run_hotel_recovery(self,job,owner,world,started)
             return
+        validate_airport_transfer_job(world,RecoveryJobRequest.model_validate({key:value for key,value in job["_request"].items() if key!="incident_id"}),self.airport_cab)
+        source_counts={}
+        projected,airport_transfers=await source_airport_transfers(self,job,owner,world,gaps,source_counts)
+        if await self._cancelled(job,owner):
+            return
+        airport_transfer_ids={identity for item in airport_transfers for identity in item["resources"]}
         for mode in job["modes"]:
-            if mode=="hotel" or (mode=="bus" and self.coach_fares is None):
+            if mode=="hotel" or (mode=="bus" and self.coach_fares is None and not job["_request"].get("airport_transfers")):
                 gaps.append(gap("hotel_inputs_required" if mode=="hotel" else "ground_inputs_required","Automatic hotel sourcing requires confirmed stay times, room occupancy and verified property transfers." if mode=="hotel" else "Automatic coach/private-transfer sourcing requires exact passenger ages or baggage, physical pickup links, EUR costs and sourced arrival times. Existing complete sourced links may still be used.",job["group_ids"]))
         options=[]
         if "flight" in job["modes"]:
             if self.travel.flight_configured:
-                options,missing=await asyncio.to_thread(flight_query_options,world,groups)
+                options,missing=await asyncio.to_thread(flight_query_options,projected,groups)
                 gaps.extend(missing)
             else:
                 gaps.append(gap("flight_provider_not_configured","Connect a production flight-offer account. FR24 observations do not provide fares or seats.",job["group_ids"]))
         await self._update(job,owner,gaps=gaps)
         strategies=[Strategy(id=name,label=label,objective=name) for name,label in (("balanced","Balanced recovery"),("fastest","Earliest arrival"),("lowest_cost","Lowest cost"))]
         staged=[]
-        source_counts={}
         timings={"interpretation_ms":0.0,"solver_ms":0.0,"decisions_ms":0.0}
+        recorded=await asyncio.to_thread(self.ledger.get,job["id"],private=True)
+        search_allowance=job["max_provider_calls"]-recorded["calls_dispatched"]-2
+        if options and search_allowance<1:
+            gaps.append(gap("search_allowance_uncovered","The remaining allowance cannot cover query planning, a new flight search and the final decision. Existing sourced journeys may still be evaluated; no allowance was increased.",sorted({item["group_id"] for item in options})))
+            options=[]
         if options:
-            scope_world=world.model_copy(deep=True)
-            scope_world.groups=groups
-            scope_world.offers=[offer for offer in world.offers if offer.group_id in job["group_ids"]]
-            request={"objective":job["objective"],"instructions":job["_request"]["instructions"],"max_search_calls":job["max_provider_calls"]-2,
+            scope_world=projected.model_copy(deep=True)
+            scope_world.groups=[group for group in scope_world.groups if group.id in job["group_ids"]]
+            scope_world.offers=[offer for offer in scope_world.offers if offer.group_id in job["group_ids"]]
+            request={"objective":job["objective"],"instructions":job["_request"]["instructions"],"max_search_calls":search_allowance,
                      "incident":next(item.model_dump(exclude={"flight","flight_ref","flight_context_state"}) for item in world.incidents if item.id==job["incident_id"])}
+            if airport_transfers:
+                request["context"]=AIRPORT_TRANSFER_CONTEXT
             before=time.perf_counter()
             searches=await self._call(job,owner,"planning_queries","OpenAI Responses",request,job["group_ids"],lambda:self.ai.plan_recovery_queries(scope_world.model_dump(mode="json"),options,request))
             timings["interpretation_ms"]=round((time.perf_counter()-before)*1000,2)
@@ -483,6 +517,8 @@ class RecoveryJobs:
             async def source_option(key):
                 async with semaphore:
                     option=known[key]
+                    if airport_transfers and not await asyncio.to_thread(current_flight_connection,projected,groups,option):
+                        return None
                     query=TravelSearchRequest.model_validate(option["query"])
                     return await self._call(job,owner,"searching_flights",self.travel.flight_source,option,[option["group_id"]],lambda:self._search(query))
             tasks=[asyncio.create_task(source_option(key)) for key in selected]
@@ -502,6 +538,9 @@ class RecoveryJobs:
                 raise failures[0]
             for key,result in zip(selected,results):
                 option=known[key]
+                if result is None:
+                    gaps.append(gap("ground_connection_expired","The ground connection no longer supports this approved flight-search window. No flight request, shifted pickup or automatic source refresh was issued.",[option["group_id"]]))
+                    continue
                 source_counts[result["source"]]=source_counts.get(result["source"],0)+len(result["items"])
                 if not result["items"]:
                     gaps.append(gap("no_flight_offers","The supplier returned no offers for a selected dated search; this is not proof that no other service exists.",[option["group_id"]]))
@@ -509,7 +548,6 @@ class RecoveryJobs:
                     staged.append((option,quote))
         if await self._cancelled(job,owner):
             return
-        projected=world.model_copy(deep=True)
         imported=[]
         superseded={}
         group_map={item.id:item for item in groups}
@@ -518,7 +556,9 @@ class RecoveryJobs:
             try:
                 trial=projected.model_copy(deep=True)
                 added=append_travel_quote(trial,quote,option["query"],group,"flight",
-                    keep_resource_ids={identity for _,_,identity in imported})
+                    keep_resource_ids={identity for _,_,identity in imported}|airport_transfer_ids|
+                        ({item.id for item in world.resources} if airport_transfers else set()),
+                    keep_location_ids={item.id for item in world.airports} if airport_transfers else set(),stage=bool(airport_transfers))
                 resource=next(item for item in trial.resources if item.id==added["resource_ids"][0])
                 if resource_blocked_by_incident(trial,resource,group) or resource.departure<option["earliest_departure"] or resource.arrival>option["latest_arrival"]:
                     raise DomainError(422,"Sourced offer does not meet this incident's route or timing constraints")
@@ -539,10 +579,13 @@ class RecoveryJobs:
         candidates=[item for item in candidates if item.validation["valid"]]
         timings["solver_ms"]=round((time.perf_counter()-before)*1000,2)
         ground_references=[]
-        if "bus" in job["modes"] and self.coach_fares is not None:
+        cab_candidate=any(leg.resource_id in airport_transfer_ids for candidate in candidates for allocation in candidate.allocations for leg in allocation.itinerary.legs)
+        if "bus" in job["modes"] and self.coach_fares is not None and not cab_candidate:
             ground_references=await self._ground_references(job,owner,world,groups,gaps,reserve_calls=int(any(item.recovered_passengers for item in candidates))) or []
             if await self._cancelled(job,owner):
                 return
+        elif "bus" in job["modes"] and self.coach_fares is not None and cab_candidate:
+            gaps.append(gap("ground_reference_deferred","Optional coach fare observations were deferred while a short-lived airport vehicle quote awaits the final decision.",job["group_ids"]))
         if not candidates or not any(item.recovered_passengers for item in candidates):
             gaps.append(gap("no_complete_journey","No complete sourced itinerary passed budget, accessibility, deadline, connection and incident checks. Accommodation alone is not recovery.",job["group_ids"]))
             await self._update(job,owner,status="blocked",stage="finished",message="No complete sourced recovery proposal is currently feasible; no operational allocation changed.",gaps=gaps)
@@ -551,6 +594,8 @@ class RecoveryJobs:
             return
         before=time.perf_counter()
         decision_request={"text":f"Recover only incident {job['incident_id']} groups {', '.join(job['group_ids'])}. Objective: {job['objective']}. {job['_request']['instructions']}","context":"All other groups' allocations are fixed. These are sourced quotes, not bookings. Explain remaining exceptions honestly."}
+        if airport_transfers:
+            decision_request["context"]+=" "+AIRPORT_TRANSFER_CONTEXT
         if "bus" in job["modes"] and self.coach_fares is not None:
             # Application-authored bounded facts only. Supplier HTML, messages
             # and instructions never enter this independent decision context.
@@ -580,11 +625,21 @@ class RecoveryJobs:
             # wins. This does not import unused quotes that expired meanwhile.
             for group_id,resource_ids in superseded.items():
                 retire_travel_quotes(current,group_id,resource_ids)
+            for transfer in airport_transfers:
+                from .airport_cab_planning import append_airport_cab_options
+                selected=[option_id for resource_id,option_id in transfer["resources"].items() if resource_id in chosen_resources]
+                if selected:
+                    append_airport_cab_options(current,transfer["context"],transfer["response"],selected,
+                        now=self.airport_cab.now(),keep_resource_ids=chosen_resources)
+                else:
+                    retire_travel_quotes(current,transfer["context"]["group_id"],transfer["superseded_resource_ids"])
             for option,quote,resource_id in imported:
                 if resource_id not in chosen_resources:
                     continue
                 group=next(item for item in current.groups if item.id==option["group_id"])
-                append_travel_quote(current,quote,option["query"],group,"flight", keep_resource_ids=chosen_resources)
+                append_travel_quote(current,quote,option["query"],group,"flight", keep_resource_ids=chosen_resources|
+                    ({item.id for item in world.resources} if airport_transfers else set()),
+                    keep_location_ids={item.id for item in world.airports} if airport_transfers else set())
             before_ids={offer.id for offer in current.offers}
             answer=self.service._hold_plan(current,plan,"ai",decision_request["text"],choice.get("provider","OpenAI Decisions"),choice["explanation"],candidates,round((time.perf_counter()-started)*1000,2),timings=timings,scope_group_ids=scope)
             commit_result.update(decision_id=answer["decision"]["id"],plan_id=plan.id,recovered_passengers=plan.recovered_passengers,

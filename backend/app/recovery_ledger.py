@@ -46,6 +46,8 @@ class RecoveryLedger:
 
     def _public(self, conn, job):
         result = {key:value for key,value in job.items() if not key.startswith("_")}
+        if job.get("_request", {}).get("airport_transfers"):
+            result["airport_transfers"] = job["_request"]["airport_transfers"]
         result["steps"] = [json.loads(row[0]) for row in conn.execute("SELECT data FROM recovery_steps WHERE job_id=? ORDER BY rowid", (job["id"],))]
         return result
 

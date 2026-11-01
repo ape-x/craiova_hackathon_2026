@@ -160,7 +160,7 @@ export function airportCabInput(
   const pickup = Date.parse(pickup_at);
   if (pickup < now + 9 * 3_600_000 || pickup % 60_000 !== 0)
     throw new Error(
-      'Choose a whole-minute pickup at least 9 hours ahead. This source uses a conservative advance-notice rule.',
+      'The current conservative rule requires a whole-minute pickup at least 9 hours ahead. Source policy is rechecked for each quote.',
     );
   if (
     bucharestDate(new Date(pickup)) >

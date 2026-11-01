@@ -1,4 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import AirportTransferRecoveryFields, {
+  AirportTransferRequestDetails,
+} from './AirportTransferRecoveryFields';
+import { airportTransferInputs } from './airportTransferRecovery';
+import type { AirportTransferDraft } from './airportTransferRecovery';
+import AirportTransferQuoteObservations from './AirportTransferQuoteObservations';
 import { Loader2, RefreshCw, Square } from 'lucide-react';
 import { api, ApiError, TransportError } from './api';
 import type {
@@ -171,6 +177,8 @@ export function RecoveryJobDetails({
           )}
         </section>
       )}
+      <AirportTransferRequestDetails inputs={job.airport_transfers} world={world} />
+      <AirportTransferQuoteObservations quotes={job.airport_transfer_quotes} world={world} />
       {Boolean(job.blocking_job_ids?.length) && (
         <section className="case-job-result" aria-label="Attempts requiring review">
           <h4>Attempts requiring review</h4>
@@ -432,6 +440,7 @@ export default function RecoveryJobPanel({
   const [instructions, setInstructions] = useState('');
   const [hotelMode, setHotelMode] = useState(false);
   const [hotelFields, setHotelFields] = useState(emptyHotelRecoveryForm);
+  const [airportTransfers, setAirportTransfers] = useState<AirportTransferDraft[]>([]);
   const running = useRef(false);
   const mounted = useRef(true);
   const current = useRef({ world, onRefresh, onMutationPending });
@@ -607,6 +616,22 @@ export default function RecoveryJobPanel({
               return;
             }
             let hotelRecovery: RecoveryJobInput['hotel_recovery'];
+            let transfers: RecoveryJobInput['airport_transfers'];
+            try {
+              transfers = airportTransferInputs(
+                airportTransfers,
+                world,
+                selectedGroups,
+                modes,
+                maxCalls,
+                hotelMode,
+              );
+            } catch (cause) {
+              setActionError(
+                cause instanceof Error ? cause.message : 'Review airport-transfer inputs.',
+              );
+              return;
+            }
             if (hotelMode) {
               try {
                 hotelRecovery = hotelRecoveryInput(hotelFields, selectedGroups, world, maxCalls);
@@ -625,6 +650,7 @@ export default function RecoveryJobPanel({
                 max_provider_calls: maxCalls,
                 instructions: instructions.trim(),
                 ...(hotelRecovery ? { hotel_recovery: hotelRecovery } : {}),
+                ...(transfers.length ? { airport_transfers: transfers } : {}),
               }),
             );
           }}
@@ -800,6 +826,17 @@ export default function RecoveryJobPanel({
                   gaps. A listed hotel or route is not a confirmed journey.
                 </p>
               </>
+            )}
+            {((!hotelMode && modes.includes('bus')) || airportTransfers.length > 0) && (
+              <AirportTransferRecoveryFields
+                world={world}
+                groupIds={selectedGroups}
+                modes={modes}
+                allowance={Number(limit)}
+                value={airportTransfers}
+                onChange={setAirportTransfers}
+                hotelRecovery={hotelMode}
+              />
             )}
             <label className="field">
               Additional recovery requirements

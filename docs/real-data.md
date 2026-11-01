@@ -67,8 +67,51 @@ application verification is recorded in the [verification report](verification/r
 
 These consumer endpoints are observed website interfaces, not a contracted public
 API. Unexpected protocol, tariff, identity or timing changes fail visibly. Other
-Romanian airport pairs, automatic new-source retrieval during recovery and
-flight-arrival pickup binding are not established by this bounded integration.
+Romanian airport pairs and flight-arrival pickup binding are not established by
+this bounded integration.
+
+### Automatic initial transfer before flight discovery
+
+Normal recovery and the structured **reported arrival + recovery** form accept
+an optional `airport_transfers` list. Each entry names one exact selected group,
+`destination_airport: "CRA"`, an offset-aware whole-minute `pickup_at`, and explicit
+`suitcases` and `handbags` counts (each 0–7). The list is bounded to 12 distinct
+groups within the job selection; each party must be explicitly adult-only, 1–7
+people, with a reported initial OTP position and no unsupported accessibility
+requirement or pending flight arrival. The arrival form validates against its
+reported passenger state. `bus` mode is required, and this option cannot be
+combined with `hotel_recovery`. Empty luggage fields do not mean zero; readiness,
+deadline, future-date limits and source advance rules cannot shift the pickup.
+
+For N requested transfers, the preflight allowance is at least **2N+1 calls**:
+two source GETs per group plus Decisions. This lower bound does not cover new
+flight searches. One CAB quote, one Responses query selection, one flight search
+and Decisions require at least **five calls**. The selected cap is never raised.
+The source phases are separate durable job steps; only safe bootstrap-received
+metadata is recorded for the first, and the normalized quote for the second.
+Anonymous tokens and cookies stay in memory. Automatic and manual CAB searches
+share the persistent receipt sequence, so their revision ordering is comparable.
+
+Eligible category alternatives are staged before flight-query discovery, allowing
+an initial OTP→CRA drive followed by a sourced departure from CRA. Every complete
+candidate must still pass party, time, capacity, source, budget and destination
+checks. The vehicle remains initial-only; there is no implicit airport pickup
+after a future flight. A fixed allocation already using Bucharest.CAB prevents
+additional sourcing from this source, and the combined plan may use at most one
+quoted vehicle. Several group searches do not establish several available cars.
+
+Only the selected vehicle category and selected onward resources are committed
+with the complete validated proposal in one transaction. Current version, scope,
+receipt freshness and revision retirement are rechecked; unrelated inventory is
+protected. Expired, cancelled or unknown attempts are not retried or refreshed
+automatically. The short receipt window can expire while the rest of the plan
+is being evaluated; no old quote is silently renewed. There are no bookings.
+
+Current voice commands do not supply `airport_transfers`; they cannot infer its
+pickup or baggage inputs. Historical live evidence above covers the consumer
+quote and manual path. The new combined automatic CAB-plus-flight flow has
+**offline mocked integration verification only**, not live production acceptance.
+See the [verification report](verification/report.md) for separately dated evidence.
 
 **Compare hotel prices** opens the public Momondo hotel search and provides a
 copyable summary of the airport, dates, guests and rooms. The search summary is

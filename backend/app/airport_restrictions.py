@@ -8,6 +8,7 @@ from pydantic import Field, ValidationError, field_validator
 
 from .airport_catalog import lookup_airport
 from .hotel_recovery import validate_hotel_job
+from .airport_cab_recovery import validate_airport_transfer_job
 from .inventory_lifecycle import resource_history
 from .live_service import _find, _live
 from .models import (AirportOperation, CaseAirportRestriction, CaseAirportRestrictionReport,
@@ -259,6 +260,13 @@ def enqueue_airport_restriction_recovery(conn, store, jobs, response, request, *
         return
     if jobs is None or not jobs.ai or not jobs.ai.configured:
         blocked("recovery_service_unavailable", "The real recovery service is unavailable; no source or model call was dispatched.")
+        return
+    try:
+        validate_airport_transfer_job(current, job_request, getattr(jobs,"airport_cab",None))
+    except DomainError as exc:
+        if exc.status != 422:
+            raise
+        blocked("airport_transfer_setup_required", exc.message + " Pickup and luggage were not inferred or reused.")
         return
     conn.execute("SAVEPOINT airport_restriction_recovery")
     try:
