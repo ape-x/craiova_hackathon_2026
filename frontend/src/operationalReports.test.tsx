@@ -163,7 +163,11 @@ describe('operator reports and booking boundaries', () => {
     expect(html).toContain('Passengers ready · UTC');
     expect(html).toContain('not a Flightradar24 landing confirmation');
     expect(html).toContain('type="checkbox" disabled=""');
-    expect(html).toContain('Report only. Request a new recovery search separately');
+    expect(html).toContain(
+      'Report-only changes passenger location/readiness without starting a search',
+    );
+    expect(html).toContain('Record arrival only');
+    expect(html).toContain('Record arrival and recalculate');
     const outage = renderToStaticMarkup(
       <ResourceUnavailabilityDialog
         world={world}

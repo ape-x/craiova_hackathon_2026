@@ -5,15 +5,17 @@ from datetime import datetime, timezone
 import copy
 import re
 import secrets
-from typing import Annotated
+from typing import Annotated, Literal
 import unicodedata
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationError, field_validator, model_serializer
 
+from .hotel_recovery import HotelRecoveryInputs, validate_hotel_job
 from .live_data import _known_airport_code, _new_airports, aware, relative_minute
 from .live_service import _find, _invalidate_pending, _live
-from .models import Mutation, World
-from .store import DomainError, audit, utcnow
+from .models import Model, Mutation, World
+from .recovery_jobs import RecoveryJobRequest
+from .store import DomainError, Store, audit, utcnow
 
 
 ReportId = Annotated[str, Field(min_length=1, max_length=128, strict=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")]
@@ -33,10 +35,28 @@ class OperationalReportInput(Mutation):
         return value
 
 
+class ArrivalRecoveryOptions(Model):
+    """Explicit job allowance, without a command-interpretation charge or scope override."""
+    objective: Literal["balanced", "fastest", "lowest_cost"] = "balanced"
+    modes: list[Literal["flight", "hotel", "bus"]] = Field(default_factory=lambda: ["flight"], min_length=1, max_length=3)
+    max_provider_calls: int = Field(default=8, ge=3, le=26, strict=True)
+    hotel_recovery: HotelRecoveryInputs | None = None
+
+
 class ArrivalReportInput(OperationalReportInput):
     group_ids: list[ReportId] = Field(min_length=1, max_length=500)
     airport_code: str = Field(min_length=3, max_length=4, strict=True)
     ready_at: datetime
+    recovery: ArrivalRecoveryOptions | None = None
+
+    @model_serializer(mode="wrap")
+    def compatible_payload(self, handler):
+        result = handler(self)
+        # Report-only receipts created before recovery was supported retain the
+        # same fingerprint, including when a client explicitly sends null.
+        if self.recovery is None:
+            result.pop("recovery", None)
+        return result
 
     @field_validator("group_ids")
     @classmethod
@@ -155,14 +175,79 @@ def apply_resource_unavailability(world: World, resource_id: str, request: Resou
 
 
 class OperationalReports:
-    def __init__(self, store):
-        self.store = store
+    def __init__(self, store, jobs=None):
+        self.store, self.jobs = store, jobs
 
     def arrival(self, incident_id: str, request: ArrivalReportInput):
         incident_id = _route_id(incident_id)
         payload = {**request.model_dump(mode="json"), "incident_id": incident_id}
+
+        def apply(world):
+            result = apply_arrival_report(world, incident_id, request)
+            result["focus_id"] = request.airport_code
+            return result
+
+        def enqueue(conn, response):
+            options = request.recovery
+            if options is None:
+                return
+            response["command_interpretation_calls"] = 0
+            response["recovery_provider_call_limit"] = options.max_provider_calls
+
+            def blocked(code, explanation):
+                response["recovery_blocked"] = {"code": code, "explanation": explanation}
+                response["explanation"] += " Report recorded; recovery was not started. " + explanation
+
+            if self.jobs is None:
+                blocked("recovery_service_unavailable", "Recovery service is unavailable; no provider call was dispatched.")
+                return
+            current = self.store._load(conn)
+            if "hotel" in options.modes and options.hotel_recovery is None:
+                blocked("hotel_setup_required", "Supply fresh hotel and transfer inputs for the reported location and readiness. A saved hotel profile was not reused or omitted from the requested journey.")
+                return
+            try:
+                job_request = RecoveryJobRequest(expected_version=current.version,
+                    idempotency_key="arrival-report-" + Store.fingerprint({"key": request.idempotency_key, "scenario": current.scenario_id, "incident": incident_id}),
+                    group_ids=request.group_ids, **options.model_dump(),
+                    instructions=f"Recover exactly the reported groups from {request.airport_code} after their operator-reported readiness {request.ready_at.isoformat()}. Preserve their final destinations and current constraints.")
+            except ValidationError:
+                blocked("recovery_prerequisite_failed", "Recovery requires 1–24 selected groups with supported exact identifiers. The report was preserved without changing its group scope.")
+                return
+            if job_request.group_ids != request.group_ids:
+                blocked("recovery_prerequisite_failed", "The recovery identifier normalization would change the reported group scope. The report was preserved; no renamed or substituted groups were queued.")
+                return
+            try:
+                validate_hotel_job(current, job_request)
+            except DomainError as exc:
+                if exc.status != 422:
+                    raise
+                blocked("hotel_setup_required", exc.message + " No saved hotel inputs were substituted.")
+                return
+            if not self.jobs.ai or not self.jobs.ai.configured:
+                blocked("ai_not_configured", "The real recovery AI is unavailable; no scripted plan or provider call was substituted.")
+                return
+            # A known queue rejection preserves the independently valid report,
+            # but never a partially inserted successor or cancelled predecessor.
+            conn.execute("SAVEPOINT arrival_recovery")
+            try:
+                result = self.jobs.start_in_transaction(conn, current, incident_id, job_request, supersede_active=True)
+            except DomainError as exc:
+                conn.execute("ROLLBACK TO SAVEPOINT arrival_recovery")
+                conn.execute("RELEASE SAVEPOINT arrival_recovery")
+                code = (exc.details or {}).get("code")
+                if code not in ("recovery_queue_full", "recovery_group_active", "recovery_handoff_limit"):
+                    raise
+                blocked("recovery_queue_unavailable", "The recovery queue cannot accept this request. Inspect existing attempts; no replacement was queued and their call allowances were not changed.")
+                return
+            conn.execute("RELEASE SAVEPOINT arrival_recovery")
+            response["recovery_job"] = result["job"]
+            response["explanation"] += (f" Recovery for exactly groups {', '.join(request.group_ids)} was queued with at most {options.max_provider_calls} provider/model calls and no interpretation call. "
+                "A queued request does not confirm an itinerary or booking.")
+            if result["job"].get("supersedes_job_ids"):
+                response["explanation"] += " It supersedes outdated attempts for these groups and waits for already dispatched calls; an uncertain outcome requires review before further calls."
+
         return self.store.mutate("operator-arrival:" + request.idempotency_key, payload, request.expected_version,
-            lambda world: apply_arrival_report(world, incident_id, request))
+            apply, on_commit=enqueue)
 
     def unavailable(self, resource_id: str, request: ResourceUnavailabilityInput):
         resource_id = _route_id(resource_id)

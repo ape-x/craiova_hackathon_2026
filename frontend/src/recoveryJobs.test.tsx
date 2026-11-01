@@ -459,6 +459,86 @@ describe('search exclusions versus unresolved passenger requirements', () => {
     message: 'No offers returned for one selected dated search.',
     group_ids: ['G-1'],
   };
+  const routeDiscoveryGaps = [
+    {
+      code: 'physical_route_missing',
+      message: 'No new flight-search route has a verified connection from the current location.',
+      group_ids: ['G-1'],
+    },
+    {
+      code: 'physical_route_search_limited',
+      message: 'Existing ground-path exploration reached its bounded query limit.',
+      group_ids: ['G-1'],
+    },
+  ];
+
+  it('shows known new-route discovery limits as search outcomes when a complete proposal already covers everyone', () => {
+    const completed = completedWithWait();
+    completed.result!.waits = [];
+    completed.gaps = routeDiscoveryGaps;
+    const html = renderToStaticMarkup(<RecoveryJobDetails job={completed} world={waitWorld} />);
+    expect(html).toContain('<strong>2</strong> passengers proposed');
+    expect(html).toContain('<strong>0</strong> with unresolved requirements');
+    expect(html).not.toContain('aria-label="Recovery gaps"');
+    const sources = html
+      .split('aria-label="Source exclusions and search outcomes"')[1]
+      .split('</section>')[0];
+    for (const gap of routeDiscoveryGaps) expect(sources).toContain(gap.message);
+    expect(sources).toContain('Groups: G-1');
+    expect(sources).toContain('limits on discovering new routes');
+    expect(sources).toContain('or establish that every alternative was searched');
+  });
+
+  it.each(['blocked', 'needs_review', 'unknown_outcome', 'running'] as const)(
+    'keeps route discovery gaps unresolved for a %s attempt even with a result snapshot',
+    (status) => {
+      const incomplete = { ...completedWithWait(), status, gaps: routeDiscoveryGaps };
+      const html = renderToStaticMarkup(<RecoveryJobDetails job={incomplete} world={waitWorld} />);
+      expect(html).toContain('Requirements still unresolved');
+      for (const gap of routeDiscoveryGaps) expect(html).toContain(gap.message);
+      expect(html).not.toContain('aria-label="Source exclusions and search outcomes"');
+    },
+  );
+
+  it('keeps route discovery gaps unresolved for missing, partial or zero-passenger results', () => {
+    const complete = completedWithWait();
+    for (const result of [
+      null,
+      { ...complete.result!, exception_passengers: 1 },
+      { ...complete.result!, recovered_passengers: 0 },
+    ]) {
+      const incomplete = { ...complete, result, gaps: routeDiscoveryGaps };
+      const html = renderToStaticMarkup(<RecoveryJobDetails job={incomplete} world={waitWorld} />);
+      expect(html).toContain('Requirements still unresolved');
+      for (const gap of routeDiscoveryGaps) expect(html).toContain(gap.message);
+      expect(html).not.toContain('aria-label="Source exclusions and search outcomes"');
+    }
+  });
+
+  it('only reclassifies the two known route-search codes, retaining actual links and unknown requirements', () => {
+    const requirements = [
+      {
+        code: 'ground_link_missing',
+        message: 'A required transfer is missing.',
+        group_ids: ['G-1'],
+      },
+      {
+        code: 'physical_route_future_constraint',
+        message: 'A new physical route requirement needs review.',
+        group_ids: ['G-1'],
+      },
+    ];
+    expect(classifyRecoveryJobGaps([...routeDiscoveryGaps, ...requirements], true)).toEqual({
+      requirements,
+      sourceExclusions: routeDiscoveryGaps,
+      waitingNotes: [],
+    });
+    expect(classifyRecoveryJobGaps(routeDiscoveryGaps)).toEqual({
+      requirements: routeDiscoveryGaps,
+      sourceExclusions: [],
+      waitingNotes: [],
+    });
+  });
 
   it('keeps a successful two-passenger proposal successful when other supplier alternatives were rejected', () => {
     const completed = completedWithWait();

@@ -7,12 +7,14 @@ import type {
   IncidentResult,
   MutationResult,
   RecoveryIncident,
+  RecoveryJob,
   World,
 } from './types';
 import { Modal, Tag } from './ui';
 import { CaseSummary, FlightFacts } from './RecoveryCases';
 import {
   groupBindingIssue,
+  savedCaseBindingIssue,
   flightLookupCurrent,
   normalizeFlightReference,
   selectedFlight,
@@ -57,6 +59,8 @@ export default function RecoveryCaseDialog({
   const [busy, setBusy] = useState(false);
   const [jobSubmissionPending, setJobSubmissionPending] = useState(false);
   const [arrivalReportPending, setArrivalReportPending] = useState(false);
+  const [arrivalRefresh, setArrivalRefresh] = useState(0);
+  const [arrivalJob, setArrivalJob] = useState<RecoveryJob | null>(null);
   const [uncertain, setUncertain] = useState<{ error: TransportError; kind: ActionKind } | null>(
     null,
   );
@@ -192,18 +196,15 @@ export default function RecoveryCaseDialog({
           <div className="case-group-options">
             {world.groups.map((group) => {
               const existing = currentCase?.group_ids.includes(group.id) ?? false;
-              const issue = groupBindingIssue(group, flight, reference, currentCase?.id);
+              const issue = currentCase
+                ? savedCaseBindingIssue(group, currentCase)
+                : groupBindingIssue(group, flight, reference);
               return (
                 <label className="case-group" key={group.id}>
                   <input
                     type="checkbox"
                     checked={existing || groupIds.includes(group.id)}
-                    disabled={
-                      locked ||
-                      existing ||
-                      Boolean(issue) ||
-                      currentCase?.flight_context_state === 'expired'
-                    }
+                    disabled={locked || existing || Boolean(issue)}
                     onChange={(event) =>
                       setGroupIds((ids) =>
                         event.target.checked
@@ -315,7 +316,13 @@ export default function RecoveryCaseDialog({
               world={world}
               incident={incident}
               disabled={busy || Boolean(uncertain) || jobSubmissionPending}
-              onApplied={onApplied}
+              onApplied={(result) => {
+                setArrivalJob(
+                  result.recovery_job?.incident_id === incident.id ? result.recovery_job : null,
+                );
+                setArrivalRefresh((value) => value + 1);
+                onApplied(result);
+              }}
               onRefresh={onRefresh}
               onMutationPending={setArrivalReportPending}
             />
@@ -326,6 +333,8 @@ export default function RecoveryCaseDialog({
               disabled={busy || Boolean(uncertain) || arrivalReportPending}
               onRefresh={onRefresh}
               onMutationPending={setJobSubmissionPending}
+              refreshSignal={arrivalRefresh}
+              receivedJob={arrivalJob}
             />
             <div className="case-actions">
               <button
@@ -391,16 +400,20 @@ export default function RecoveryCaseDialog({
                 {groupPicker(incident.flight, incident.requested_flight_number, incident)}
                 {incident.flight_context_state === 'expired' && (
                   <p className="field-hint">
-                    Refresh this flight context before linking additional groups.
+                    Groups matching the saved flight number {incident.requested_flight_number} can
+                    still be linked. Refresh flight context only to review source facts or use a
+                    current callsign or tracking reference.
                   </p>
                 )}
                 <button
                   className="primary-button"
                   disabled={
                     locked ||
-                    incident.flight_context_state === 'expired' ||
-                    !incident.flight ||
-                    !groupIds.length
+                    !groupIds.length ||
+                    groupIds.some((id) => {
+                      const group = world.groups.find((item) => item.id === id);
+                      return !group || Boolean(savedCaseBindingIssue(group, incident));
+                    })
                   }
                   onClick={() =>
                     void mutate('bind', () => api.bindIncidentGroups(world, incident.id, groupIds))

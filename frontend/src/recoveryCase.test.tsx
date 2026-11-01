@@ -6,6 +6,7 @@ import RecoveryCaseDialog from './RecoveryCaseDialog';
 import {
   flightLookupCurrent,
   groupBindingIssue,
+  savedCaseBindingIssue,
   selectedFlight,
   utcTimestamp,
   validateFlightQuery,
@@ -161,6 +162,43 @@ describe('flight lookup and incident boundaries', () => {
     expect(html).toContain('HISTORICAL');
     expect(html).toContain('Actual destination reported</dt><dd>Unknown');
     expect(html).not.toMatch(/cancelled|available seats|confirmed arrival/i);
+  });
+  it('allows durable flight-number binding after source expiry without reviving retained aliases', () => {
+    const expired = { ...incident, flight_context_state: 'expired' as const };
+    expect(savedCaseBindingIssue(group, expired)).toBeNull();
+    for (const original_flight_id of [flight.callsign!, flight.fr24_id, 'OTHER'])
+      expect(savedCaseBindingIssue({ ...group, original_flight_id }, expired)).toContain(
+        'does not match',
+      );
+    expect(savedCaseBindingIssue({ ...group, status: 'confirmed' }, expired)).toContain(
+      'supplier bookings',
+    );
+    expect(savedCaseBindingIssue({ ...group, incident_id: 'OTHER-CASE' }, expired)).toContain(
+      'another case',
+    );
+    const alias = {
+      ...group,
+      id: 'G2',
+      name: 'Alias-only party',
+      original_flight_id: flight.callsign!,
+    };
+    const html = renderToStaticMarkup(
+      <RecoveryCaseDialog
+        world={{ ...world, incidents: [expired], groups: [group, alias] }}
+        incidentId={expired.id}
+        onApplied={() => {}}
+        onRefresh={async () => {}}
+        onClose={() => {}}
+        onManageData={() => {}}
+      />,
+    );
+    const choices = html.match(/<label class="case-group">[\s\S]*?<\/label>/g)!;
+    expect(choices.find((choice) => choice.includes('Planning party'))).not.toContain(
+      'disabled=""',
+    );
+    expect(choices.find((choice) => choice.includes('Alias-only party'))).toContain('disabled=""');
+    expect(html).toContain('Groups matching the saved flight number W43001 can');
+    expect(html).not.toContain('Refresh this flight context before linking additional groups');
   });
   it('keeps an operator’s case visible after flight context expires, without claiming available supply', () => {
     const html = renderToStaticMarkup(

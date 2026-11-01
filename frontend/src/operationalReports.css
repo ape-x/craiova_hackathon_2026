@@ -74,3 +74,36 @@
 .report-service-reference {
   overflow-wrap: anywhere;
 }
+.arrival-recovery-options {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 18px 0;
+  padding: 12px 14px;
+}
+.arrival-recovery-options .field {
+  margin: 12px 0;
+}
+.arrival-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.arrival-recovery-blocked {
+  border-left: 2px solid var(--amber);
+  padding-left: 10px;
+}
+.arrival-recovery-receipt {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 14px;
+  background: var(--surface);
+}
+.arrival-recovery-receipt h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+.arrival-recovery-receipt.warning {
+  border-color: var(--amber);
+}

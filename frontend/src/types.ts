@@ -493,6 +493,8 @@ export interface RecoveryBlockedReceipt {
   code:
     | 'insufficient_call_allowance'
     | 'hotel_setup_required'
+    | 'ai_not_configured'
+    | 'recovery_service_unavailable'
     | 'recovery_prerequisite_failed'
     | 'recovery_queue_unavailable';
   explanation: string;
@@ -509,6 +511,7 @@ export interface MutationResult {
   recovery_job?: RecoveryJob | null;
   command_interpretation_calls?: number;
   recovery_total_call_limit?: number;
+  recovery_provider_call_limit?: number;
   report?: OperationalReportReceipt;
   recovery_blocked?: RecoveryBlockedReceipt;
 }

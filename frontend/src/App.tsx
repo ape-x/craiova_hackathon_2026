@@ -49,6 +49,7 @@ import {
 } from './voiceRequestReview';
 import type { VoiceRequestReview, VoiceReviewOutcome } from './voiceRequestReview';
 import { voiceStartupScope } from './voiceScope';
+import { reportedArrivalFocus } from './arrivalFocus';
 import {
   commandContext,
   recoveryCaseForResult,
@@ -237,11 +238,16 @@ function Operations() {
     (result: MutationResult) => {
       const replaced = worldRef.current?.scenario_id !== result.world.scenario_id;
       receive(result.world);
-      const focus = result.focus_id ?? result.decision?.focus_id;
+      const reportedAirport = reportedArrivalFocus(result, worldRef.current ?? result.world);
+      const focus =
+        result.report?.type === 'arrival_report'
+          ? reportedAirport
+          : (result.focus_id ?? result.decision?.focus_id);
       if (replaced && !focus) setSelectedId(null);
       if (focus) {
         setSelectedId(focus);
-        if (result.world.airports.some((airport) => airport.id === focus)) setMode('region');
+        if (result.world.airports.some((airport) => airport.id === focus))
+          setMode(reportedAirport ? 'airport' : 'region');
         if (result.world.groups.some((group) => group.id === focus)) setMode('passenger');
       }
       const recoveryCase = recoveryCaseForResult(result, worldRef.current ?? result.world);
@@ -363,7 +369,11 @@ function Operations() {
           reply,
         );
       }
-      if (commandNeedsRegionalView(previousWorld, result)) setMode('region');
+      if (
+        result.report?.type !== 'arrival_report' &&
+        commandNeedsRegionalView(previousWorld, result)
+      )
+        setMode('region');
       return result;
     },
     [execute, updateCommandDraft, worldRef],

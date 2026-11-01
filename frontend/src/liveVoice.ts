@@ -122,6 +122,8 @@ export function voiceCommandAcknowledgement(result: MutationResult): string {
     const reasons = {
       insufficient_call_allowance: 'limita de apeluri este insuficientă',
       hotel_setup_required: 'configurația hotelului trebuie completată sau revizuită',
+      ai_not_configured: 'serviciul AI necesar nu este disponibil',
+      recovery_service_unavailable: 'serviciul de recuperare nu este disponibil',
       recovery_prerequisite_failed:
         'o condiție necesară nu este îndeplinită; verifică panoul cazului',
       recovery_queue_unavailable:

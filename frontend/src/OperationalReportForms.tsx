@@ -9,13 +9,18 @@ import { isAirportNode } from './locationNodes';
 import { sourceInstant } from './resourceFreshness';
 import {
   affectedPendingGroups,
-  arrivalReportInput,
   arrivalReportIssue,
   latestOperatorReport,
   reportDescription,
   unavailabilityIssue,
   type ArrivalReportForm,
 } from './operationalReports';
+import {
+  arrivalRecoveryIssue,
+  arrivalReportSubmission,
+  emptyArrivalRecoveryForm,
+} from './arrivalRecoveryData';
+import { ArrivalRecoveryFields, ArrivalRecoveryReceipt } from './ArrivalRecoveryFields';
 import './operationalReports.css';
 
 type MutationProps = {
@@ -31,6 +36,7 @@ function useReportMutation(
   const [uncertain, setUncertain] = useState<TransportError | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [result, setResult] = useState<MutationResult | null>(null);
   const running = useRef(false);
   const mounted = useRef(true);
   const pending = useRef(false);
@@ -54,15 +60,19 @@ function useReportMutation(
     setBusy(true);
     setError('');
     setSuccess('');
+    setResult(null);
     try {
       const result = await action();
       if (!mounted.current) return;
       onApplied(result);
+      setResult(result);
       setUncertain(null);
       pending.current = false;
       setSuccess(
         result.explanation ??
-          'Operator report recorded. No replacement search or booking was made.',
+          (result.recovery_job || result.recovery_blocked
+            ? 'Operator report processed. Review the recorded recovery outcome below.'
+            : 'Operator report recorded. No replacement search or booking was made.'),
       );
     } catch (cause) {
       if (!mounted.current) return;
@@ -81,7 +91,7 @@ function useReportMutation(
     setError('Recover the original submission before closing. Its outcome is not yet confirmed.');
     return false;
   }
-  return { locked, busy, uncertain, error, success, run, setError, allowClose };
+  return { locked, busy, uncertain, error, success, result, run, setError, allowClose };
 }
 
 function ReportFeedback({ mutation }: { mutation: ReturnType<typeof useReportMutation> }) {
@@ -97,6 +107,7 @@ function ReportFeedback({ mutation }: { mutation: ReturnType<typeof useReportMut
           {mutation.success}
         </p>
       )}
+      {mutation.result && <ArrivalRecoveryReceipt result={mutation.result} />}
       {mutation.uncertain && (
         <button
           type="button"
@@ -148,10 +159,13 @@ export function ArrivalReportPanel({
     readyAt: '',
     description: '',
   });
+  const [recovery, setRecovery] = useState(emptyArrivalRecoveryForm);
+  const [submissionMode, setSubmissionMode] = useState<'report' | 'recover'>('report');
   const groups = world.groups.filter((group) => incident.group_ids.includes(group.id));
   const locked = mutation.locked || disabled;
   const epoch = sourceInstant(world.epoch);
   const selected = groups.filter((group) => form.groupIds.includes(group.id));
+  const recoveryIssue = arrivalRecoveryIssue(recovery, selected.length);
   return (
     <details
       className="operational-report"
@@ -176,7 +190,12 @@ export function ArrivalReportPanel({
           event.preventDefault();
           if (locked) return;
           try {
-            const input = arrivalReportInput(world, incident, form);
+            const action =
+              (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'recover'
+                ? 'recover'
+                : 'report';
+            const input = arrivalReportSubmission(world, incident, form, recovery, action);
+            setSubmissionMode(action);
             void mutation.run(() => api.reportArrival(world, incident.id, input));
           } catch (cause) {
             mutation.setError(
@@ -293,12 +312,39 @@ export function ArrivalReportPanel({
             passengers selected. Their unconfirmed proposals will be invalidated. Other groups and
             recorded bookings are preserved.
           </p>
-          <button className="primary-button" disabled={locked || !form.groupIds.length}>
-            {mutation.busy ? 'Recording report…' : 'Record passenger arrival'}
-          </button>
+          <ArrivalRecoveryFields value={recovery} onChange={setRecovery} />
+          {recoveryIssue && selected.length > 0 && (
+            <p className="field-hint arrival-recovery-blocked">{recoveryIssue}</p>
+          )}
+          <div className="arrival-report-actions">
+            <button
+              type="submit"
+              name="arrival_action"
+              value="report"
+              className="secondary-button"
+              disabled={locked || !form.groupIds.length}
+            >
+              {mutation.busy && submissionMode === 'report'
+                ? 'Recording report…'
+                : 'Record arrival only'}
+            </button>
+            <button
+              type="submit"
+              name="arrival_action"
+              value="recover"
+              className="primary-button"
+              disabled={locked || Boolean(recoveryIssue) || !form.groupIds.length}
+            >
+              {mutation.busy && submissionMode === 'recover'
+                ? 'Recording and queueing…'
+                : 'Record arrival and recalculate'}
+            </button>
+          </div>
           <p className="field-hint">
-            Report only. Request a new recovery search separately after reviewing the updated start
-            point.
+            Report-only changes passenger location/readiness without starting a search.
+            Recalculation uses exactly these selected groups and can replace their earlier attempts;
+            in-flight calls must finish and unknown outcomes require review. Results are proposals,
+            not bookings.
           </p>
         </fieldset>
       </form>

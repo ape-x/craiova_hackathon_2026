@@ -2,7 +2,7 @@
 
 ## Recuperare asistată a pasagerilor, cu date și cotații reale
 
-**Versiune:** 2.1 — 31 octombrie 2026. Acest document descrie produsul live actual. Conceptul inițial a fost pregătit pentru secțiunea AUTOPILOT a [Craiova Hackathon](https://www.craiovahackathon.ro/); imaginile de concept rămân repere vizuale.
+**Versiune:** 2.2 — 1 noiembrie 2026. Acest document descrie produsul live actual. Conceptul inițial a fost pregătit pentru secțiunea AUTOPILOT a [Craiova Hackathon](https://www.craiovahackathon.ro/); imaginile de concept rămân repere vizuale.
 
 **Implementare:** FastAPI + React/TypeScript, disponibilă într-o singură instanță locală la `http://localhost:8080`. [README](../README.md) descrie operarea; [raportul de verificare](verification/report.md) separă probele reale, testele offline și verificările rămase.
 
@@ -50,6 +50,10 @@ Eșecul unui furnizor configurat rămâne vizibil. Nu este înlocuit cu inventar
 ## 4. Căutări durabile pe incident
 
 Fiecare încercare păstrează selecția grupurilor, obiectivul, limita de apeluri, etapele și rezultatele într-un registru persistent. Interfața arată apelurile expediate și stările lor, nu un procent de progres inventat.
+
+După o deviere raportată, operatorul înregistrează separat aeroportul unde pasagerii sunt disponibili și ora lor de pregătire. Poziția aeronavei și ora estimată FR24 nu stabilesc aceste date. Formularul permite fie înregistrarea simplă a sosirii, fie înregistrarea și recalcularea pentru exact aceleași grupuri, cu servicii, obiectiv și limită explicită. Varianta structurată nu consumă un apel de interpretare; limita se aplică apelurilor jobului. Raportul și cererea de înlocuire se salvează împreună, iar harta focalizează aeroportul raportat. O condiție cunoscută care împiedică pornirea este afișată ca raport înregistrat, recuperare nepornită; o eroare neașteptată anulează tranzacția întreagă. Modificarea poziției nu reutilizează automat profilul hotelier anterior. Pentru o nouă configurație hotelieră sunt necesare date complete și actuale.
+
+Expirarea observației FR24 nu împiedică legarea unui grup care indică exact numărul de zbor păstrat în cazul existent. Referințele suplimentare ale observației expirate nu sunt reutilizate și nu se face o reîmprospătare automată. Căutarea poate lua în calcul un aeroport alternativ dacă există deja o legătură terestră validă către destinația pasagerilor, inclusiv un lanț de mai multe servicii. Fiecare segment, legătură temporală, capacitate și cost cumulat trebuie să respecte verificările existente. Această extindere nu descoperă sau inventează un serviciu terestru lipsă.
 
 Un raport operațional nou care cere explicit recuperarea poate înlocui încercările active pentru aceleași grupuri. Raportul, cererea nouă și oprirea pașilor rămași ai încercărilor vechi se salvează atomic. Încercările încă nepornite sunt anulate; cele cu apeluri deja trimise păstrează proprietarul până se încheie apelurile. Noua cerere așteaptă și își păstrează limita proprie, inclusiv interpretarea deja consumată. Nu moștenește apeluri nefolosite și nu reinterpretează comanda la replay.
 

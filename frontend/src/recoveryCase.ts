@@ -59,6 +59,18 @@ export function groupBindingIssue(
     return 'Original flight reference does not match';
   return null;
 }
+
+export function savedCaseBindingIssue(
+  group: PassengerGroup,
+  incident: RecoveryIncident,
+): string | null {
+  return groupBindingIssue(
+    group,
+    incident.flight_context_state === 'expired' ? null : incident.flight,
+    incident.requested_flight_number,
+    incident.id,
+  );
+}
 export function utcTimestamp(value: string | null | undefined) {
   if (!value || !Number.isFinite(Date.parse(value))) return 'Unknown';
   return (

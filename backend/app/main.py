@@ -105,7 +105,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         apl_provider=ground_transfers.provider,fx_provider=ground_transfers.fx,coach_fares=coach_fares)
     service.live_commands=LiveCommands(store,jobs)
     ground_planning=GroundPlanning(store,ground_transfers,real_data.provider)
-    operational_reports=OperationalReports(store)
+    operational_reports=OperationalReports(store,jobs)
     login_attempts=defaultdict(deque)
     # Reserve worst-case credit cost in the persistent shared request ledger;
     # restarting or adding a worker cannot replenish the paid provider budget.

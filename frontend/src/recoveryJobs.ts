@@ -22,6 +22,13 @@ const groundReferenceLimitations = new Set([
   'ground_fare_window_closed',
 ]);
 
+// These concern discovery of new flight-search routes. A separately validated
+// existing itinerary can still cover every passenger without a new query route.
+const flightSearchLimitations = new Set([
+  'physical_route_missing',
+  'physical_route_search_limited',
+]);
+
 /** Search outcomes describe alternatives; they do not invalidate a selected plan. */
 export function classifyRecoveryJobGaps(gaps: RecoveryJob['gaps'], allPassengersProposed = false) {
   const requirements: RecoveryJob['gaps'] = [];
@@ -32,7 +39,8 @@ export function classifyRecoveryJobGaps(gaps: RecoveryJob['gaps'], allPassengers
     else if (
       gap.code === 'quote_not_usable' ||
       gap.code === 'no_flight_offers' ||
-      (allPassengersProposed && groundReferenceLimitations.has(gap.code))
+      (allPassengersProposed &&
+        (groundReferenceLimitations.has(gap.code) || flightSearchLimitations.has(gap.code)))
     )
       sourceExclusions.push(gap);
     else requirements.push(gap); // Unknown requirements remain visible, never silently downgraded.

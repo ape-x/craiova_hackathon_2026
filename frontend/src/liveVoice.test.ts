@@ -58,6 +58,8 @@ describe('bounded voice acknowledgements from authoritative receipts', () => {
   it.each([
     ['insufficient_call_allowance', 'limita de apeluri este insuficientă'],
     ['hotel_setup_required', 'configurația hotelului trebuie completată sau revizuită'],
+    ['ai_not_configured', 'serviciul AI necesar nu este disponibil'],
+    ['recovery_service_unavailable', 'serviciul de recuperare nu este disponibil'],
     ['recovery_prerequisite_failed', 'o condiție necesară nu este îndeplinită'],
     ['recovery_queue_unavailable', 'coada de recuperare nu este disponibilă'],
   ] as const)('keeps a persisted report distinct from blocked search: %s', (code, reason) => {

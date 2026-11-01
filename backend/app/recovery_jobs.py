@@ -122,66 +122,63 @@ def journey_waits(world,plan):
 
 def flight_query_options(world,groups):
     """Reference routes require actual endpoints or already-sourced ground links."""
-    locations={item.id:item for item in world.airports}
+    from .ground_query_paths import (
+        MAX_GROUND_LEGS, MAX_GROUP_QUERIES, MAX_QUERY_PAIRS, MAX_SEARCH_DATES,
+        cents, fixed_capacity, ground_paths,
+    )
     epoch=datetime.fromisoformat(world.epoch)
+    now=utcnow()
+    occupied=fixed_capacity(world,[group.id for group in groups])
     options_by_group=[]
     gaps=[]
     for group in groups:
         if group.adult_count!=group.size:
             gaps.append(gap("passenger_composition_required","Flight searches currently require an explicitly adult-only group; no ages were inferred.",[group.id]))
             continue
-        blocked={item.unavailable_airport_code for item in world.incidents if item.id==group.incident_id and item.unavailable_airport_code}
-        origins={}
-        expansions=0
-        def visit(location,minute,legs,cost):
-            nonlocal expansions
-            expansions+=1
-            if expansions>4000:
-                return
-            node=locations.get(location)
-            if node and node.kind=="airport" and lookup_airport(node.code) and node.operational_status!="closed" and node.code not in blocked:
-                origins[location]=min(minute,origins.get(location,minute))
-            if len(legs)>=5:
-                return
-            for resource in world.resources:
-                if resource.kind not in ("hotel","bus"):
-                    continue
-                connection=10 if legs else 0
-                if not resource_feasible(world,resource,group,location,minute+connection,{item.id for item in legs}):
-                    continue
-                from .solver import resource_cost
-                total=cost+resource_cost(resource,group)
-                if total<=group.budget:
-                    visit(resource.destination,resource.arrival,legs+[resource],total)
-        visit(group.origin,max(world.sim_time,group.ready_at),[],0)
-        destinations={}
-        target=locations.get(group.destination)
-        if target and target.kind=="airport" and lookup_airport(target.code) and target.code not in blocked and target.operational_status!="closed":
-            destinations[target.id]=group.deadline
-        for resource in world.resources:
-            node=locations.get(resource.origin)
-            if resource.kind=="bus" and resource.destination==group.destination and node and node.kind=="airport" and node.code not in blocked and resource_feasible(world,resource,group,resource.origin,max(world.sim_time,group.ready_at),set()):
-                destinations[resource.origin]=max(destinations.get(resource.origin,0),resource.departure-10)
+        prefixes,suffixes,limited=ground_paths(world,group,occupied)
         choices=[]
-        for origin,ready in sorted(origins.items()):
+        seen=set()
+        pairs=0
+        for prefix in prefixes:
+            origin=prefix.airport_id
+            earliest=prefix.minute+prefix.flight_buffer
             airport=lookup_airport(origin)
             if airport is None:
                 continue
             zone=property_zone(coordinate_timezone(airport["lat"],airport["lon"]))
-            first=(epoch+timedelta(minutes=ready)).astimezone(zone).date()
-            for destination,latest in sorted(destinations.items()):
-                if origin==destination or ready+30>=latest:
+            first=(epoch+timedelta(minutes=prefix.minute)).astimezone(zone).date()
+            for suffix in suffixes:
+                pairs+=1
+                if pairs>MAX_QUERY_PAIRS or len(choices)>=MAX_GROUP_QUERIES:
+                    limited=True
+                    break
+                destination,latest=suffix.airport_id,suffix.minute
+                if (origin==destination or earliest>=latest
+                        or len(prefix.resource_ids)+len(suffix.resource_ids)>MAX_GROUND_LEGS
+                        or prefix.resource_ids & suffix.resource_ids
+                        or (not prefix.has_hotel and prefix.locations & suffix.locations)
+                        or prefix.cost_cents+suffix.cost_cents>cents(group.budget)):
                     continue
                 last=(epoch+timedelta(minutes=latest)).astimezone(zone).date()
-                for offset in range(min(7,(last-first).days+1)):
+                for offset in range(min(MAX_SEARCH_DATES,(last-first).days+1)):
+                    if len(choices)>=MAX_GROUP_QUERIES:
+                        limited=True
+                        break
                     day=first+timedelta(days=offset)
                     try:
                         request=TravelSearchRequest(kind="flight",origin_code=origin,destination_code=destination,departure_date=day,adults=group.size,
-                            earliest_departure_at=max(utcnow(),epoch+timedelta(minutes=ready+30)),latest_arrival_at=epoch+timedelta(minutes=latest))
+                            earliest_departure_at=max(now,epoch+timedelta(minutes=earliest)),latest_arrival_at=epoch+timedelta(minutes=latest))
                     except ValueError:
                         continue
-                    data={"group_id":group.id,"query":request.model_dump(mode="json"),"earliest_departure":ready+30,"latest_arrival":latest}
-                    choices.append({"id":"QRY-"+Store.fingerprint(data)[:20],**data})
+                    data={"group_id":group.id,"query":request.model_dump(mode="json"),"earliest_departure":earliest,"latest_arrival":latest}
+                    identity="QRY-"+Store.fingerprint(data)[:20]
+                    if identity not in seen:
+                        seen.add(identity)
+                        choices.append({"id":identity,**data})
+            if pairs>MAX_QUERY_PAIRS or len(choices)>=MAX_GROUP_QUERIES:
+                break
+        if limited:
+            gaps.append(gap("physical_route_search_limited","Existing ground-path exploration reached its bounded state, edge or query limit. The returned routes are a partial search; no additional transport was inferred.",[group.id]))
         if not choices:
             gaps.append(gap("physical_route_missing","No flight-search route has a verified connection from the group's current location to its final destination under this incident. Airport, hotel or station transfers were not invented.",[group.id]))
         options_by_group.append(choices)

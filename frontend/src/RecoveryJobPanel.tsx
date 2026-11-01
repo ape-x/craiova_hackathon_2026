@@ -364,8 +364,9 @@ export function RecoveryJobDetails({
         <section className="case-job-gaps" aria-label="Source exclusions and search outcomes">
           <h4>Source exclusions and search outcomes</h4>
           <p className="field-hint">
-            These reasons describe alternatives that were excluded or searches that returned no
-            offers. They do not indicate an unresolved requirement in a selected proposal.
+            These reasons describe excluded alternatives, searches with no offers or limits on
+            discovering new routes. They do not indicate an unresolved requirement in a selected
+            proposal or establish that every alternative was searched.
           </p>
           <ul>
             {sourceExclusions.map((gap, index) => (
@@ -410,12 +411,16 @@ export default function RecoveryJobPanel({
   disabled,
   onRefresh,
   onMutationPending,
+  refreshSignal = 0,
+  receivedJob,
 }: {
   world: World;
   incident: RecoveryIncident;
   disabled: boolean;
   onRefresh: () => Promise<unknown>;
   onMutationPending: (value: boolean) => void;
+  refreshSignal?: number;
+  receivedJob?: RecoveryJob | null;
 }) {
   const [jobs, setJobs] = useState<RecoveryJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -457,6 +462,8 @@ export default function RecoveryJobPanel({
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const received = receivedJob?.incident_id === incident.id ? receivedJob : null;
+    if (received) setJobs((previous) => mergeRecoveryJobs(previous, [received]));
     async function poll() {
       let next = false;
       try {
@@ -464,7 +471,13 @@ export default function RecoveryJobPanel({
         if (controller.signal.aborted) return;
         setJobs((previous) => mergeRecoveryJobs(previous, response.jobs));
         setLoadError('');
-        next = response.jobs.some(recoveryJobActive);
+        next =
+          response.jobs.some(recoveryJobActive) ||
+          Boolean(
+            received &&
+            recoveryJobActive(received) &&
+            !response.jobs.some((job) => job.id === received.id),
+          );
         const applied = Math.max(0, ...response.jobs.map((job) => job.applied_version ?? 0));
         if (applied > current.current.world.version && applied > refreshedVersion.current) {
           await current.current.onRefresh();
@@ -489,7 +502,7 @@ export default function RecoveryJobPanel({
       controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [incident.id, refresh]);
+  }, [incident.id, refresh, refreshSignal, receivedJob]);
 
   async function mutate(action: () => Promise<RecoveryJobResponse>) {
     if (running.current) return;

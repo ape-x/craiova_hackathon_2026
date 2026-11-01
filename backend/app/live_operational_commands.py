@@ -301,8 +301,48 @@ def _job_request(world, request, case, groups, intent, total, report):
     return payload
 
 
+def _unsupported_airport_change(text, *, allow_diversion_background=False):
+    value = normalized(text)
+    if re.search(r"\b(?:(?:cannot|can not|can't|can’t|unable to|not able to)\s+(?:safely\s+)?land|nu\s+(?:mai\s+)?(?:poate|pot)\s+(?:sa\s+)?ateriz\w*)\b", value):
+        return True
+    if allow_diversion_background:
+        # Only descriptive past context may accompany an explicit arrival
+        # report. Its literal passenger/readiness grounding still runs below.
+        # Present movements and instructions ("divert", "is diverting") remain
+        # unsupported even when another clause reports ready passengers.
+        value = re.sub(r"\b(?:after (?:the )?diversion|dupa (?:deviere|devierea)|(?:was|has been|had been) diverted|a fost (?:deviat|deviata|redirectionat))\b", " ", value)
+    if re.search(r"\b(?:divert(?:ed|ing|s)?|diversions?|deviat\w*|deviaz\w*|deviere\w*|divertat\w*|redirection(?:at|eaza)\w*)\b", value):
+        return True
+    from .airport_mentions import literal_airport_ids
+    for clause in re.split(r"[.;!?\n]", text):
+        value = normalized(clause)
+        if re.search(r"\b(?:closed|closures?|inchis\w*|inchidere\w*)\b", value) and (
+                re.search(r"\b(?:airports?|aeroport\w*|runways?|pist[ae]\w*)\b", value)
+                # "CLOSED" is itself a catalog name token for an old airport;
+                # it cannot identify the subject of an unrelated closure.
+                or literal_airport_ids(re.sub(r"\b(?:closed|closures?)\b", " ", clause, flags=re.IGNORECASE))):
+            return True
+        for state in re.finditer(r"\b(?:unavailable|indisponibil\w*)\b", clause, re.IGNORECASE):
+            subject = re.sub(r"\b(?:is|has become|became|remains|este|e|a devenit|devine|ramane|rămâne)\s*$", "",
+                             clause[:state.start()], flags=re.IGNORECASE).strip()
+            subject = re.split(r",|\b(?:and|but|si|și|dar)\b", subject, flags=re.IGNORECASE)[-1].strip()
+            # Keep actual service-outage reports valid, including a bus/hotel
+            # described at an airport. Airport names in its location do not
+            # turn the service into an airport-unavailability report.
+            if re.search(r"\b(?:bus(?:es)?|coaches?|hotel\w*|autobuz\w*|autocar\w*|transfer\w*|services?|servici\w*)\b", normalized(subject)):
+                continue
+            if re.search(r"\b(?:airports?|aeroport\w*|runways?|pist[ae]\w*)\b", normalized(subject)) or literal_airport_ids(subject):
+                return True
+    return False
+
+
 def route_operational_report(commands, request, world, interpreted):
     raw = interpreted.get("operational_report")  # older durable records omit it
+    # Airport restrictions and aircraft movements have no live report contract.
+    # An omitted clause must not become recovery using unchanged airport facts,
+    # even when the model retained a separate, otherwise valid arrival report.
+    if _unsupported_airport_change(request.text, allow_diversion_background=isinstance(raw, dict) and raw.get("type") == "arrival_report"):
+        return commands._reply(request, world, "Cererea conține un posibil raport operațional despre închiderea aeroportului, imposibilitatea aterizării sau devierea avionului. Actualizarea acestei restricții aeroportuare nu este implementată în acest flux. Nu am înregistrat schimbarea, dedus poziția ori pregătirea pasagerilor sau pornit recuperarea pe condițiile vechi. Raportul explicit de poziție/pregătire poate fi trimis separat. Interpretarea a folosit 1 apel.")
     if raw is None:
         # A dropped report must not become a global event/plan for other groups.
         if (interpreted.get("events") or interpreted.get("strategies") or interpreted.get("recovery")) and re.search(

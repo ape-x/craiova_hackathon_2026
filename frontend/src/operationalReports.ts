@@ -1,12 +1,14 @@
 import type { PassengerGroup, RecoveryIncident, Resource, World } from './types';
 import { utcInputToIso } from './liveData';
 import { sourceInstant } from './resourceFreshness';
+import type { ArrivalRecoveryInput } from './arrivalRecoveryData';
 
 export interface ArrivalReportInput {
   group_ids: string[];
   airport_code: string;
   ready_at: string;
   description: string;
+  recovery?: ArrivalRecoveryInput;
 }
 export interface ArrivalReportForm {
   groupIds: string[];
