@@ -13,7 +13,8 @@ from pydantic import Field, field_validator, model_serializer
 
 from .airport_catalog import lookup_airport
 from .airport_constraints import case_airport_operation_blocked
-from .airport_cab_recovery import AIRPORT_TRANSFER_CONTEXT, AirportCabRecoveryInput, source_airport_transfers, validate_airport_transfer_job
+from .airport_cab_recovery import AIRPORT_TRANSFER_CONTEXT, AirportCabRecoveryInput, source_airport_transfers, validate_airport_transfer_job, validate_airport_transfer_selection
+from .airport_cab_profile import AirportCabProfiles
 from .hotel_location import coordinate_timezone, property_zone
 from .hotel_recovery import HotelRecoveryInputs, _rates, _restore_rates, run_hotel_recovery, validate_hotel_job
 from .live_data import identifier
@@ -251,6 +252,7 @@ class RecoveryJobs:
         self.hotel_provider,self.apl_provider,self.fx_provider=hotel_provider,apl_provider,fx_provider
         self.coach_fares=coach_fares
         self.airport_cab=airport_cab
+        self.airport_cab_profiles=AirportCabProfiles(store)
         self.ledger=RecoveryLedger(store,settings.request_timeout_seconds+60)
         self.task=None
 
@@ -641,6 +643,7 @@ class RecoveryJobs:
                     ({item.id for item in world.resources} if airport_transfers else set()),
                     keep_location_ids={item.id for item in world.airports} if airport_transfers else set())
             before_ids={offer.id for offer in current.offers}
+            validate_airport_transfer_selection(current,plan,job["_request"].get("airport_transfers",[]),fresh_resource_ids=airport_transfer_ids)
             answer=self.service._hold_plan(current,plan,"ai",decision_request["text"],choice.get("provider","OpenAI Decisions"),choice["explanation"],candidates,round((time.perf_counter()-started)*1000,2),timings=timings,scope_group_ids=scope)
             commit_result.update(decision_id=answer["decision"]["id"],plan_id=plan.id,recovered_passengers=plan.recovered_passengers,
                 exception_passengers=sum(item["passengers"] for item in plan.exceptions),offer_ids=[offer.id for offer in current.offers if offer.id not in before_ids],
@@ -648,6 +651,14 @@ class RecoveryJobs:
             return answer
         def completed(conn,response):
             self.ledger.complete_in_transaction(conn,job["id"],owner,response,commit_result)
+            committed=self.store._load(conn)
+            selected_groups={allocation.group_id for allocation in plan.allocations
+                if any(leg.resource_id in airport_transfer_ids for leg in allocation.itinerary.legs)}
+            for raw in job["_request"].get("airport_transfers",[]):
+                if raw["group_id"] in selected_groups:
+                    group=next(item for item in committed.groups if item.id==raw["group_id"])
+                    self.airport_cab_profiles.save_in_transaction(conn,committed,group,
+                        AirportCabRecoveryInput.model_validate(raw),job["id"])
         task=asyncio.create_task(asyncio.to_thread(self.store.mutate,"recovery-job-apply:"+job["id"],{"job_id":job["id"]},world.version,apply,on_commit=completed,request_started=started))
         try:
             await asyncio.shield(task)

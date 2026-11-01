@@ -432,6 +432,19 @@ export interface RecoveryJobInput {
   hotel_recovery?: HotelRecoveryInput;
   airport_transfers?: AirportTransferRecoveryInput[];
 }
+export type AirportTransferProfile =
+  | {
+      group_id: string;
+      configured: true;
+      inputs: AirportTransferRecoveryInput;
+      source_job_id: string;
+      saved_at: string;
+    }
+  | { group_id: string; configured: false; reason: string };
+export interface AirportTransferProfiles {
+  world_version: number;
+  profiles: AirportTransferProfile[];
+}
 export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions' | 'hotel_recovery'> {
   airport_transfer_quotes?: AirportTransferQuoteSummary[];
   ground_references?: import('./coachFareData').GroundFareReference[];

@@ -5,6 +5,7 @@ import AirportTransferRecoveryFields, {
 import { airportTransferInputs } from './airportTransferRecovery';
 import type { AirportTransferDraft } from './airportTransferRecovery';
 import AirportTransferQuoteObservations from './AirportTransferQuoteObservations';
+import SavedAirportTransferInputs from './SavedAirportTransferInputs';
 import { Loader2, RefreshCw, Square } from 'lucide-react';
 import { api, ApiError, TransportError } from './api';
 import type {
@@ -836,6 +837,16 @@ export default function RecoveryJobPanel({
                 value={airportTransfers}
                 onChange={setAirportTransfers}
                 hotelRecovery={hotelMode}
+              />
+            )}
+            {!hotelMode && modes.includes('bus') && selectedGroups.length > 0 && (
+              <SavedAirportTransferInputs
+                world={world}
+                incident={incident}
+                groupIds={selectedGroups}
+                value={airportTransfers}
+                onChange={setAirportTransfers}
+                disabled={locked || active || loading}
               />
             )}
             <label className="field">

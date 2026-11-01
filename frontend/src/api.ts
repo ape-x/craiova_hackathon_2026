@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  AirportTransferProfiles,
   FlightLookup,
   IncidentInput,
   IncidentResult,
@@ -126,6 +127,12 @@ export const api = {
   recoveryJobs: (incidentId: string, signal?: AbortSignal) =>
     request<{ jobs: RecoveryJob[] }>(
       `/incidents/${encodeURIComponent(incidentId)}/recovery-jobs`,
+      undefined,
+      signal,
+    ),
+  airportTransferProfiles: (incidentId: string, signal?: AbortSignal) =>
+    request<AirportTransferProfiles>(
+      `/incidents/${encodeURIComponent(incidentId)}/airport-transfer-profiles`,
       undefined,
       signal,
     ),

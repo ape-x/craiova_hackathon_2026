@@ -263,7 +263,7 @@ def _recovery_requested(text):
     return bool(actions)
 
 
-def _job_request(world, request, case, groups, intent, total, report):
+def _job_request(world, request, case, groups, intent, total, report, *, jobs, conn):
     allowance = total - 1
     if allowance < 3:
         raise RecoveryBlocked("insufficient_call_allowance", f"Limita totală {total} include 1 interpretare; rămân {max(0, allowance)} apeluri, sub minimul jobului. Nu am mărit limita.")
@@ -289,10 +289,17 @@ def _job_request(world, request, case, groups, intent, total, report):
             raise RecoveryBlocked("hotel_setup_required", "Configurația hotelului nu mai corespunde poziției și datelor actuale. Revizuiește formularul; nu presupun coordonate, date sau o preluare nouă.") from exc
         if allowance < REQUIRED_CALLS:
             raise RecoveryBlocked("insufficient_call_allowance", f"Hotelul necesită {REQUIRED_CALLS + 1} apeluri totale, inclusiv interpretarea. Limita curentă {total} nu a fost mărită.")
+    from .airport_cab_commands import AirportTransferSetupRequired, resolve_saved_airport_transfers
+    try:
+        airport_transfers = resolve_saved_airport_transfers(jobs, world, case, groups,
+            intent.modes, followup, allowance, conn=conn)
+    except AirportTransferSetupRequired as exc:
+        raise RecoveryBlocked(exc.code, str(exc)) from exc
     payload = RecoveryJobRequest(expected_version=world.version,
         idempotency_key="live-command-" + Store.fingerprint({"key": request.idempotency_key, "scenario": world.scenario_id}),
         group_ids=groups, objective=intent.objective, modes=intent.modes,
-        max_provider_calls=allowance, instructions=request.text, hotel_recovery=inputs)
+        max_provider_calls=allowance, instructions=request.text, hotel_recovery=inputs,
+        airport_transfers=airport_transfers)
     if inputs is not None:
         try:
             validate_hotel_job(world, payload)
@@ -345,6 +352,14 @@ def route_operational_report(commands, request, world, interpreted):
     # A dropped second assertion must not queue recovery on partly changed facts.
     guard_text = request.text
     airport_report = isinstance(raw, dict) and raw.get("type") == "airport_restriction"
+    if isinstance(raw, dict) and raw.get("type") == "resource_unavailability":
+        resource = next((item for item in world.resources if item.id == raw.get("resource_id")), None)
+        if resource is not None and len(resource.id) > 4 and "-" in resource.id:
+            # A selected compound service ID can contain an airport code (for
+            # example CAB-<receipt>). Mask only that exact existing reference,
+            # never the report predicate or any separate airport assertion.
+            pattern = _reference_pattern(resource.id)
+            guard_text = re.sub(pattern.pattern, lambda match: " " * len(match.group()), guard_text, flags=re.IGNORECASE)
     if airport_report:
         try:
             quote, start = _fragment(request.text, raw.get("report_reference"))
@@ -441,25 +456,33 @@ def route_operational_report(commands, request, world, interpreted):
             from .airport_restrictions import enqueue_airport_restriction_recovery
             job_request, failure = None, None
             try:
-                job_request = _job_request(current, request, case, groups, recovery, total, report)
+                job_request = _job_request(current, request, case, groups, recovery, total, report, jobs=commands.jobs, conn=conn)
             except RecoveryBlocked as exc:
                 failure = {"code": exc.code, "explanation": exc.explanation}
             enqueue_airport_restriction_recovery(conn, commands.store, commands.jobs, response, typed,
                 job_request=job_request, recovery_blocked=failure, interpretation_calls=1, total_call_limit=total)
             return
         try:
-            job_request = _job_request(current, request, case, groups, recovery, total, report)
+            job_request = _job_request(current, request, case, groups, recovery, total, report, jobs=commands.jobs, conn=conn)
+            conn.execute("SAVEPOINT spoken_report_recovery")
             try:
                 result = commands.jobs.start_in_transaction(conn, current, case.id, job_request, supersede_active=True)
             except DomainError as exc:
+                conn.execute("ROLLBACK TO spoken_report_recovery")
+                conn.execute("RELEASE spoken_report_recovery")
                 code = (exc.details or {}).get("code")
+                if exc.status == 422 and job_request.airport_transfers:
+                    raise RecoveryBlocked("airport_transfer_setup_required", exc.message) from exc
                 if code not in ("recovery_queue_full", "recovery_group_active", "recovery_handoff_limit"):
                     raise
                 raise RecoveryBlocked("recovery_queue_unavailable", "Coada este ocupată sau un job deține deja grupurile. Verifică progresul; nu am trimis o altă căutare.") from exc
+            conn.execute("RELEASE spoken_report_recovery")
             response["recovery_job"] = result["job"]
             response["explanation"] += (f" Recuperarea pentru {case.id}, grupurile {', '.join(groups)}, este în coadă. "
                 f"Limita totală {total}: 1 interpretare și cel mult {total - 1} apeluri ale jobului. "
                 "Niciun itinerar găsit sau rezervare efectuată nu este confirmat de această înregistrare.")
+            if job_request.airport_transfers:
+                response["explanation"] += " Configurațiile salvate de transfer au fost copiate exact în cerere; tarifele vor fi căutate din nou, în limita curentă."
             if result["job"].get("supersedes_job_ids"):
                 response["explanation"] += " Cererea nouă înlocuiește încercările depășite pentru grupurile selectate. Așteaptă încheierea apelurilor deja trimise; un rezultat incert cere revizuire înainte de alte apeluri."
         except RecoveryBlocked as exc:

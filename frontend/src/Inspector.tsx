@@ -661,7 +661,9 @@ function DecisionDetails({ decision, world }: { decision: Decision; world: World
         <div className="plan-expired-note">
           <Clock3 size={15} />
           <span>
-            Some offers have expired or changed. Replan to refresh the proposed resources.
+            {world.mode === 'live'
+              ? 'Some proposals have expired or changed. Open the recovery case and start a new provider search when fresh quotes are needed. Replanning alone does not refresh supplier quotes.'
+              : 'Some offers have expired or changed. Replan to refresh the proposed resources.'}
           </span>
         </div>
       )}

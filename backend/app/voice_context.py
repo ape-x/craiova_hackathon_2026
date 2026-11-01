@@ -81,7 +81,7 @@ def _airport_vocabulary(world: World, groups, incident) -> dict:
     return {"source": "local_airport_catalog", "entries": entries[:MAX_CONTEXT_AIRPORTS]}
 
 
-def build_voice_context(world: World, scope: VoiceScope) -> str:
+def build_voice_context(world: World, scope: VoiceScope, *, airport_cab_profiles=None) -> str:
     """Resolve exact selections; fail before creating a paid voice session."""
     incident = next((item for item in world.incidents if item.id == scope.incident_id), None)
     group = next((item for item in world.groups if item.id == scope.group_id), None)
@@ -130,6 +130,14 @@ def build_voice_context(world: World, scope: VoiceScope) -> str:
             "display_label": _label(item.name, 160),
             "saved_hotel_profile_scope_valid": profile_valid,
         })
+        if airport_cab_profiles is not None:
+            from .airport_cab_profile import AirportCabProfileError
+            try:
+                airport_cab_profiles.read(world, item)
+                cab_valid = True
+            except AirportCabProfileError:
+                cab_valid = False
+            facts["groups"][-1]["saved_airport_transfer_scope_valid"] = cab_valid
     result = json.dumps(facts, ensure_ascii=False, separators=(",", ":"))
     if len(result.encode("utf-8")) > MAX_REFERENCE_BYTES:
         raise DomainError(409, "Selected voice reference is too large; select one group")

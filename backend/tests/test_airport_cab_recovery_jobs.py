@@ -28,6 +28,7 @@ import app.store as store_module
 import app.travel as travel_module
 from app.airport_catalog import lookup_airport
 from app.airport_cab_planning import AirportCabImport, AirportCabPlanning, AirportCabPlanningRequest, append_airport_cab_options
+from app.airport_cab_recovery import validate_airport_transfer_selection
 from app.airport_restrictions import AirportRestrictionReportInput, AirportRestrictions
 from app.config import Settings
 from app.inventory_lifecycle import resource_history
@@ -56,6 +57,7 @@ class SourceHTTP:
         self.pause_phase = None
         self.entered, self.release = asyncio.Event(), asyncio.Event()
         self.timeout_phase = None
+        self.mutate_payload = None
 
     async def __call__(self, request):
         phase = "bootstrap" if request.url.path == "/en/book" else "vehicles"
@@ -77,6 +79,8 @@ class SourceHTTP:
         local = datetime.strptime(request.url.params["pickupDateTime"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=LOCAL_ZONE)
         payload.update(datetime_param=local.strftime("%Y-%m-%d %H:%M:%S"),
             datetime=local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
+        if self.mutate_payload:
+            self.mutate_payload(payload)
         return httpx.Response(200, json=payload)
 
 
@@ -692,3 +696,110 @@ async def test_unknown_cab_http_outcome_blocks_arrival_successor_without_duplica
     assert final["status"] == "needs_review" and final["calls_dispatched"] == 0
     assert len(env.source.calls) == 2 and not env.ai.decisions and not env.flights.calls
     assert not env.store.read().offers and not env.store.read().reservations
+
+
+def no_fitting_luggage(payload):
+    for vehicle in payload["vehicle_types"]:
+        vehicle["suitcases"] = vehicle["handbags"] = 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed_inputs", [
+    {}, {"suitcases": 3}, {"handbags": 3}, {"pickup_at": PICKUP + timedelta(hours=1)},
+])
+async def test_new_no_fit_quote_cannot_fall_back_to_existing_cab_even_for_identical_inputs(env, changed_inputs):
+    old = await manual_quote(env, "offline-prior-cab-request")
+    manual_import(env, old, "offline-prior-cab-import")
+    before = env.store.read()
+    env.source.mutate_payload = no_fitting_luggage
+    env.jobs.start("CASE", request(env, airport_transfers=[transfer(**changed_inputs)]))
+    result = await run_next(env.jobs)
+    assert result["status"] == "blocked", result
+    assert result["calls_dispatched"] == 2 and len(env.source.calls) == 4
+    assert not env.ai.decisions and not env.ai.plans and not env.flights.calls
+    assert any(item["code"] == "airport_transfer_not_usable" for item in result["gaps"])
+    assert stable(env.store.read()) == stable(before)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["unknown", "invalid_response"])
+async def test_failed_fresh_source_never_allocates_or_retires_old_cab(env, failure):
+    old = await manual_quote(env, "offline-before-source-error")
+    manual_import(env, old, "offline-before-source-error-import")
+    before = env.store.read()
+    if failure == "unknown":
+        env.source.timeout_phase = "vehicles"
+    else:
+        env.source.mutate_payload = lambda payload: payload.pop("timezone")
+    env.jobs.start("CASE", request(env, airport_transfers=[transfer(suitcases=3)]))
+    result = await run_next(env.jobs)
+    assert result["status"] == ("unknown_outcome" if failure == "unknown" else "failed"), result
+    assert result["calls_dispatched"] == 2 and len(env.source.calls) == 4
+    assert not env.ai.decisions and stable(env.store.read()) == stable(before)
+
+
+@pytest.mark.asyncio
+async def test_no_fit_search_preserves_other_group_cab_and_authoritative_old_quote(env):
+    def relocate_other(world):
+        world.groups[1].origin, world.groups[1].destination = "OTP", "CRA"
+    change(env.store, relocate_other)
+    selected = await manual_quote(env, "offline-selected-existing-cab")
+    manual_import(env, selected, "offline-selected-existing-import")
+    other = await manual_quote(env, "offline-other-existing-cab", "G2")
+    imported_other = manual_import(env, other, "offline-other-existing-import")
+    before = env.store.read()
+    env.source.mutate_payload = no_fitting_luggage
+    env.jobs.start("CASE", request(env))
+    result = await run_next(env.jobs)
+    assert result["status"] == "blocked" and result["calls_dispatched"] == 2
+    assert len(env.source.calls) == 6 and stable(env.store.read()) == stable(before)
+    assert next(item for item in env.store.read().resources if item.id == imported_other["resource_ids"][0]).available
+    excluded = next(item for item in result["gaps"] if item["code"] == "airport_transfer_previous_quote_excluded")
+    assert excluded["group_ids"] == ["G1"]
+
+
+@pytest.mark.asyncio
+async def test_job_without_explicit_cab_search_can_use_current_existing_quote(env):
+    old = await manual_quote(env, "offline-current-existing-cab")
+    imported = manual_import(env, old, "offline-current-existing-import")
+    env.jobs.start("CASE", request(env, airport_transfers=[]))
+    result = await run_next(env.jobs)
+    assert result["status"] == "completed" and result["calls_dispatched"] == 1, result
+    assert len(env.source.calls) == 2 and len(env.ai.decisions) == 1
+    assert result["result"]["resource_ids"] == imported["resource_ids"]
+
+
+@pytest.mark.asyncio
+async def test_successful_fresh_request_uses_new_category_and_retires_old_revision(env):
+    old = await manual_quote(env, "offline-old-before-refresh")
+    imported = manual_import(env, old, "offline-old-before-refresh-import")
+    env.jobs.start("CASE", request(env, airport_transfers=[transfer(handbags=3)]))
+    result = await run_next(env.jobs)
+    assert result["status"] == "completed" and result["calls_dispatched"] == 3, result
+    assert len(env.source.calls) == 4
+    assert not set(imported["resource_ids"]) & set(result["result"]["resource_ids"])
+    current = next(item for item in env.store.read().resources if item.source == SOURCE and item.available)
+    assert current.provenance["airport_cab_quote"]["request"]["handbags"] == 3
+    assert current.quote_total_cost == 212
+    assert any(item.id in imported["resource_ids"] and not item.available
+        for item in resource_history(env.store.read(), source=SOURCE, group_id="G1"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch", ["not_fresh", "suitcases", "handbags", "pickup_at"])
+async def test_independent_commit_guard_requires_fresh_category_and_exact_request(env, mismatch):
+    old = await manual_quote(env, "offline-guard-cab")
+    imported = manual_import(env, old, "offline-guard-cab-import")
+    world = env.store.read()
+    plan = solver.build_candidate(world, Strategy(id="guard", label="Guard", objective="balanced"), scope_group_ids={"G1"})
+    assert plan.recovered_passengers == 2 and plan.validation["valid"]
+    values = {} if mismatch == "not_fresh" else {mismatch: PICKUP + timedelta(hours=1) if mismatch == "pickup_at" else 3}
+    with pytest.raises(DomainError) as error:
+        validate_airport_transfer_selection(world, plan, [transfer(**values)],
+            fresh_resource_ids=[] if mismatch == "not_fresh" else imported["resource_ids"])
+    assert error.value.details["code"] == "airport_transfer_request_mismatch"
+    assert stable(env.store.read()) == stable(world)
+    # Offset spelling does not alter the exact instant; this guard receives its
+    # fresh-ID allowlist from the worker, independently of source validation.
+    validate_airport_transfer_selection(world, plan,
+        [transfer(pickup_at="2030-01-04T12:00:00+02:00")], fresh_resource_ids=imported["resource_ids"])

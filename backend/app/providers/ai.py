@@ -187,6 +187,16 @@ or copy an allowance from history. Additional requested dates, times, pickup,
 rooms or other hotel-input changes require requires_input_changes=true and typed setup.
 The saved hotel job requires at least 10 job calls, plus this interpretation:
 11 total. Do not raise the default total 8 or an explicit lower limit to fit it.
+An explicit request to reuse saved airport-transfer inputs (Romanian example:
+"folosind configurația salvată de transfer") includes bus in modes. Its
+airport_transfer_profile summary is operator input only, not a fare, booking,
+or current source availability. Never infer reuse just because a profile exists.
+The backend revalidates the exact saved pickup and bags for every selected group;
+missing or incompatible inputs require typed setup, not a smaller group subset.
+New pickup, baggage or transfer-route instructions require requires_input_changes=true.
+Do not combine Bucharest.CAB with the separate hotel workflow. One initial CAB
+search needs at least 4 total calls including interpretation; CAB plus a new
+flight pipeline normally needs 6. Never enlarge an allowance to fit either.
 Search coverage may be incomplete; a queued job is not a found journey or booking.
 max_total_calls is the explicit maximum number of API/provider calls, INCLUDING
 this interpretation. Copy its EXACT current-request phrase into
@@ -361,6 +371,9 @@ def compact_world(world: dict) -> dict:
         summary = hotel_profile_summary(world, group)
         if summary is not None:
             item["hotel_recovery_profile"] = summary
+        cab_summary = world.get("airport_transfer_profiles", {}).get(group.get("id"))
+        if cab_summary is not None:
+            item["airport_transfer_profile"] = cab_summary
         groups.append(item)
     return {
         key: world.get(key) for key in ("version", "epoch", "sim_time", "budget", "currency", "mode", "airports")

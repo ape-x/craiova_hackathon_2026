@@ -21,6 +21,8 @@ REFERENCE_POLICY = (
     "If that result provides only a time, do not add a date from the case or startup context. "
     "Airport vocabulary contains only canonical names and IATA codes from the local reference catalog. "
     "It does not establish observed passenger positions, arrival, airport availability, or permission to land. "
+    "A scope-valid saved airport-transfer profile is reference data only. Reuse requires an explicit current "
+    "request; never infer new pickup times, bags, routes or a larger call limit. "
     "A scope-valid saved hotel profile is not a saved fare, a booking, or proof that its "
     "dates and current constraints remain usable; the backend must revalidate them. "
     "The selection is a startup snapshot and may change. Only a verified backend result "

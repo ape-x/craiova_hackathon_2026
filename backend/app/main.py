@@ -356,6 +356,15 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     def recovery_job_list(incident_id: str):
         return jobs.list(incident_id)
 
+    @app.get("/api/incidents/{incident_id}/airport-transfer-profiles",dependencies=[Depends(operator)])
+    def airport_transfer_profiles(incident_id: str):
+        with store.connect() as conn:
+            conn.execute("BEGIN")
+            world=store._load(conn)
+            if not any(case.id==incident_id for case in world.incidents):
+                raise DomainError(404,"Selected case no longer exists")
+            return {"world_version":world.version,"profiles":jobs.airport_cab_profiles.public_for_case(world,incident_id,conn=conn)}
+
     @app.get("/api/recovery-jobs/{job_id}",dependencies=[Depends(operator)])
     def recovery_job_get(job_id: str):
         return jobs.get(job_id)
@@ -457,7 +466,8 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     async def voice_session(body: VoiceRequest):
         if body.scope is None:
             return await voice.create(body.sdp)
-        context=build_voice_context(await asyncio.to_thread(store.read),body.scope)
+        context=await asyncio.to_thread(build_voice_context,await asyncio.to_thread(store.read),body.scope,
+            airport_cab_profiles=jobs.airport_cab_profiles)
         return await voice.create(body.sdp,reference_context=context)
 
     @app.post("/api/traffic/start",dependencies=[Depends(operator)])

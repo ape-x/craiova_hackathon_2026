@@ -76,6 +76,61 @@ def validate_airport_transfer_job(world, request, airport_cab):
             raise DomainError(422, exc.message) from exc
 
 
+def _matches_transfer_request(resource, group, request):
+    """Compare declared inputs, never infer bags from category capacity."""
+    try:
+        quoted = resource.provenance["airport_cab_quote"]["request"]
+        return (resource.eligible_group_ids == [request.group_id]
+            and resource.origin == "OTP" and resource.destination == request.destination_airport
+            and quoted["origin_airport"] == "OTP" and quoted["destination_airport"] == request.destination_airport
+            and type(quoted["passengers"]) is int and quoted["passengers"] == group.size
+            and type(quoted["suitcases"]) is int and quoted["suitcases"] == request.suitcases
+            and type(quoted["handbags"]) is int and quoted["handbags"] == request.handbags
+            and aware_timestamp(quoted["pickup_at"]) == request.pickup_at)
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return False
+
+
+def validate_airport_transfer_selection(world, plan, inputs, *, fresh_resource_ids=()):
+    """Independent commit guard for this job's explicitly refreshed CAB scope.
+
+    A current old receipt is insufficient after an explicit new source request,
+    even when its original pickup and luggage happen to match. The caller passes
+    only IDs built from this job's returned, validated source receipts.
+    """
+    requested = {item.group_id: item for value in inputs
+        for item in [AirportCabRecoveryInput.model_validate(value)]}
+    if not requested:
+        return
+    fresh = set(fresh_resource_ids)
+    resources, groups = {item.id: item for item in world.resources}, {item.id: item for item in world.groups}
+    for allocation in plan.allocations:
+        request = requested.get(allocation.group_id)
+        if request is None:
+            continue
+        group = groups.get(allocation.group_id)
+        for leg in allocation.itinerary.legs:
+            resource = resources.get(leg.resource_id)
+            if resource is not None and resource.source == SOURCE and (
+                    resource.id not in fresh or group is None or not _matches_transfer_request(resource, group, request)):
+                raise DomainError(409, "The selected airport vehicle does not have this search's fresh exact pickup and luggage evidence",
+                    {"code": "airport_transfer_request_mismatch", "group_id": allocation.group_id, "resource_id": resource.id})
+
+
+def _exclude_previous_cab_quotes(projected, inputs, staged):
+    """Candidate-only exclusion; the authoritative source inventory is untouched."""
+    requested = {item.group_id for item in inputs}
+    fresh = {identity for item in staged for identity in item["resources"]}
+    affected = set()
+    for resource in projected.resources:
+        if (resource.source == SOURCE and resource.id not in fresh
+                and len(resource.eligible_group_ids or []) == 1
+                and resource.eligible_group_ids[0] in requested and resource.available):
+            resource.available = False
+            affected.add(resource.eligible_group_ids[0])
+    return sorted(affected)
+
+
 async def source_airport_transfers(jobs, job, owner, world, gaps, source_counts):
     """Stage independently quoted alternatives; each HTTP dispatch has its own receipt."""
     from .airport_cab_planning import append_airport_cab_options
@@ -89,10 +144,19 @@ async def source_airport_transfers(jobs, job, owner, world, gaps, source_counts)
     def missing(code, message, ids):
         gaps.append({"code": code, "message": message, "group_ids": list(ids)})
 
+    def finish_projection():
+        # Apply after normal source staging, so prior-revision retirement is
+        # recorded normally when a new usable receipt actually exists.
+        affected = _exclude_previous_cab_quotes(projected, inputs, staged)
+        if affected:
+            missing("airport_transfer_previous_quote_excluded",
+                "This explicit airport transfer search requires a freshly returned category for the exact pickup and luggage. Earlier CAB receipts were excluded from this attempt; stored inventory was not changed by that exclusion.", affected)
+        return projected, staged
+
     fixed_ids = {leg.resource_id for offer in fixed_offers(world, set(job["group_ids"])) for leg in offer.itinerary.legs}
     if any(resource.source == SOURCE and resource.id in fixed_ids for resource in world.resources):
         missing("airport_transfer_fleet_unverified", "A fixed allocation already uses this source. Additional vehicle availability is unverified, so no replacement vehicle was queried or assumed.", [item.group_id for item in inputs])
-        return projected, staged
+        return finish_projection()
 
     for item in inputs:
         if await jobs._cancelled(job, owner):
@@ -152,4 +216,4 @@ async def source_airport_transfers(jobs, job, owner, world, gaps, source_counts)
         else:
             missing("airport_transfer_not_usable", "The source returned no category covering the exact party, luggage, pickup and current planning window. No pickup was shifted and no vehicle was invented.", [item.group_id])
         await jobs._update(job, owner, airport_transfer_quotes=observed, source_counts=source_counts, gaps=gaps)
-    return projected, staged
+    return finish_projection()

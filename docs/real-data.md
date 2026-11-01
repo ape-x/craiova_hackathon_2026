@@ -100,6 +100,13 @@ after a future flight. A fixed allocation already using Bucharest.CAB prevents
 additional sourcing from this source, and the combined plan may use at most one
 quoted vehicle. Several group searches do not establish several available cars.
 
+An explicit fresh CAB search excludes all earlier CAB categories for its selected
+groups from candidate evaluation, even if the old pickup and bags match. A new
+no-fit result cannot fall back to the old fare. The commit guard requires both a
+resource returned by this attempt and its exact requested pickup/party/luggage.
+This projection-only exclusion does not withdraw stored inventory on failure;
+other groups and jobs without an explicit fresh CAB search remain unaffected.
+
 Only the selected vehicle category and selected onward resources are committed
 with the complete validated proposal in one transaction. Current version, scope,
 receipt freshness and revision retirement are rechecked; unrelated inventory is
@@ -107,11 +114,32 @@ protected. Expired, cancelled or unknown attempts are not retried or refreshed
 automatically. The short receipt window can expire while the rest of the plan
 is being evaluated; no old quote is silently renewed. There are no bookings.
 
-Current voice commands do not supply `airport_transfers`; they cannot infer its
-pickup or baggage inputs. Historical live evidence above covers the consumer
-quote and manual path. The new combined automatic CAB-plus-flight flow has
-**offline mocked integration verification only**, not live production acceptance.
-See the [verification report](verification/report.md) for separately dated evidence.
+A successful complete allocation that actually uses a newly sourced CAB category
+saves its exact operator inputs in the separate SQLite `airport_cab_profiles`
+table, in the same transaction. Quote-only searches, manual imports, unused
+alternatives and failed/cancelled attempts do not replace the profile. Its
+identity binds scenario/epoch, reciprocal case membership, original flight/date,
+party composition/source and route; current readiness, deadlines, budgets,
+airport conditions and source rules are checked again. The profile is not a fare,
+booking or permission to search, and does not change passenger/source fingerprints.
+
+The authenticated `GET /api/incidents/{id}/airport-transfer-profiles` returns
+saved inputs for review. The UI reads them only on **Review saved transfer inputs**;
+loading a group fills its form without calling a supplier, submitting a job or
+raising the selected allowance. The current request can explicitly reuse saved
+transfers in Romanian or English, both in ordinary recovery and after an
+operational report. It must identify saved transfers explicitly; a profile's
+existence alone does not authorize sourcing. Every selected group needs its own
+valid profile. Pickup/bags remain exact; requested edits require typed review.
+Ground mode is required and the hotel workflow remains separate.
+
+Voice/text allowance includes interpretation: **2N+2 total calls** is the CAB-only
+floor, or **four** for one group. One CAB plus a new flight pipeline requires
+**six total calls**. The original cap is retained, and profiles do not carry an
+old allowance. Historical live evidence above covers the consumer quote and
+manual path. Automatic CAB-plus-flight recovery and saved-input voice reuse have
+**offline mocked verification only**; no paid spoken run or live combined CAB
+acceptance is claimed. See the [verification report](verification/report.md).
 
 **Compare hotel prices** opens the public Momondo hotel search and provides a
 copyable summary of the airport, dates, guests and rooms. The search summary is
