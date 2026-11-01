@@ -4,7 +4,54 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `e726929` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `baf061f` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+
+### Exact itinerary review and ground-route capacity — 1 November 2026
+
+Release `baf061f` adds **Review itinerary** to a successful recovery's current
+offers. It opens the complete chronological itinerary in the passenger inspector
+and focuses that group. The navigation pins the exact job/offer/version identity,
+rechecks reciprocal case membership and current eligibility, and never substitutes
+a newer proposal. Confirmed offers remain reviewable after quote expiry. Returning
+to the case preserves the independent unsent draft, selected groups, call limit
+and incomplete inputs. Closing auxiliary dialogs also retains that draft;
+pending/unknown mutations prevent departure. No supplier search is triggered.
+
+Ground-chain discovery previously counted only mirrored reservation rows, while
+the solver counted retained itinerary legs. Four regressions reproduced false
+availability when legacy mirror rows were missing. Both paths now share fixed
+itinerary usage, preserving selected-group replacement and out-of-scope allocations
+without double-counting matching reservations. This excludes already occupied
+connections before proposing an alternate-airport flight query.
+
+The ineffective **Return to simulation view** action is absent from live Maps
+errors. Internal simulation keeps its genuine fallback. Maps documentation now
+describes the live geographic default and its source/overlay boundaries; historic
+provider sections distinguish the implemented after-flight path from its pending
+live acceptance.
+
+Final local verification passed **2,943 backend tests and 946 frontend tests across
+55 files**, TypeScript/production build, formatting and diff checks. Independent
+review checked actual backend offer/job version correspondence and found one
+auxiliary-dialog draft-loss path, which was fixed and covered. Exact current-offer
+navigation, replacement/expiry, draft preservation and mutation locks have offline
+component evidence, not a fresh successful provider run.
+
+Both containers were built from the exact committed archive and replaced the
+existing services after a verified private backup; rollback images are retained.
+Read-only Chrome QA loaded `index-0K-C9ee0.js`, showed Connected and zero console
+errors, and opened an existing completed attempt. Its expired offer explicitly
+reported that no replacement was selected. The modal was then closed. No current
+offer or synthetic runtime receipt was created to demonstrate the new action.
+
+The whole world except its clock and all case-job history remained unchanged:
+version 52, two groups, 25 resources, no active jobs or confirmed offers/resources.
+FR24 remained paused at 81 requests / 3,215 reserved credits; CAB remained two
+receipts / four HTTP calls, recovery steps 27 and both saved-transfer counts zero.
+No new paid voice/model/source test was run. A fresh Google Console attempt again
+reported the `gstatic.com` loading failure; no account configuration changed.
+Remaining production gates are still open. See
+[machine-readable release evidence](itinerary-review-release.json).
 
 ### Atomic service outage and passenger arrival — 1 November 2026
 

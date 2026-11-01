@@ -1,0 +1,91 @@
+{
+  "checked_at_utc": "2026-11-01T06:17:09.878853+00:00",
+  "code_revision": "baf061fd2d0b6a35c2d12e269ffe97b6cedf2cc1",
+  "deployed_api_revision": "baf061fd2d0b6a35c2d12e269ffe97b6cedf2cc1",
+  "deployed_web_revision": "baf061fd2d0b6a35c2d12e269ffe97b6cedf2cc1",
+  "url": "http://localhost:8080",
+  "exact_commit_archive_build": true,
+  "additional_app_servers_started": false,
+  "backup_integrity": "ok",
+  "rollback_images_retained": true,
+  "checks": {
+    "backend_tests_passed": 2943,
+    "frontend_tests_passed": 946,
+    "frontend_test_files": 55,
+    "typescript": true,
+    "production_build": true,
+    "format": true,
+    "diff_check": true,
+    "independent_review": true
+  },
+  "offline_acceptance": {
+    "fixed_capacity_without_mirror_rows": true,
+    "matching_rows_not_double_counted": true,
+    "selected_group_proposals_remain_replaceable": true,
+    "exact_current_job_offer_navigation": true,
+    "no_replaced_offer_fallback": true,
+    "confirmed_offer_after_quote_expiry": true,
+    "independent_full_draft_preserved": true,
+    "auxiliary_dialog_close_preserves_review": true,
+    "pending_unknown_mutation_locks": true,
+    "live_maps_simulation_fallback_absent": true
+  },
+  "browser": {
+    "bundle": "/assets/index-0K-C9ee0.js",
+    "connected": true,
+    "captured_console_errors": 0,
+    "historical_completed_attempt_opened": true,
+    "expired_proposal_no_replacement_message": true,
+    "current_offer_navigation_exercised_live": false,
+    "search_submitted": false,
+    "modal_closed": true
+  },
+  "operational_state": {
+    "world_version": 52,
+    "groups": 2,
+    "resources": 25,
+    "active_jobs": 0,
+    "confirmed_offers": 0,
+    "confirmed_resources": 0,
+    "traffic_running": false,
+    "whole_world_except_clock_unchanged": true,
+    "all_case_job_history_unchanged": true
+  },
+  "unchanged_usage": {
+    "fr24_requests": 81,
+    "fr24_credits": 3215,
+    "cab_receipts": [
+      2,
+      4
+    ],
+    "recovery_steps": 27,
+    "saved_transfer_profiles": 0,
+    "saved_after_flight_profiles": 0
+  },
+  "google_admin": {
+    "console_loaded": false,
+    "observed_error": "Google Cloud Console has failed to load JavaScript sources from www.gstatic.com.",
+    "account_configuration_changed": false
+  },
+  "limitations": [
+    "Current-offer review and draft retention have offline component evidence; the live browser check used a historical expired proposal.",
+    "No fresh paid voice/model/flight/transport source acceptance run was performed.",
+    "Prior spoken recovery remains incomplete; its authorization was not reused.",
+    "Google account administration and broader Romanian ground supply remain open gates.",
+    "Full production acceptance remains open as detailed in report.md."
+  ],
+  "code_ci": [
+    {
+      "branch": "main",
+      "number": 175,
+      "status": "success",
+      "url": "https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41279906323"
+    },
+    {
+      "branch": "codex/airport-recovery-live",
+      "number": 174,
+      "status": "success",
+      "url": "https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41279906205"
+    }
+  ]
+}
