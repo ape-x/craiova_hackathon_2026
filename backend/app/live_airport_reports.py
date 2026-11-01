@@ -78,12 +78,18 @@ def _mask_closed_predicate(claim, reference_span):
     return "".join(result)
 
 
-def ground_airport_restriction(world, request, report):
+def ground_airport_restriction(world, request, report, *, already_bound_case=None):
     from .airport_restrictions import AirportRestrictionReportInput
     from .live_operational_commands import Clarification, _airport, _case, _fragment, _group_mentions
     from .live_commands import _reference_pattern
 
-    case = _case(world, request.text, report.incident_id)
+    # A bounded compound caller first binds both children against the unchanged
+    # original request. Its validation view may mask the other assertion that
+    # contained that literal case reference, but cannot add another authority.
+    case = already_bound_case if already_bound_case is not None else _case(world, request.text, report.incident_id)
+    if already_bound_case is not None and (not any(item is case for item in world.incidents)
+            or report.incident_id not in (None, case.id)):
+        raise Clarification("Referința restricției nu corespunde cazului deja identificat în cererea originală.")
     claim, start = _fragment(request.text, report.report_reference)
     reference, airport_start = _fragment(claim, report.airport_reference)
     airport = _airport(_mask_closed_predicate(claim, (airport_start, airport_start + len(reference))),

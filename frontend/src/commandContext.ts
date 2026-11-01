@@ -1,5 +1,10 @@
 import type { MutationResult, World } from './types';
 import { ApiError, TransportError } from './api';
+import {
+  combinedReports,
+  combinedReportDetails,
+  UNCONFIRMED_COMBINED_REPORT,
+} from './combinedReports';
 
 export type CommandExchange = {
   request: string;
@@ -90,6 +95,10 @@ export function commandContext(
 }
 
 export function verifiedCommandResult(result: MutationResult): string {
+  const bundle = combinedReports(result);
+  if (bundle.state === 'invalid') return UNCONFIRMED_COMBINED_REPORT;
+  if (bundle.state === 'combined')
+    return `${combinedReportDetails(bundle, result.replayed)}${result.explanation ? ` ${result.explanation}` : ''} Versiunea ${result.world.version}.`;
   if (result.incident_id && result.recovery_job) {
     // This is a receipt/status snapshot, not evidence that a journey was found
     // or accepted. The case panel fetches the current job's progress separately.
@@ -107,6 +116,7 @@ export function verifiedCommandResult(result: MutationResult): string {
 
 /** Do not reopen an obsolete case from a replay after the operation changed. */
 export function recoveryCaseForResult(result: MutationResult, current: World): string | null {
+  if (combinedReports(result).state === 'invalid') return null;
   if (current.mode !== 'live' || result.world.scenario_id !== current.scenario_id) return null;
   const id = result.incident_id;
   if (!id || !(current.incidents ?? []).some((incident) => incident.id === id)) return null;
@@ -116,10 +126,13 @@ export function recoveryCaseForResult(result: MutationResult, current: World): s
 
 /** A no-change response may be a question the operator still needs to answer. */
 export function keepCommandReplyVisible(result: MutationResult): boolean {
+  if (result.reports !== undefined) return true;
   return result.applied === false && !(result.focus_id ?? result.decision?.focus_id);
 }
 
 export function commandNeedsRegionalView(before: World, result: MutationResult): boolean {
+  // A combined receipt owns an arrival focus, or is unconfirmed and must not move the map.
+  if (result.reports !== undefined) return false;
   if (result.applied === false) return false;
   if (
     before.scenario_id !== result.world.scenario_id &&

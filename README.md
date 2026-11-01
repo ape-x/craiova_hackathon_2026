@@ -119,6 +119,8 @@ GPT-Live transmite cererea către backend. Sol Ultrafast interpretează cerințe
 
 Solverul folosește o căutare limitată: validează constrângerile, fără a demonstra optimalitatea globală. Microfonul necesită HTTPS sau localhost. Confirmarea vocală de pornire anunță numai cererea înregistrată; progresul și propunerile apar în cazul corespunzător. Limita implicită a comenzii este de opt apeluri în total, incluzând interpretarea; formularul cazului permite implicit opt apeluri ale căutării. Interpretarea cu rezultat necunoscut nu este repetată automat. Erorile AI nu sunt înlocuite cu răspunsuri prestabilite.
 
+Restricția unui aeroport și poziția/pregătirea pasagerilor pot fi declarate împreună pentru același caz: „Pentru RO321, OTP nu mai permite aterizarea. G1 este la CRA, pregătit în 30 de minute. Recalculează zboruri pentru G1, maximum patru apeluri.” Folosește zborul și grupurile existente în operațiune. Backendul verifică ambele declarații și le salvează atomic înaintea unei singure căutări pentru exact acele grupuri. Vocea confirmă ambele rapoarte și starea reală a cererii; FR24 nu este modificat, iar devierea aeronavei nu stabilește automat poziția pasagerilor. Acest flux combinat are verificări offline; o nouă probă vocală plătită rămâne de autorizat separat.
+
 ## Structura proiectului
 
 ```text

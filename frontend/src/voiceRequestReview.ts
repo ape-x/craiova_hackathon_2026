@@ -1,5 +1,6 @@
 import { ApiError, SearchOutcomeUnknownError } from './api';
 import { verifiedCommandResult } from './commandContext';
+import { combinedReports } from './combinedReports';
 import type { DelegationRequest } from './liveVoice';
 import type { MutationResult } from './types';
 
@@ -34,6 +35,7 @@ export type VoiceRequestReview = Readonly<{
     | 'response_received'
     | 'recovery_recorded'
     | 'report_recorded'
+    | 'reports_recorded'
     | 'unknown';
   detail: string;
 }>;
@@ -84,15 +86,21 @@ export function settleVoiceRequestReview(
   }
   const result = outcome.result;
   if (result.world.scenario_id !== scenarioId) return null;
-  const status: VoiceRequestReview['status'] = result.recovery_job
-    ? 'recovery_recorded'
-    : result.report
-      ? 'report_recorded'
-      : result.applied === false
-        ? 'not_applied'
-        : result.applied === true
-          ? 'applied'
-          : 'response_received';
+  const bundle = combinedReports(result);
+  const status: VoiceRequestReview['status'] =
+    bundle.state === 'invalid'
+      ? 'unknown'
+      : result.recovery_job
+        ? 'recovery_recorded'
+        : bundle.state === 'combined'
+          ? 'reports_recorded'
+          : result.report
+            ? 'report_recorded'
+            : result.applied === false
+              ? 'not_applied'
+              : result.applied === true
+                ? 'applied'
+                : 'response_received';
   return Object.freeze({ ...current, status, detail: verifiedCommandResult(result) });
 }
 
@@ -107,6 +115,7 @@ export const voiceReviewStatusLabel: Record<VoiceRequestReview['status'], string
   response_received: 'Backend response received',
   recovery_recorded: 'Recovery request recorded',
   report_recorded: 'Operational report recorded',
+  reports_recorded: 'Operational reports recorded',
   unknown: 'Outcome unconfirmed',
 };
 

@@ -91,10 +91,16 @@ class LiveAirportRestrictionReport(StrictModel):
     report_reference: str | None = Field(max_length=2000)
 
 
+class LiveAirportRestrictionAndArrival(StrictModel):
+    type: Literal["airport_restriction_and_arrival"]
+    restriction: LiveAirportRestrictionReport
+    arrival: LiveArrivalReport
+
+
 class LiveInterpretation(Interpretation):
     recovery: LiveRecoveryIntent | None
     # Nested anyOf is supported by Structured Outputs; no discriminator/oneOf.
-    operational_report: LiveArrivalReport | LiveResourceUnavailability | LiveAirportRestrictionReport | None
+    operational_report: LiveArrivalReport | LiveResourceUnavailability | LiveAirportRestrictionReport | LiveAirportRestrictionAndArrival | None
 
 
 LIVE_COMMAND_PROMPT = """Interpret Romanian or English operator requests for real passenger recovery.
@@ -145,12 +151,24 @@ or move passengers. Never infer passenger position/readiness from this report.
 Only immediate current restrictions are represented. Historical, future, timed,
 conditional or mixed restrict/clear assertions require clarification; never drop
 a temporal qualifier, exception, condition or directional narrowing from a quote.
-Aircraft movement/diversion commands and combined reports about multiple airports
+Aircraft movement/diversion commands and multiple airport restriction reports
 require separate, explicit inputs; do not omit them and apply only one clause.
 For this report the restriction applies to the whole named case; optional recovery
 still needs its own explicitly selected linked groups. Flight-only recovery may
 use those unchanged locations. A saved complete hotel journey can be reused only
 when explicitly requested and still valid for the current case constraints.
+For exactly ONE airport restriction AND ONE explicit passenger position/readiness
+assertion in the CURRENT request, use airport_restriction_and_arrival with nested
+restriction and arrival objects. Both must identify the same existing case; their
+airports may differ. Each report_reference must quote its own complete assertion,
+verbatim and without overlap, including its qualifiers. Never use this bundle to
+infer passenger arrival from a diverted aircraft or a flight ETA. The arrival
+must explicitly state the linked groups and their own readiness. Shared negation,
+conditional scope or an additional report requires clarification; do not omit it.
+The backend records both reports together or neither. Optional recovery must use
+exactly the arrival's groups, after both changes, with one interpretation included
+in the original total call cap. Use the ordinary single-report type when only one
+assertion is present. Never fabricate a second assertion to enable this bundle.
 Report requests always have EMPTY events/strategies and focus_id=null. recovery
 is null for report-only. Only if the CURRENT request ALSO explicitly asks to
 search/recover, include recovery.action=start with the same explicit case/groups.

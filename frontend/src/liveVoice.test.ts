@@ -523,6 +523,59 @@ function command(channel: FakeChannel, id = 'delegation-1', text = 'Arată autoc
 }
 
 describe('GPT-Live lifecycle with mocked browser resources', () => {
+  it('submits a combined report once and returns one acknowledgement containing both reports', async () => {
+    const result = reportReceipt({ recovery_job: queuedJob(), recovery_total_call_limit: 8 });
+    result.reports = [
+      {
+        id: 'opr_restriction',
+        type: 'airport_restriction',
+        source: 'operator_report',
+        incident_id: 'CASE1',
+        received_at: '2026-11-01T09:00:00Z',
+        description: 'Operator restricts Craiova arrivals for the case.',
+        airport_code: 'CRA',
+        operations: ['arrivals'],
+        action: 'restrict',
+        recovery_group_ids: ['G1', 'G2'],
+        affected_group_ids: [],
+        affected_offer_ids: [],
+      },
+      structuredClone(result.report!),
+    ];
+    const onDelegation = vi.fn<LiveVoiceOptions['onDelegation']>(
+      ({ text, context, delegationId }) =>
+        request<MutationResult>('/commands', {
+          text,
+          context,
+          expected_version: 6,
+          idempotency_key: `voice-${delegationId}`,
+        }),
+    );
+    const { client, channel } = await connected({ onDelegation });
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => result });
+    const text =
+      'Restricționează aterizările la CRA pentru CASE1. Grupurile G1 și G2 sunt pregătite la OTP la 2026-11-01 10:30 UTC. Recalculează cu maximum 8 apeluri.';
+    command(channel, 'combined-report', text);
+    channel.emit({
+      type: 'session.delegation.created',
+      event_id: 'duplicate-combined',
+      offset_ms: 1000,
+      delegation: { id: 'combined-report', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledOnce();
+    expect(onDelegation.mock.calls[0][0].text).toBe(text);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // One handshake, one command. No child submissions.
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/commands');
+    const spoken = channel.sent.filter((event) => event.type === 'session.commentary.append');
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0].content).toContain('CRA, aterizări, restricție aplicată în caz');
+    expect(spoken[0].content).toContain('2 grupuri la OTP');
+    expect(spoken[0].content).toContain('Căutare înregistrată');
+    expect(new TextEncoder().encode(String(spoken[0].content)).byteLength).toBeLessThanOrEqual(480);
+    await end(client, channel);
+  });
+
   it('speaks the report outcome once and never borrows earlier search scope or a call cap for the next report', async () => {
     const onDelegation = vi
       .fn<LiveVoiceOptions['onDelegation']>()

@@ -240,7 +240,9 @@ function Operations() {
       receive(result.world);
       const reportedAirport = reportedArrivalFocus(result, worldRef.current ?? result.world);
       const focus =
-        result.report?.type === 'arrival_report' || result.report?.type === 'airport_restriction'
+        result.reports !== undefined ||
+        result.report?.type === 'arrival_report' ||
+        result.report?.type === 'airport_restriction'
           ? reportedAirport
           : (result.focus_id ?? result.decision?.focus_id);
       if (replaced && !focus) setSelectedId(null);

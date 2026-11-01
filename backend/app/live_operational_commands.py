@@ -263,7 +263,7 @@ def _recovery_requested(text):
     return bool(actions)
 
 
-def _job_request(world, request, case, groups, intent, total, report, *, jobs, conn):
+def _job_request(world, request, case, groups, intent, total, report, *, jobs, conn, additional_reports=()):
     allowance = total - 1
     if allowance < 3:
         raise RecoveryBlocked("insufficient_call_allowance", f"Limita totală {total} include 1 interpretare; rămân {max(0, allowance)} apeluri, sub minimul jobului. Nu am mărit limita.")
@@ -272,8 +272,10 @@ def _job_request(world, request, case, groups, intent, total, report, *, jobs, c
     if any(group.id in groups and group.status == "confirmed" for group in world.groups) or any(offer.group_id in groups and offer.status == "confirmed" for offer in world.offers):
         raise RecoveryBlocked("recovery_prerequisite_failed", "Grupurile cu rezervări confirmate necesită tratare separată; nu le înlocuiesc rezervările.")
     inputs = None
-    report_text, report_start = _fragment(request.text, report.report_reference)
-    followup = request.text[:report_start] + " " * len(report_text) + request.text[report_start + len(report_text):]
+    followup = request.text
+    spans = [_fragment(request.text, item.report_reference) for item in (report, *additional_reports)]
+    for report_text, report_start in sorted(spans, key=lambda item: item[1], reverse=True):
+        followup = followup[:report_start] + " " * len(report_text) + followup[report_start + len(report_text):]
     hotel = "hotel" in intent.modes or bool(re.search(r"\b(?:hotel\w*|cazare\w*|accommodation)\b", normalized(followup)))
     if hotel:
         if len(groups) != 1 or set(intent.modes) != {"flight", "hotel", "bus"}:
@@ -348,6 +350,9 @@ def _unsupported_airport_change(text, *, allow_diversion_background=False):
 
 def route_operational_report(commands, request, world, interpreted):
     raw = interpreted.get("operational_report")  # older durable records omit it
+    if isinstance(raw, dict) and raw.get("type") == "airport_restriction_and_arrival":
+        from .live_diversion_commands import route_diversion_reports
+        return route_diversion_reports(commands, request, world, interpreted)
     # Only the explicitly retained airport assertion can change case conditions.
     # A dropped second assertion must not queue recovery on partly changed facts.
     guard_text = request.text

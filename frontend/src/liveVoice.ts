@@ -5,6 +5,11 @@
 import { TransportError } from './api';
 import { verifiedCommandResult } from './commandContext';
 import type { MutationResult } from './types';
+import {
+  combinedReports,
+  UNCONFIRMED_COMBINED_REPORT,
+  type CombinedReportCheck,
+} from './combinedReports';
 
 export type VoiceState = 'idle' | 'connecting' | 'listening' | 'working' | 'closing' | 'error';
 export type DelegationRequest = { text: string; delegationId: string; context: string };
@@ -78,6 +83,9 @@ function reportedReadinessForSpeech(value: string): string {
  * Full details remain in the command reply and case panel, without another call.
  */
 export function voiceCommandAcknowledgement(result: MutationResult): string {
+  const bundle = combinedReports(result);
+  if (bundle.state === 'invalid') return UNCONFIRMED_COMBINED_REPORT;
+  if (bundle.state === 'combined') return combinedReportAcknowledgement(result, bundle);
   const report =
     result.applied === true && result.report?.source === 'operator_report'
       ? result.report
@@ -150,6 +158,7 @@ export function voiceCommandAcknowledgement(result: MutationResult): string {
     const reasons = {
       insufficient_call_allowance: 'limita de apeluri este insuficientă',
       hotel_setup_required: 'configurația hotelului trebuie completată sau revizuită',
+      airport_transfer_setup_required: 'configurația transferului trebuie completată sau revizuită',
       ai_not_configured: 'serviciul AI necesar nu este disponibil',
       recovery_service_unavailable: 'serviciul de recuperare nu este disponibil',
       recovery_prerequisite_failed:
@@ -192,6 +201,83 @@ export function voiceCommandAcknowledgement(result: MutationResult): string {
           : 'Nu confirmă un itinerar sau o rezervare.';
   const available = 480 - new TextEncoder().encode(qualification).byteLength - 1;
   return `${boundedContext(parts.join(' '), available)} ${qualification}`;
+}
+
+/** Both atomic report facts and the recorded search outcome fit before optional detail. */
+function combinedReportAcknowledgement(
+  result: MutationResult,
+  bundle: Extract<CombinedReportCheck, { state: 'combined' }>,
+): string {
+  const { restriction, arrival } = bundle;
+  const operations = restriction.operations
+    .map((operation) => (operation === 'arrivals' ? 'aterizări' : 'decolări'))
+    .join(' și ');
+  const count = arrival.group_ids.length;
+  const facts = `Rapoarte ${result.replayed ? 'deja ' : ''}înregistrate: ${restriction.airport_code}, ${operations}, restricție ${restriction.action === 'restrict' ? 'aplicată' : 'eliminată'} în caz; ${count} ${count === 1 ? 'grup' : 'grupuri'} la ${arrival.airport_code}, ${count === 1 ? 'pregătit' : 'pregătite'} de la ${reportedReadinessForSpeech(arrival.ready_at)}.`;
+  const job = result.recovery_job;
+  const blocked = result.recovery_blocked;
+  let status: string;
+  if (job && blocked) status = 'Stare de căutare contradictorie; verifică cazul.';
+  else if (job) {
+    if (
+      job.incident_id !== result.incident_id ||
+      job.group_ids.length !== count ||
+      job.group_ids.some((id) => !arrival.group_ids.includes(id))
+    )
+      status = 'Cazul sau grupurile căutării diferă; verifică panoul.';
+    else if (job.superseded_by_job_id)
+      status = 'Cerere înlocuită în evidență; oprirea nu e confirmată.';
+    else if (job.stage === 'waiting_for_previous' && ['queued', 'running'].includes(job.status))
+      status =
+        job.status === 'queued' && job.calls_dispatched === 0
+          ? 'La înregistrare: aștepta încercările anterioare; 0 apeluri proprii.'
+          : 'Așteptare contradictorie; verifică panoul.';
+    else if (
+      job.status === 'needs_review' &&
+      (job.supersedes_job_ids?.length || job.blocking_job_ids?.length) &&
+      job.calls_dispatched === 0
+    )
+      status = 'Cere revizuirea încercărilor anterioare; 0 apeluri proprii.';
+    else if (job.status === 'queued' || job.status === 'running')
+      status = `Căutare ${result.replayed ? 'deja ' : ''}înregistrată; verifică progresul actual.`;
+    else {
+      const labels: Record<string, string> = {
+        completed: 'încheiată',
+        blocked: 'blocată',
+        failed: 'eșuată',
+        cancelled: 'anulată',
+        needs_review: 'necesită revizuire',
+        unknown_outcome: 'rezultat incert',
+      };
+      status = `Căutare consemnată: ${labels[job.status] ?? 'neconfirmată'}; verifică panoul.`;
+    }
+  } else if (blocked) {
+    const reasons: Record<string, string> = {
+      insufficient_call_allowance: 'limită insuficientă',
+      hotel_setup_required: 'revizuiește hotelul',
+      airport_transfer_setup_required: 'revizuiește transferul',
+      recovery_queue_unavailable: 'coadă indisponibilă',
+      ai_not_configured: 'AI indisponibil',
+      recovery_service_unavailable: 'serviciu indisponibil',
+    };
+    status = `Căutarea nu a pornit: ${reasons[blocked.code] ?? 'verifică motivul în panou'}.`;
+  } else status = 'Nu am pornit o căutare.';
+  const conflict =
+    restriction.manual_review_required || result.manual_review_required
+      ? 'Rezervări în conflict; intervenție necesară.'
+      : '';
+  const qualification = 'Date raportate; nu confirmă aterizarea, permisiuni de zbor sau rezervări.';
+  const required = [facts, status, conflict, qualification].filter(Boolean).join(' ');
+  // The bounded airport codes/group counts and fixed status vocabulary preserve
+  // both reports. The optional limit never displaces either report or status.
+  const limit =
+    (job || blocked) &&
+    Number.isSafeInteger(result.recovery_total_call_limit) &&
+    result.recovery_total_call_limit! >= 0 &&
+    result.recovery_total_call_limit! <= 27
+      ? ` Limită: ${result.recovery_total_call_limit} apeluri cu interpretarea.`
+      : '';
+  return new TextEncoder().encode(required + limit).byteLength <= 480 ? required + limit : required;
 }
 
 export class LiveVoiceClient {

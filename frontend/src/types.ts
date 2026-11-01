@@ -575,6 +575,7 @@ export interface RecoveryBlockedReceipt {
   code:
     | 'insufficient_call_allowance'
     | 'hotel_setup_required'
+    | 'airport_transfer_setup_required'
     | 'ai_not_configured'
     | 'recovery_service_unavailable'
     | 'recovery_prerequisite_failed'
@@ -595,6 +596,7 @@ export interface MutationResult {
   recovery_total_call_limit?: number;
   recovery_provider_call_limit?: number;
   report?: OperationalReportReceipt;
+  reports?: OperationalReportReceipt[];
   recovery_blocked?: RecoveryBlockedReceipt;
   manual_review_required?: boolean;
   confirmed_conflicts?: AirportRestrictionConflict[];

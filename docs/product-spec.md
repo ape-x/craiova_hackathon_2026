@@ -2,7 +2,7 @@
 
 ## Recuperare asistată a pasagerilor, cu date și cotații reale
 
-**Versiune:** 2.4 — 1 noiembrie 2026. Acest document descrie produsul live actual. Conceptul inițial a fost pregătit pentru secțiunea AUTOPILOT a [Craiova Hackathon](https://www.craiovahackathon.ro/); imaginile de concept rămân repere vizuale.
+**Versiune:** 2.5 — 1 noiembrie 2026. Acest document descrie produsul live actual. Conceptul inițial a fost pregătit pentru secțiunea AUTOPILOT a [Craiova Hackathon](https://www.craiovahackathon.ro/); imaginile de concept rămân repere vizuale.
 
 **Implementare:** FastAPI + React/TypeScript, disponibilă într-o singură instanță locală la `http://localhost:8080`. [README](../README.md) descrie operarea; [raportul de verificare](verification/report.md) separă probele reale, testele offline și verificările rămase.
 
@@ -32,6 +32,8 @@ Eliminarea unei restricții raportate de operator nu anulează restricțiile met
 
 Contextul FR24 are retenție limitată. Reîmprospătarea unui caz trebuie să păstreze aceeași cursă; nu selectăm automat un alt zbor. Înregistrarea unui caz nou nu resetează operațiunea existentă.
 
+O singură comandă poate combina o restricție aeroportuară și poziția/pregătirea explicită a pasagerilor din același caz: „Pentru RO321, OTP nu mai permite aterizarea. G1 este la CRA, pregătit în 30 de minute. Recalculează zboruri pentru G1, maximum patru apeluri.” Identificatorii se înlocuiesc cu cei ai cazului curent. Cele două declarații se verifică independent și se salvează într-o singură modificare; recuperarea pornește apoi pentru exact grupurile raportate. Limita include o interpretare și apelurile căutării. Confirmarea vocală descrie ambele rapoarte și precizează dacă cererea este în coadă, așteaptă o încercare anterioară sau nu a putut porni. Nu reprezintă o comandă de deviere a aeronavei ori o confirmare de aterizare.
+
 ## 3. Ce reprezintă fiecare sursă
 
 | Date                            | Sursă și utilizare                                                                  | Limită explicită                                                                                                 |
@@ -56,7 +58,7 @@ Eșecul unui furnizor configurat rămâne vizibil. Nu este înlocuit cu inventar
 
 Fiecare încercare păstrează selecția grupurilor, obiectivul, limita de apeluri, etapele și rezultatele într-un registru persistent. Interfața arată apelurile expediate și stările lor, nu un procent de progres inventat.
 
-După o deviere raportată, operatorul înregistrează separat aeroportul unde pasagerii sunt disponibili și ora lor de pregătire. Poziția aeronavei și ora estimată FR24 nu stabilesc aceste date. Formularul permite fie înregistrarea simplă a sosirii, fie înregistrarea și recalcularea pentru exact aceleași grupuri, cu servicii, obiectiv și limită explicită. Varianta structurată nu consumă un apel de interpretare; limita se aplică apelurilor jobului. Raportul și cererea de înlocuire se salvează împreună, iar harta focalizează aeroportul raportat. O condiție cunoscută care împiedică pornirea este afișată ca raport înregistrat, recuperare nepornită; o eroare neașteptată anulează tranzacția întreagă. Modificarea poziției nu reutilizează automat profilul hotelier anterior. Pentru o nouă configurație hotelieră sunt necesare date complete și actuale.
+După o deviere raportată, operatorul declară explicit aeroportul unde pasagerii sunt disponibili și ora lor de pregătire, inclusiv în aceeași comandă cu restricția aeroportuară. Poziția aeronavei și ora estimată FR24 nu stabilesc aceste date. Formularul permite fie înregistrarea simplă a sosirii, fie înregistrarea și recalcularea pentru exact aceleași grupuri, cu servicii, obiectiv și limită explicită. Varianta structurată nu consumă un apel de interpretare; limita se aplică apelurilor jobului. Rapoartele și cererea de înlocuire se salvează împreună, iar harta focalizează aeroportul raportat pentru pasageri. O condiție cunoscută care împiedică pornirea este afișată ca rapoarte înregistrate, recuperare nepornită; o eroare neașteptată anulează tranzacția întreagă. Modificarea poziției nu reutilizează automat profilul hotelier anterior. Pentru o nouă configurație hotelieră sunt necesare date complete și actuale.
 
 Expirarea observației FR24 nu împiedică legarea unui grup care indică exact numărul de zbor păstrat în cazul existent. Referințele suplimentare ale observației expirate nu sunt reutilizate și nu se face o reîmprospătare automată. Căutarea poate lua în calcul un aeroport alternativ dacă există deja o legătură terestră validă către destinația pasagerilor, inclusiv un lanț de mai multe servicii. Fiecare segment, legătură temporală, capacitate și cost cumulat trebuie să respecte verificările existente. Această extindere nu descoperă sau inventează un serviciu terestru lipsă.
 
