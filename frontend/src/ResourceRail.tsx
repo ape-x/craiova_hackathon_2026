@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useState } from 'react';
 import {
   ArrowUpRight,
   BedDouble,
@@ -43,7 +43,9 @@ export default function ResourceRail({
   onScenario,
   onLiveData,
   onRecoveryCase,
+  onDemoSetup,
   onApplied,
+  navigation,
 }: {
   world: World;
   selectedId: string | null;
@@ -52,11 +54,24 @@ export default function ResourceRail({
   onScenario: () => void;
   onLiveData: () => void;
   onRecoveryCase?: (id: string | null) => void;
+  onDemoSetup?: () => void;
   onApplied?: (result: MutationResult) => void;
+  navigation?: {
+    request: number;
+    tab?: ResourceKind | 'groups';
+    query?: string;
+    realData?: boolean;
+  };
 }) {
   const [tab, setTab] = useState<ResourceKind | 'groups'>('flight');
   const [query, setQuery] = useState('');
   const [showRealData, setShowRealData] = useState(false);
+  useEffect(() => {
+    if (!navigation) return;
+    if (navigation.tab) setTab(navigation.tab);
+    if (navigation.query !== undefined) setQuery(navigation.query);
+    if (navigation.realData !== undefined) setShowRealData(navigation.realData);
+  }, [navigation]);
   const now = useFreshnessClock(world.mode === 'live');
   const closeRealData = useCallback(() => setShowRealData(false), []);
   const search = useDeferredValue(query.toLowerCase());
@@ -128,7 +143,7 @@ export default function ResourceRail({
           {listedAirports.map((airport) => (
             <button
               key={airport.id}
-              title={`${locationKindLabel(airport)} · ${airport.code} · ${airport.name}`}
+              title={`${locationKindLabel(airport)} · ${airport.code} · ${airport.name}${world.mode === 'live' && isAirportNode(airport) && airport.operational_status === 'unknown' ? ' · Reference location; operational status not verified' : ''}`}
               className={`airport-row ${selectedId === airport.id || (!selectedId && airport.code === 'CRA') ? 'selected' : ''}`}
               onClick={() => {
                 onSelect(airport.id);
@@ -169,7 +184,7 @@ export default function ResourceRail({
               ) : airport.kind === 'station' ? (
                 <Tag>STATION</Tag>
               ) : world.mode === 'live' && airport.operational_status === 'unknown' ? (
-                <Tag>UNKNOWN</Tag>
+                <Tag>REFERENCE</Tag>
               ) : airport.available ? (
                 <ChevronRight size={14} />
               ) : (
@@ -232,11 +247,20 @@ export default function ResourceRail({
           <div className="rail-secondary">
             <p className="field-hint">
               {!world.groups.length
-                ? 'Import a passenger manifest or enter planning assumptions.'
-                : 'Add real supplier quotes or verified transport to plan recovery.'}
+                ? world.demo
+                  ? 'Create a test case with fictional passengers, then search real supplier options.'
+                  : 'Import a passenger manifest or enter planning assumptions.'
+                : world.demo
+                  ? 'Test passengers are ready. Search real flights, hotels and transfers for their dates.'
+                  : 'Add real supplier quotes or verified transport to plan recovery.'}
             </p>
-            <button className="secondary-button" onClick={onLiveData}>
-              Set up operation
+            <button
+              className="secondary-button"
+              onClick={world.demo && !world.groups.length && onDemoSetup ? onDemoSetup : onLiveData}
+            >
+              {world.demo && !world.groups.length && onDemoSetup
+                ? 'Create test passengers'
+                : 'Set up operation'}
             </button>
           </div>
         )}
@@ -279,7 +303,11 @@ export default function ResourceRail({
                   <small>
                     {group.id} · {group.size} {group.size === 1 ? 'passenger' : 'passengers'} ·{' '}
                     {group.destination}
-                    {group.source === 'synthetic' ? ' · Planning assumptions' : ''}
+                    {world.demo
+                      ? ' · Fictional passengers'
+                      : group.source === 'synthetic'
+                        ? ' · Planning assumptions'
+                        : ''}
                   </small>
                 </span>
                 {group.accessible ? (

@@ -352,6 +352,8 @@ class BileteriaProvider:
         request = self.validate_request(request)
         if self._closed:
             raise ProviderError("The consumer fare service is closed.", provider=SOURCE, code="not_configured")
+        from ..provider_budget import consume_call
+        consume_call(SOURCE)
         try:
             async with asyncio.timeout(self.timeout):
                 async with self.client.stream("GET", _search_url(request), timeout=self.timeout, follow_redirects=False,

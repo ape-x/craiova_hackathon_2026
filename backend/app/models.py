@@ -269,12 +269,12 @@ class CaseAirportRestrictionReport(Model):
 class RecoveryIncident(Model):
     id: str
     created_at: str
-    source: Literal["operator_report"] = "operator_report"
+    source: Literal["operator_report", "demo_scenario"] = "operator_report"
     kind: Literal["destination_unavailable", "flight_disruption"]
     description: str
     requested_flight_number: str
     date_utc: str
-    flight_ref: IncidentFlightReference
+    flight_ref: IncidentFlightReference | None
     unavailable_airport_code: str | None = None
     original_unavailable_airport_code: str | None = None
     airport_restrictions: list[CaseAirportRestriction] = Field(default_factory=list, max_length=MAX_CASE_AIRPORT_RESTRICTIONS)
@@ -283,7 +283,16 @@ class RecoveryIncident(Model):
     status: Literal["needs_passenger_data", "open"] = "needs_passenger_data"
     # Hydrated from a bounded cache; never stored in operational snapshots.
     flight: FlightSelection | None = None
-    flight_context_state: Literal["available", "expired"] = "expired"
+    flight_context_state: Literal["available", "expired", "not_applicable"] = "expired"
+
+    @model_validator(mode="after")
+    def source_context(self):
+        if self.source == "demo_scenario":
+            if self.flight_ref is not None or self.flight is not None or self.flight_context_state != "not_applicable":
+                raise ValueError("A fictional demo incident cannot contain sourced flight observations")
+        elif self.flight_ref is None or self.flight_context_state == "not_applicable":
+            raise ValueError("An operator-reported incident requires its sourced flight reference")
+        return self
 
     @field_validator("airport_restrictions")
     @classmethod
@@ -312,6 +321,9 @@ class World(Model):
     epoch: str
     sim_time: int = 600
     mode: Literal["simulation", "live"] = "simulation"
+    # Demo uses real sourced inventory and live proposal semantics; only the
+    # incident and passenger requirements are explicitly fictional.
+    demo: bool = False
     currency: str = "EUR"
     budget: float = 45000
     airports: list[Airport]
@@ -325,6 +337,14 @@ class World(Model):
     observations: list[dict[str, Any]] = Field(default_factory=list)
     stats: dict[str, Any] = Field(default_factory=dict)
     provider_status: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def demo_uses_sourced_inventory(self):
+        if self.demo and self.mode != "live":
+            raise ValueError("Demo operations must use the live inventory workflow")
+        if not self.demo and any(incident.source == "demo_scenario" for incident in self.incidents):
+            raise ValueError("Fictional demo incidents require a demo operation")
+        return self
 
 
 class Mutation(Model):
@@ -371,9 +391,23 @@ class ReplanRequest(Mutation):
     mode: Literal["ai", "solver"] = "solver"
 
 
+class CommandScope(Model):
+    incident_id: str | None = Field(default=None, min_length=1, max_length=120)
+    group_id: str | None = Field(default=None, min_length=1, max_length=120)
+    selected_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
 class CommandRequest(Mutation):
     text: str = Field(min_length=1, max_length=4000)
     context: str = Field(default="", max_length=6000)
+    scope: CommandScope | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_command(self, handler):
+        result = handler(self)
+        if self.scope is None:
+            result.pop("scope", None)
+        return result
 
 
 class AcceptRequest(Model):

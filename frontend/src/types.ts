@@ -275,6 +275,8 @@ export interface WorldStats {
   budget_remaining_is_estimate?: boolean;
 }
 export interface World {
+  /** Fictional passenger scenarios evaluated against real supplier inventory. */
+  demo?: boolean;
   incidents?: RecoveryIncident[];
   scenario_id: string;
   version: number;
@@ -355,12 +357,12 @@ export interface AirportRestrictionHistory {
 export interface RecoveryIncident {
   id: string;
   created_at: string;
-  source: 'operator_report';
+  source: 'operator_report' | 'demo_scenario';
   kind: 'destination_unavailable' | 'flight_disruption';
   description: string;
   requested_flight_number: string;
   date_utc: string;
-  flight_ref: { lookup_id: string; selection_id: string };
+  flight_ref: { lookup_id: string; selection_id: string } | null;
   unavailable_airport_code: string | null;
   airport_restrictions?: CaseAirportRestriction[];
   original_unavailable_airport_code?: string | null;
@@ -368,7 +370,17 @@ export interface RecoveryIncident {
   group_ids: string[];
   status: 'needs_passenger_data' | 'open';
   flight: FlightSelection | null;
-  flight_context_state: 'available' | 'expired';
+  flight_context_state: 'available' | 'expired' | 'not_applicable';
+}
+export interface DemoCaseInput {
+  origin: string;
+  destination: string;
+  passengers: number;
+  group_size: number;
+  group_budget_eur: number;
+  ready_at: string;
+  deadline: string;
+  description: string;
 }
 export interface IncidentInput {
   lookup_id: string;
@@ -617,6 +629,13 @@ export interface AppConfig {
   ai_configured?: boolean;
   voice_configured?: boolean;
   fr24_configured?: boolean;
+  notification_provider?: 'resend' | 'brevo';
+  notification_email_provider?: 'resend' | 'brevo';
+  notification_sms_provider?: 'brevo';
+  notification_email_configured?: boolean;
+  notification_sms_configured?: boolean;
+  notification_available?: boolean;
+  notification_unavailable_reason?: string | null;
   google_maps_api_key?: string;
   public_base_url?: string;
   auth_required?: boolean;
@@ -689,6 +708,28 @@ export interface RecoveryBlockedReceipt {
     | 'recovery_queue_unavailable';
   explanation: string;
 }
+export interface CommandScope {
+  incident_id?: string;
+  group_id?: string;
+  selected_id?: string;
+}
+export interface PlatformUiAction {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+export interface PlatformActionResult {
+  name: string;
+  status: 'succeeded' | 'failed' | 'needs_input';
+  summary?: string;
+  result?: unknown;
+  error?: string;
+  missing_fields?: string[];
+}
+export interface PlatformUiActionResult {
+  name: string;
+  status: 'succeeded' | 'failed';
+  message: string;
+}
 export interface MutationResult {
   world: World;
   replayed?: boolean;
@@ -710,4 +751,8 @@ export interface MutationResult {
   recovery_blocked?: RecoveryBlockedReceipt;
   manual_review_required?: boolean;
   confirmed_conflicts?: AirportRestrictionConflict[];
+  ui_actions?: PlatformUiAction[];
+  platform_results?: PlatformActionResult[];
+  /** Actual browser outcomes, attached after applying the server's UI requests. */
+  ui_action_results?: PlatformUiActionResult[];
 }

@@ -1,0 +1,11 @@
+# Fictional passenger cases with real integrated supplier data, on a separate volume.
+# docker compose -p air-walkthrough-demo -f compose.yaml -f compose.demo.yaml up -d --build
+services:
+  api:
+    environment:
+      OPERATION_MODE: demo
+      PUBLIC_BASE_URL: http://localhost:8081
+      CORS_ORIGINS: http://localhost:8081,http://127.0.0.1:8081
+  web:
+    ports: !override
+      - 127.0.0.1:8081:8080

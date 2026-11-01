@@ -93,14 +93,25 @@ export default function LiveDataDialog({
   onApplied,
   recoveryContext,
   onReturnToCase,
+  navigation,
+  onNavigationLockChange,
 }: {
   world: World;
   onClose: () => void;
   onApplied: (result: MutationResult) => void;
   recoveryContext?: RecoveryDataContext;
   onReturnToCase?: () => void;
+  navigation?: { request: number; tab: Tab };
+  onNavigationLockChange?: (locked: boolean) => void;
 }) {
-  const [tab, setTab] = useState<Tab>('passengers');
+  const [tab, setTab] = useState<Tab>(world.demo ? 'search' : 'passengers');
+  useEffect(() => {
+    if (
+      navigation &&
+      !(world.demo && ['passengers', 'transport', 'confirm'].includes(navigation.tab))
+    )
+      setTab(navigation.tab);
+  }, [navigation, world.demo]);
   const [csv, setCsv] = useState('');
   const [generated, setGenerated] = useState({
     passengers: '20',
@@ -153,6 +164,11 @@ export default function LiveDataDialog({
   const [travelPending, setTravelPending] = useState(false);
   const pending = useRef(false);
   pending.current = busy || Boolean(uncertain) || travelPending;
+  const navigationLocked = pending.current;
+  useEffect(() => {
+    onNavigationLockChange?.(navigationLocked);
+  }, [navigationLocked, onNavigationLockChange]);
+  useEffect(() => () => onNavigationLockChange?.(false), [onNavigationLockChange]);
   const recovery = resolveRecoveryDataContext(world, recoveryContext);
   const returnIssue = recoveryDataReturnIssue(world, recoveryContext, pending.current);
   function returnToCase() {
@@ -372,21 +388,26 @@ export default function LiveDataDialog({
             ['hotels', 'Hotel quotes'],
             ['confirm', 'Booking confirmations'],
           ] as const
-        ).map(([value, label]) => (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === value}
-            disabled={busy || Boolean(uncertain) || travelPending}
-            key={value}
-            onClick={() => {
-              setTab(value);
-              resetNotice();
-            }}
-          >
-            {label}
-          </button>
-        ))}
+        )
+          .filter(
+            ([value]) =>
+              !world.demo || ['search', 'planning_transfer', 'generate', 'hotels'].includes(value),
+          )
+          .map(([value, label]) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === value}
+              disabled={busy || Boolean(uncertain) || travelPending}
+              key={value}
+              onClick={() => {
+                setTab(value);
+                resetNotice();
+              }}
+            >
+              {label}
+            </button>
+          ))}
       </div>
 
       {tab === 'search' && (

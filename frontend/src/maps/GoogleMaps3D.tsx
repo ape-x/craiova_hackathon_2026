@@ -16,6 +16,7 @@ import { createMapInitialization, overlayFailureMessage } from './initialization
 import type { MapInitialization, MapLoadingState, OverlayStage } from './initialization';
 import { transferReview } from '../resourceLabels';
 import { privateTransfer } from '../priceEvidence';
+import { nextCameraFocus, type CameraFocus } from '../scene/cameraFocus';
 import './maps.css';
 
 export interface GoogleMaps3DProps {
@@ -25,6 +26,7 @@ export interface GoogleMaps3DProps {
   onSelect: (id: string) => void;
   apiKey: string;
   onClose?: () => void;
+  focusRequest?: number;
 }
 
 type Runtime = LoadedMaps & { map: GoogleMapElement; initialization: MapInitialization };
@@ -115,6 +117,7 @@ export default function GoogleMaps3D({
   onSelect,
   apiKey,
   onClose,
+  focusRequest = 0,
 }: GoogleMaps3DProps) {
   const host = useRef<HTMLDivElement>(null);
   const current = useRef({ world, mode, selectedId, onSelect });
@@ -130,6 +133,7 @@ export default function GoogleMaps3D({
   const [roadGeometry, setRoadGeometry] = useState({ sourced: false, connectionOnly: false });
   const [visibility, setVisibility] = useState<ModelVisibility>(ALL_MODELS);
   const modelLayer = useRef<ModelLayer | null>(null);
+  const lastFocusRequest = useRef<CameraFocus | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => setClock(Date.now()), 15000);
@@ -323,11 +327,22 @@ export default function GoogleMaps3D({
     if (!runtime) return;
     return runtime.initialization.runIfReady(() => {
       setCameraError('');
+      const focus = nextCameraFocus(
+        lastFocusRequest.current,
+        focusRequest,
+        JSON.stringify([
+          current.current.world.scenario_id,
+          current.current.mode,
+          current.current.selectedId,
+        ]),
+      );
       const target = cameraFor(
         current.current.world,
         current.current.mode,
         current.current.selectedId,
+        focus.following,
       );
+      lastFocusRequest.current = focus;
       let cancelled = false;
       void moveCamera(
         runtime.map,
@@ -341,7 +356,7 @@ export default function GoogleMaps3D({
         cancelled = true;
       };
     });
-  }, [runtime, cameraSignature, state]);
+  }, [runtime, cameraSignature, state, focusRequest, mode, selectedId, world.scenario_id]);
 
   const fresh = world.observations.filter((observation) => {
     const stamp = observation.observed_at ?? observation.timestamp;
@@ -438,6 +453,8 @@ export default function GoogleMaps3D({
             className="geographic-map-recenter"
             aria-label="Recenter geographic map"
             onClick={() => {
+              if (lastFocusRequest.current)
+                lastFocusRequest.current = { ...lastFocusRequest.current, following: false };
               if (runtime?.initialization.ready)
                 void moveCamera(runtime.map, camera, 900).then((moved) => {
                   if (!moved && runtime.map.isConnected && runtime.initialization.ready)

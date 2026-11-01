@@ -147,13 +147,22 @@ export function ArrivalReportPanel({
   incident,
   disabled = false,
   onMutationPending,
+  revealRequest,
   ...props
 }: MutationProps & {
   world: World;
   incident: RecoveryIncident;
   disabled?: boolean;
   onMutationPending: (pending: boolean) => void;
+  revealRequest?: number;
 }) {
+  const section = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (revealRequest === undefined || !section.current) return;
+    section.current.open = true;
+    section.current.scrollIntoView?.({ block: 'nearest' });
+    section.current.querySelector('summary')?.focus();
+  }, [revealRequest]);
   const mutation = useReportMutation(props, onMutationPending);
   const airportListId = useId();
   const [form, setForm] = useState<ArrivalReportForm>({
@@ -172,6 +181,7 @@ export function ArrivalReportPanel({
   const recoveryIssue = arrivalRecoveryIssue(recovery, selected.length, transferContext);
   return (
     <details
+      ref={section}
       className="operational-report"
       onToggle={(event) => {
         if (mutation.locked) event.currentTarget.open = true;

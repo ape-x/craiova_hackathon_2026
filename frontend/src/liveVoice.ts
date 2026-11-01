@@ -187,6 +187,12 @@ function newSceneAcknowledgement(result: MutationResult): string | undefined {
  * Full details remain in the command reply and case panel, without another call.
  */
 export function voiceCommandAcknowledgement(result: MutationResult): string {
+  if (
+    result.platform_results?.length ||
+    result.ui_action_results?.length ||
+    result.ui_actions?.length
+  )
+    return boundedContext(verifiedCommandResult(result));
   const bundle = combinedReports(result);
   if (bundle.state === 'invalid') return UNCONFIRMED_COMBINED_REPORT;
   if (bundle.state === 'combined') return combinedReportAcknowledgement(result, bundle);

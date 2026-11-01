@@ -15,7 +15,7 @@ def without_observations(response):
         world = {**result["world"], "observations": []}
         world["provider_status"] = {key: value for key, value in world.get("provider_status", {}).items() if key != "flights"}
         if "incidents" in world:
-            world["incidents"] = [{**case, "flight": None, "flight_context_state": "expired"} for case in world["incidents"]]
+            world["incidents"] = [{**case, "flight": None, "flight_context_state": "not_applicable" if case.get("source") == "demo_scenario" else "expired"} for case in world["incidents"]]
         result["world"] = world
     result.pop("observations", None)
     return result

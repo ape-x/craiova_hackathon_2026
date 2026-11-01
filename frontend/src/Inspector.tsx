@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PassengerNotifications } from './PassengerNotifications';
 import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -1138,7 +1139,17 @@ export default function Inspector({
                 onGroupRecovery={onGroupRecovery}
               />
             )}
-            {exactReview?.kind !== 'unavailable' && <ShareOffer group={group} config={config} />}
+            {exactReview?.kind !== 'unavailable' && (
+              <>
+                <ShareOffer group={group} config={config} />
+                <PassengerNotifications
+                  key={`${world.scenario_id}:${group.id}`}
+                  groupId={group.id}
+                  offerId={offer?.id ?? null}
+                  config={config}
+                />
+              </>
+            )}
           </>
         ) : null}
         {!showLog && resource ? (

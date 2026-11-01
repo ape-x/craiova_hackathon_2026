@@ -536,6 +536,30 @@ export function RecoveryJobDetails({
   );
 }
 
+type RecoveryJobFollow = { job: RecoveryJob; request: number };
+
+/** Follow the recorded attempt once its article exists, without changing search drafts. */
+export function revealRecoveryJob(
+  follow: RecoveryJobFollow | undefined,
+  incidentId: string,
+  previous: string | null,
+  panel: HTMLElement | null,
+): string | null {
+  if (!follow || follow.job.incident_id !== incidentId || !panel) return previous;
+  const token = JSON.stringify([follow.request, follow.job.id]);
+  if (token === previous) return previous;
+  const target = panel.ownerDocument.getElementById(recoveryJobAnchor(follow.job.id));
+  if (!target || !panel.contains(target)) return previous;
+  const history = target.closest('details');
+  if (history) history.open = true;
+  const reduced = panel.ownerDocument.defaultView?.matchMedia?.(
+    '(prefers-reduced-motion: reduce)',
+  ).matches;
+  target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+  target.focus({ preventScroll: true });
+  return token;
+}
+
 export default function RecoveryJobPanel({
   world,
   incident,
@@ -544,6 +568,7 @@ export default function RecoveryJobPanel({
   onMutationPending,
   refreshSignal = 0,
   receivedJob,
+  followJob,
   initialSelection,
   onSelectionChange,
   onDraftChange,
@@ -557,6 +582,7 @@ export default function RecoveryJobPanel({
   onMutationPending: (value: boolean) => void;
   refreshSignal?: number;
   receivedJob?: RecoveryJob | null;
+  followJob?: RecoveryJobFollow;
   initialSelection?: RecoveryDataContext;
   onSelectionChange?: (groupIds: string[]) => void;
   onDraftChange?: (draft: RecoveryFormDraft) => void;
@@ -564,6 +590,8 @@ export default function RecoveryJobPanel({
   reviewDisabled?: boolean;
 }) {
   const [jobs, setJobs] = useState<RecoveryJob[]>([]);
+  const panel = useRef<HTMLElement>(null);
+  const followedJob = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
@@ -685,8 +713,10 @@ export default function RecoveryJobPanel({
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const received = receivedJob?.incident_id === incident.id ? receivedJob : null;
-    if (received) setJobs((previous) => mergeRecoveryJobs(previous, [received]));
+    const received = [receivedJob, followJob?.job].filter((job): job is RecoveryJob =>
+      Boolean(job && job.incident_id === incident.id),
+    );
+    if (received.length) setJobs((previous) => mergeRecoveryJobs(previous, received));
     async function poll() {
       let next = false;
       try {
@@ -696,10 +726,9 @@ export default function RecoveryJobPanel({
         setLoadError('');
         next =
           response.jobs.some(recoveryJobActive) ||
-          Boolean(
-            received &&
-            recoveryJobActive(received) &&
-            !response.jobs.some((job) => job.id === received.id),
+          received.some(
+            (job) =>
+              recoveryJobActive(job) && !response.jobs.some((recorded) => recorded.id === job.id),
           );
         const applied = Math.max(0, ...response.jobs.map((job) => job.applied_version ?? 0));
         if (applied > current.current.world.version && applied > refreshedVersion.current) {
@@ -725,7 +754,15 @@ export default function RecoveryJobPanel({
       controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [incident.id, refresh, refreshSignal, receivedJob]);
+  }, [incident.id, refresh, refreshSignal, receivedJob, followJob?.job]);
+  useEffect(() => {
+    followedJob.current = revealRecoveryJob(
+      followJob,
+      incident.id,
+      followedJob.current,
+      panel.current,
+    );
+  }, [followJob, incident.id, jobs]);
 
   async function mutate(action: () => Promise<RecoveryJobResponse>) {
     if (running.current) return;
@@ -760,7 +797,7 @@ export default function RecoveryJobPanel({
     }
   }
   return (
-    <section className="case-job-panel" aria-label="Source recovery alternatives">
+    <section ref={panel} className="case-job-panel" aria-label="Source recovery alternatives">
       <h3>Find sourced alternatives</h3>
       {draftIssue && (
         <div className="case-source-warning" role="alert">

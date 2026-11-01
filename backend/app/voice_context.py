@@ -109,6 +109,7 @@ def build_voice_context(world: World, scope: VoiceScope, *, airport_cab_profiles
     facts = {
         "kind": "application_reference_only",
         "operation_mode": world.mode,
+        "demo": world.demo,
         "case": None if incident is None else {
             "id": incident.id,
             "flight_number": _label(incident.requested_flight_number, 32),

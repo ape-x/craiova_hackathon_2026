@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 from .models import AuditEvent, FlightSelection, World
-from .seed import seed_world, empty_live_world
+from .seed import seed_world, empty_live_world, seed_demo_world
 from .pricing import cost_summary
 from .inventory_lifecycle import ARCHIVE_SCHEMA, bind_inventory, persist_inventory, resource_detail
 
@@ -51,7 +51,7 @@ def refresh_stats(world: World):
         "budget_remaining":round(world.budget-sum(o.itinerary.total_cost for o in active),2),
         "budget_remaining_is_estimate":committed_evidence is not None,
         "resource_usage":{r.id:sum(x.quantity for x in world.reservations if x.resource_id==r.id and x.status in ("held","proposed","accepted","confirmed")) for r in world.resources},
-        "currency":world.currency,"data_source":"synthetic" if world.mode=="simulation" else "real_resources_test_passengers" if any(g.source=="synthetic" for g in world.groups) else "real", "last_updated":utcnow().isoformat(),
+        "currency":world.currency,"data_source":"synthetic" if world.mode=="simulation" else "real_resources_test_passengers" if world.demo or any(g.source=="synthetic" for g in world.groups) else "real", "last_updated":utcnow().isoformat(),
     }
 
 
@@ -79,7 +79,7 @@ class Store:
     No model/network call is ever performed under this lock.
     """
     def __init__(self, path: str, observation_retention_seconds: int=3600, operation_mode: str | None=None, legacy_fr24_credits_per_request: int=40):
-        if operation_mode not in (None,"live","simulation"):
+        if operation_mode not in (None,"live","simulation","demo"):
             raise ValueError("Unknown operation mode")
         self.path = path
         self.observation_retention_seconds=observation_retention_seconds
@@ -104,16 +104,17 @@ class Store:
                 credits=(previous_usage[0] if previous_usage else 0)*legacy_fr24_credits_per_request
                 conn.execute("INSERT INTO controls VALUES('fr24_credits_reserved',?)",(json.dumps(credits),))
             existing=conn.execute("SELECT data FROM world WHERE id=1").fetchone()
-            if not existing:
-                world=empty_live_world() if operation_mode=="live" else seed_world()
+            previous=World.model_validate_json(existing[0]) if existing else None
+            previous_mode=("demo" if previous.demo else previous.mode) if previous else None
+            if previous is None:
+                world=self._initial_world(operation_mode)
                 refresh_stats(world)
                 conn.execute("INSERT INTO world VALUES(1,?)",(world.model_dump_json(),))
                 self._save_audit(conn,world)
-            elif operation_mode is not None and json.loads(existing[0]).get("mode","simulation") != operation_mode:
-                previous=World.model_validate_json(existing[0])
+            elif operation_mode is not None and previous_mode != operation_mode:
                 archived=self._without_observations({"world":json.loads(existing[0])})["world"]
-                conn.execute("INSERT INTO world_archives VALUES(?,?,?,?)",(secrets.token_hex(16),utcnow().isoformat(),previous.mode,json.dumps(archived)))
-                world=empty_live_world() if operation_mode=="live" else seed_world()
+                conn.execute("INSERT INTO world_archives VALUES(?,?,?,?)",(secrets.token_hex(16),utcnow().isoformat(),previous_mode,json.dumps(archived)))
+                world=self._initial_world(operation_mode)
                 world.version=previous.version+1
                 refresh_stats(world)
                 persist_inventory(conn, world)
@@ -136,6 +137,12 @@ class Store:
                     conn.execute("UPDATE world_archives SET data=? WHERE id=?",(json.dumps(cleaned),archive_id))
                 conn.execute("INSERT INTO controls VALUES('archive_observation_redaction_v1','true')")
         os.chmod(self.path,0o600)
+
+    @staticmethod
+    def _initial_world(operation_mode):
+        if operation_mode == "demo":
+            return seed_demo_world()
+        return empty_live_world() if operation_mode == "live" else seed_world()
 
     @contextmanager
     def connect(self):
@@ -160,6 +167,8 @@ class Store:
         if world.mode=="live":
             world.sim_time=max(0,int((utcnow()-datetime.fromisoformat(world.epoch)).total_seconds()//60))
         for incident in world.incidents:
+            if incident.source == "demo_scenario":
+                continue
             match=self._incident_flight(conn,incident.flight_ref.lookup_id,incident.flight_ref.selection_id)
             incident.flight=FlightSelection.model_validate(match) if match else None
             incident.flight_context_state="available" if match else "expired"
@@ -192,7 +201,7 @@ class Store:
             world={**result["world"],"observations":[]}
             world["provider_status"]={k:v for k,v in world.get("provider_status",{}).items() if k!="flights"}
             if "incidents" in world:
-                world["incidents"]=[{**case,"flight":None,"flight_context_state":"expired"} for case in world["incidents"]]
+                world["incidents"]=[{**case,"flight":None,"flight_context_state":"not_applicable" if case.get("source")=="demo_scenario" else "expired"} for case in world["incidents"]]
             result["world"]=world
         result.pop("observations",None)
         return result
@@ -254,6 +263,9 @@ class Store:
             if status:
                 response["world"]["provider_status"]["flights"]=status
             for incident in response["world"].get("incidents",[]):
+                if incident.get("source") == "demo_scenario":
+                    incident.update(flight=None,flight_context_state="not_applicable")
+                    continue
                 ref=incident["flight_ref"]
                 match=self._incident_flight(conn,ref["lookup_id"],ref["selection_id"])
                 incident.update(flight=match,flight_context_state="available" if match else "expired")

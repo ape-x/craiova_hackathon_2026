@@ -56,6 +56,12 @@ export function FlightFacts({ flight }: { flight: FlightSelection }) {
     </div>
   );
 }
+function caseTitle(incident: RecoveryIncident, world: World) {
+  if (incident.source !== 'demo_scenario') return incident.requested_flight_number;
+  const group = world.groups.find((item) => incident.group_ids.includes(item.id));
+  return group ? `Demo · ${group.origin} → ${group.destination}` : 'Fictional passenger case';
+}
+
 export function CaseSummary({ incident, world }: { incident: RecoveryIncident; world: World }) {
   const people = world.groups
     .filter((group) => incident.group_ids.includes(group.id))
@@ -64,23 +70,31 @@ export function CaseSummary({ incident, world }: { incident: RecoveryIncident; w
     <section className="case-saved-summary" aria-label="Saved recovery case">
       <div className="case-flight-heading">
         <strong>
-          {incident.requested_flight_number} · {incident.date_utc} UTC
+          {caseTitle(incident, world)} · {incident.date_utc} UTC
         </strong>
         <Tag tone={incident.status === 'open' ? 'cyan' : 'amber'}>
           {incident.status === 'open' ? 'OPEN' : 'NEEDS PASSENGER DATA'}
         </Tag>
       </div>
       <p>
-        <strong>Original incident · {incidentKindLabel(incident.kind)}</strong>
+        <strong>
+          {incident.source === 'demo_scenario' ? 'Fictional incident' : 'Original incident'} ·{' '}
+          {incidentKindLabel(incident.kind)}
+        </strong>
         {(incident.original_unavailable_airport_code ?? incident.unavailable_airport_code)
           ? ` · ${incident.original_unavailable_airport_code ?? incident.unavailable_airport_code}`
           : ''}
       </p>
       <p>{incident.description}</p>
+      {incident.source === 'demo_scenario' && (
+        <p className="field-hint">Case reference: {incident.id}</p>
+      )}
       <p className="field-hint">
-        Operator-reported constraint at case creation · {utcTimestamp(incident.created_at)}.{' '}
-        {incident.group_ids.length} linked groups · {people} passengers. A case does not establish
-        available seats, rooms or bookings.
+        {incident.source === 'demo_scenario'
+          ? 'Fictional scenario with mock passengers'
+          : 'Operator-reported constraint at case creation'}{' '}
+        · {utcTimestamp(incident.created_at)}. {incident.group_ids.length} linked groups · {people}{' '}
+        passengers. A case does not establish available seats, rooms or bookings.
       </p>
       <CaseAirportRestrictions incident={incident} />
       {incident.flight ? (
@@ -88,6 +102,11 @@ export function CaseSummary({ incident, world }: { incident: RecoveryIncident; w
           <summary>Flight context · Flightradar24</summary>
           <FlightFacts flight={incident.flight} />
         </details>
+      ) : incident.source === 'demo_scenario' ? (
+        <p className="field-hint">
+          This incident is fictional. Flight, hotel and transport alternatives are obtained from
+          connected suppliers; no tracked flight or cancellation is asserted.
+        </p>
       ) : (
         <p className="case-source-warning">
           Flight context has expired. The operator’s case remains recorded; provider facts are
@@ -109,7 +128,7 @@ export default function RecoveryCases({
     <section className="recovery-cases" aria-label="Recovery cases">
       <button className="primary-button full" onClick={() => onOpen(null)}>
         <Plus size={15} />
-        Start recovery
+        {world.demo ? 'New test case' : 'Start recovery'}
       </button>
       {incidents.length === 0 ? (
         <p className="field-hint">
@@ -119,9 +138,10 @@ export default function RecoveryCases({
         incidents.map((incident) => (
           <button className="case-rail-row" key={incident.id} onClick={() => onOpen(incident.id)}>
             <span>
-              <strong>{incident.requested_flight_number}</strong>
+              <strong>{caseTitle(incident, world)}</strong>
               <small>
-                Original: {incidentKindLabel(incident.kind)}
+                {incident.source === 'demo_scenario' ? 'Fictional scenario' : 'Original'}:{' '}
+                {incidentKindLabel(incident.kind)}
                 {(incident.original_unavailable_airport_code ?? incident.unavailable_airport_code)
                   ? ` · ${incident.original_unavailable_airport_code ?? incident.unavailable_airport_code}`
                   : ''}

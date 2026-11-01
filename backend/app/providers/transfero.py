@@ -344,6 +344,8 @@ class TransferoProvider:
             raise ProviderError("The coach search adapter is closed.", provider=SOURCE, code="not_configured")
         a, b = ("1231269", "199") if request.direction == "otp_to_hotel" else ("199", "1231269")
         form = {"action": "get_busses", "adulti": str(request.adults), "copii": "0", "dp": request.travel_date.strftime("%m/%d/%Y"), "di": "", "dep": a, "dest": b}
+        from ..provider_budget import consume_call
+        consume_call(SOURCE)
         try:
             async with asyncio.timeout(self.timeout):
                 async with self.client.stream("POST", SEARCH_URL, data=form, follow_redirects=False, timeout=self.timeout,

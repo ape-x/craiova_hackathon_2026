@@ -129,7 +129,7 @@ export function buildOverlays(
             : airport.kind === 'station'
               ? `${airport.code} · COACH STATION`
               : world.mode === 'live'
-                ? `${airport.code}${airport.operational_status === 'unknown' ? ' · STATUS UNKNOWN' : airport.operational_status === 'closed' ? ' · CLOSED' : ''}`
+                ? `${airport.code}${airport.operational_status === 'unknown' ? ' · REFERENCE' : airport.operational_status === 'closed' ? ' · CLOSED' : ''}`
                 : `${airport.code}${!airport.available ? ' · CLOSED IN SIM' : airportWeatherState(airport).weatherRestricted ? ' · WEATHER RESTRICTED' : ''}`,
       title:
         airport.kind === 'meeting_point'
@@ -139,7 +139,7 @@ export function buildOverlays(
             : airport.kind === 'station'
               ? `${airport.name}. Coach station location supplied by the transport provider.`
               : world.mode === 'live'
-                ? `${airport.name}. Reference airport location. Operational status: ${airport.operational_status ?? 'unknown'}.`
+                ? `${airport.name}. Reference airport location. ${!airport.operational_status || airport.operational_status === 'unknown' ? 'Operational status not verified.' : `Operational status: ${airport.operational_status}.`}`
                 : `${airport.name}. Airport availability is simulated.${airport.weather ? ` ${airportWeatherState(airport).condition}. Landings ${airportWeatherState(airport).landingAllowed ? 'allowed' : 'blocked'}; departures ${airportWeatherState(airport).departureAllowed ? 'allowed' : 'blocked'}.` : ''}`,
       point: world.mode === 'live' ? pointOf(airport) : scenePoint(airport, 0, 51, 28),
       color: !isAirportNode(airport)
@@ -377,7 +377,12 @@ export function buildOverlays(
   return { markers, routes };
 }
 
-export function cameraFor(world: World, mode: SceneMode, selectedId: string | null): Camera {
+export function cameraFor(
+  world: World,
+  mode: SceneMode,
+  selectedId: string | null,
+  followSelection = false,
+): Camera {
   const home = world.airports.find((airport) => airport.id === 'CRA') ?? world.airports[0];
   const fallback = home ? pointOf(home) : { lat: 44.3181, lng: 23.8886, altitude: 0 };
   const observation = world.observations.find(
@@ -393,7 +398,7 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
       altitudeMode: 'ABSOLUTE',
     };
   const airport = world.airports.find((a) => a.id === selectedId);
-  if (airport && (mode === 'airport' || !isAirportNode(airport)))
+  if (airport && (followSelection || mode === 'airport' || !isAirportNode(airport)))
     return {
       center: world.mode === 'live' ? pointOf(airport) : scenePoint(airport, 0, 45),
       range: 650,
@@ -415,7 +420,7 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
       altitudeMode: 'RELATIVE_TO_GROUND',
     };
   }
-  if (resource && mode !== 'region')
+  if (resource && (followSelection || mode !== 'region'))
     return {
       center: resourcePoint(resource, world) ?? fallback,
       range: resource.kind === 'flight' ? 550 : resource.kind === 'bus' ? 260 : 650,

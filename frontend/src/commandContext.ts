@@ -97,6 +97,33 @@ export function commandContext(
 }
 
 export function verifiedCommandResult(result: MutationResult): string {
+  if (
+    result.platform_results?.length ||
+    result.ui_action_results?.length ||
+    result.ui_actions?.length
+  ) {
+    const ui = result.ui_action_results ?? [];
+    const failedAction = result.platform_results?.find((action) => action.status !== 'succeeded');
+    const failure = failedAction
+      ? `Cererea s-a oprit: ${failedAction.error ?? 'sunt necesare detalii suplimentare'}.`
+      : '';
+    const uiErrors = ui
+      .filter((action) => action.status === 'failed')
+      .map((action) => action.message)
+      .join(' ');
+    const uiText = ui
+      .filter((action) => action.status === 'succeeded')
+      .map((action) => action.message)
+      .join(' ');
+    const pendingUi =
+      (result.ui_actions?.length ?? 0) > ui.length
+        ? ' Unele acțiuni de interfață nu au un rezultat confirmat.'
+        : '';
+    const operation = result.platform_results?.some((action) => !action.name.startsWith('ui.'))
+      ? (result.explanation ?? 'Rezultatele operațiunilor sunt afișate în aplicație.')
+      : '';
+    return [failure, uiErrors, pendingUi, operation, uiText].filter(Boolean).join(' ');
+  }
   const bundle = combinedReports(result);
   if (bundle.state === 'invalid') return UNCONFIRMED_COMBINED_REPORT;
   if (bundle.state === 'combined') {

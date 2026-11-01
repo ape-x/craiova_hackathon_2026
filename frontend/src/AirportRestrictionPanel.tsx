@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { api } from './api';
 import type { AirportOperation, MutationResult, RecoveryIncident, World } from './types';
@@ -151,6 +151,7 @@ export function AirportRestrictionPanel({
   onApplied,
   onRefresh,
   onMutationPending,
+  revealRequest,
 }: {
   world: World;
   incident: RecoveryIncident;
@@ -158,7 +159,15 @@ export function AirportRestrictionPanel({
   onApplied: (result: MutationResult) => void;
   onRefresh: () => Promise<unknown>;
   onMutationPending: (pending: boolean) => void;
+  revealRequest?: number;
 }) {
+  const section = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (revealRequest === undefined || !section.current) return;
+    section.current.open = true;
+    section.current.scrollIntoView?.({ block: 'nearest' });
+    section.current.querySelector('summary')?.focus();
+  }, [revealRequest]);
   const mutation = useReportMutation({ onApplied, onRefresh }, onMutationPending);
   const [form, setForm] = useState(emptyAirportRestrictionForm);
   const [recovery, setRecovery] = useState(emptyArrivalRecoveryForm);
@@ -169,6 +178,7 @@ export function AirportRestrictionPanel({
   const issue = airportRestrictionRecoveryIssue(recovery, form.groupIds.length);
   return (
     <details
+      ref={section}
       className="operational-report"
       onToggle={(event) => {
         if (mutation.locked) event.currentTarget.open = true;

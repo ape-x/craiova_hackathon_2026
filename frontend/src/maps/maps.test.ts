@@ -218,7 +218,9 @@ describe('geographic source separation', () => {
     };
     const result = buildOverlays(live, 'B12', new Map());
     const airport = result.markers.find((marker) => marker.id === live.airports[0].id)!;
-    expect(airport.label).toContain('STATUS UNKNOWN');
+    expect(airport.label).toContain('REFERENCE');
+    expect(airport.title).toContain('Operational status not verified');
+    expect(airport.label).not.toContain('UNKNOWN');
     expect(airport.color).toBe(COLORS.muted);
     expect(airport.point).toEqual({
       lat: live.airports[0].lat,

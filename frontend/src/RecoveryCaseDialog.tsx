@@ -40,9 +40,12 @@ export default function RecoveryCaseDialog({
   onClose,
   onManageData,
   initialSelection,
+  followJob,
   setupGroupId,
   onReviewItinerary,
   reviewDisabled = false,
+  sectionNavigation,
+  onNavigationLockChange,
 }: {
   world: World;
   incidentId: string | null;
@@ -51,10 +54,18 @@ export default function RecoveryCaseDialog({
   onClose: () => void;
   onManageData: (context: RecoveryDataContext) => void;
   initialSelection?: RecoveryDataContext;
+  followJob?: { job: RecoveryJob; request: number };
   setupGroupId?: string;
   onReviewItinerary?: (intent: RecoveryItineraryIntent, context: RecoveryDataContext) => void;
   reviewDisabled?: boolean;
+  sectionNavigation?: { request: number; section: 'arrival' | 'restrictions' | 'recovery' };
+  onNavigationLockChange?: (locked: boolean) => void;
 }) {
+  const recoverySection = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (sectionNavigation?.section === 'recovery')
+      recoverySection.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [sectionNavigation]);
   const [activeId, setActiveId] = useState(incidentId);
   const incident = (world.incidents ?? []).find((item) => item.id === activeId);
   const [initialRecoveryGroups] = useState(() =>
@@ -98,6 +109,10 @@ export default function RecoveryCaseDialog({
     arrivalReportPending ||
     restrictionPending;
   const lockedRef = useRef(locked);
+  useEffect(() => {
+    onNavigationLockChange?.(locked);
+  }, [locked, onNavigationLockChange]);
+  useEffect(() => () => onNavigationLockChange?.(false), [onNavigationLockChange]);
   lockedRef.current = locked;
   const close = useCallback(() => {
     if (running.current || lockedRef.current) {
@@ -292,7 +307,7 @@ export default function RecoveryCaseDialog({
           </p>
           {lookup.matches.map((flight) => {
             const differentLeg = Boolean(
-              incident && flight.selection_id !== incident.flight_ref.selection_id,
+              incident && flight.selection_id !== incident.flight_ref?.selection_id,
             );
             return (
               <label
@@ -356,6 +371,9 @@ export default function RecoveryCaseDialog({
           <>
             <CaseSummary incident={incident} world={world} />
             <ArrivalReportPanel
+              revealRequest={
+                sectionNavigation?.section === 'arrival' ? sectionNavigation.request : undefined
+              }
               key={`arrival:${incident.id}`}
               world={world}
               incident={incident}
@@ -371,6 +389,11 @@ export default function RecoveryCaseDialog({
               onMutationPending={setArrivalReportPending}
             />
             <AirportRestrictionPanel
+              revealRequest={
+                sectionNavigation?.section === 'restrictions'
+                  ? sectionNavigation.request
+                  : undefined
+              }
               key={`restriction:${incident.id}`}
               world={world}
               incident={incident}
@@ -385,45 +408,48 @@ export default function RecoveryCaseDialog({
               onRefresh={onRefresh}
               onMutationPending={setRestrictionPending}
             />
-            <RecoveryJobPanel
-              key={incident.id}
-              world={world}
-              incident={incident}
-              disabled={busy || Boolean(uncertain) || arrivalReportPending || restrictionPending}
-              onRefresh={onRefresh}
-              onMutationPending={setJobSubmissionPending}
-              refreshSignal={arrivalRefresh}
-              receivedJob={arrivalJob}
-              initialSelection={initialSelection}
-              reviewDisabled={reviewDisabled || searching}
-              onReviewItinerary={
-                onReviewItinerary
-                  ? (intent) => {
-                      if (running.current || lockedRef.current || searching || reviewDisabled)
-                        return;
-                      onReviewItinerary(intent, {
-                        scenarioId: world.scenario_id,
-                        incidentId: incident.id,
-                        groupIds: [...selectedRecoveryGroups.current],
-                        ...(searchDraft.current
-                          ? { searchDraft: cloneRecoveryFormDraft(searchDraft.current) }
-                          : {}),
-                      });
-                    }
-                  : undefined
-              }
-              onSelectionChange={(ids) => {
-                selectedRecoveryGroups.current = ids;
-              }}
-              onDraftChange={(draft) => {
-                searchDraft.current = cloneRecoveryFormDraft(draft);
-                selectedRecoveryGroups.current = [...draft.groupIds];
-              }}
-            />
+            <div ref={recoverySection}>
+              <RecoveryJobPanel
+                key={incident.id}
+                world={world}
+                incident={incident}
+                disabled={busy || Boolean(uncertain) || arrivalReportPending || restrictionPending}
+                onRefresh={onRefresh}
+                onMutationPending={setJobSubmissionPending}
+                refreshSignal={arrivalRefresh}
+                receivedJob={arrivalJob}
+                followJob={followJob}
+                initialSelection={initialSelection}
+                reviewDisabled={reviewDisabled || searching}
+                onReviewItinerary={
+                  onReviewItinerary
+                    ? (intent) => {
+                        if (running.current || lockedRef.current || searching || reviewDisabled)
+                          return;
+                        onReviewItinerary(intent, {
+                          scenarioId: world.scenario_id,
+                          incidentId: incident.id,
+                          groupIds: [...selectedRecoveryGroups.current],
+                          ...(searchDraft.current
+                            ? { searchDraft: cloneRecoveryFormDraft(searchDraft.current) }
+                            : {}),
+                        });
+                      }
+                    : undefined
+                }
+                onSelectionChange={(ids) => {
+                  selectedRecoveryGroups.current = ids;
+                }}
+                onDraftChange={(draft) => {
+                  searchDraft.current = cloneRecoveryFormDraft(draft);
+                  selectedRecoveryGroups.current = [...draft.groupIds];
+                }}
+              />
+            </div>
             <div className="case-actions">
               <button
                 className="secondary-button"
-                disabled={locked || searching}
+                disabled={locked || searching || incident.source === 'demo_scenario'}
                 onClick={() => {
                   setRefreshingFlight(true);
                   void searchFlight(incident);
@@ -470,7 +496,7 @@ export default function RecoveryCaseDialog({
                   <button
                     className="primary-button"
                     disabled={
-                      locked || !match || match.selection_id !== incident.flight_ref.selection_id
+                      locked || !match || match.selection_id !== incident.flight_ref?.selection_id
                     }
                     onClick={() => {
                       if (match && lookup?.lookup_id)

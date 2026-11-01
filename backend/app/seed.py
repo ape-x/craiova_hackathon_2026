@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from .models import Airport, AuditEvent, PassengerGroup, Resource, World
 
@@ -13,6 +13,23 @@ def empty_live_world() -> World:
     epoch = datetime.now(ZoneInfo("Europe/Bucharest")).replace(hour=0, minute=0, second=0, microsecond=0)
     airport = Airport(id=item["code"], code=item["code"], name=item["name"], lat=item["lat"], lon=item["lon"], available=False, operational_status="unknown")
     return World(scenario_id=secrets.token_hex(8), epoch=epoch.isoformat(), mode="live", sim_time=0, budget=0, airports=[airport], resources=[], groups=[])
+
+
+def seed_demo_world() -> World:
+    """Fictional passengers and incident, without fictional travel inventory."""
+    from .demo import DemoCaseDefinition, build_demo_case
+    now = datetime.now(timezone.utc)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    world = World(scenario_id=secrets.token_hex(8), epoch=midnight.isoformat(),
+        mode="live", demo=True, sim_time=int((now-midnight).total_seconds()//60),
+        budget=0, airports=[], resources=[], groups=[])
+    build_demo_case(world, DemoCaseDefinition(
+        ready_at=midnight + timedelta(days=1, hours=8),
+        deadline=midnight + timedelta(days=2, hours=22),
+        description="Two fictional adults at London Heathrow need alternative travel to Bucharest. No real flight disruption is asserted."))
+    for event in world.events:
+        event.version = world.version
+    return world
 
 
 def seed_world() -> World:
