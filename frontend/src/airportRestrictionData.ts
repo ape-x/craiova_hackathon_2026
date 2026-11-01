@@ -1,5 +1,6 @@
 import type {
   AirportOperation,
+  CaseAirportRestriction,
   MutationResult,
   PassengerGroup,
   RecoveryIncident,
@@ -61,6 +62,41 @@ export function activeCaseRestrictions(incident: RecoveryIncident) {
     }
   }
   return restrictions;
+}
+
+/** Share a row only when every provenance field describes the same report. */
+export function groupedCaseRestrictions(incident: RecoveryIncident) {
+  type Group = Omit<CaseAirportRestriction, 'operation'> & {
+    key: string;
+    operations: AirportOperation[];
+  };
+  const groups = new Map<string, Group>();
+  for (const { operation, ...restriction } of activeCaseRestrictions(incident)) {
+    const inherited = Boolean(
+      restriction.inherited_from_legacy ||
+      incident.unavailable_airport_code === restriction.airport_code,
+    );
+    const key = JSON.stringify([
+      restriction.airport_code,
+      restriction.report_id,
+      restriction.source,
+      restriction.received_at,
+      restriction.description,
+      inherited,
+    ]);
+    const previous = groups.get(key);
+    if (previous) {
+      if (!previous.operations.includes(operation)) previous.operations.push(operation);
+    } else {
+      groups.set(key, {
+        ...restriction,
+        key,
+        inherited_from_legacy: inherited,
+        operations: [operation],
+      });
+    }
+  }
+  return [...groups.values()];
 }
 
 export function restrictionRecoveryGroupIssue(

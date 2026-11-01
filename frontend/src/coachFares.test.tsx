@@ -297,14 +297,49 @@ describe('fare evidence presentation without allocatable seats', () => {
     expect(html).toContain('Terminal Plecari/Sosiri');
     expect(html).toContain('Terminal PLECARI/ DEPARTURES');
     expect(html).toContain('UTC offset');
-    expect(html).toContain('Seat availability and supplier expiry are unknown');
-    expect(html).toContain('no seats are held or booked');
+    expect(html).toContain('Seat availability is unknown');
+    expect(html).toContain('no transport is allocated, held or booked');
+    expect(html).toContain('<dt>Supplier expiry</dt><dd>Unknown</dd>');
     expect(html).toContain('3h 05m');
     expect(html).toContain('Se poate călători doar cu rezervare anticipată.');
     expect(html).not.toContain('CAPACITY FITS');
     expect(html).not.toContain('Add planning leg');
     expect(html).toContain('2030');
     expect(html).toContain('UTC');
+  });
+  it('keeps one clear fare boundary and both prices visible while disclosing repeated source details once', () => {
+    const value = withFx();
+    value.options.push({
+      ...value.options[0],
+      id: 'SECOND-OPTION',
+      notices: ['Second option notice.'],
+    });
+    const html = renderToStaticMarkup(<CoachFareResults result={value} historical />);
+    const [visibleBeforeDetails, disclosure] = html.split('<details class="coach-source-details">');
+    expect(disclosure).toBeDefined();
+    expect(html).not.toContain('class="coach-source-details" open');
+    expect(html.match(/class="coach-boundary"/g)).toHaveLength(1);
+    expect(visibleBeforeDetails).toContain('Fare references only. Seat availability is unknown');
+    expect(visibleBeforeDetails).toContain('no transport is allocated, held or booked');
+    expect(visibleBeforeDetails).toContain('Historical observation');
+    expect(visibleBeforeDetails).toContain('1 Nov 2030, 10:15:00 UTC');
+    expect(visibleBeforeDetails).toContain('Source local times · UTC offset not supplied');
+    expect(visibleBeforeDetails).toContain('190.00');
+    expect(visibleBeforeDetails).toContain('Approximately €37.33');
+    expect(visibleBeforeDetails).toContain('Se poate călători doar cu rezervare anticipată.');
+    expect(visibleBeforeDetails).toContain('Second option notice.');
+    expect(visibleBeforeDetails).not.toContain('Supplier expiry');
+    expect(visibleBeforeDetails).not.toContain('EUR settlement is not guaranteed');
+    expect(disclosure).toContain('<dt>Supplier expiry</dt><dd>Unknown</dd>');
+    expect(disclosure).toContain('Accessibility, luggage and boarding access</dt><dd>Unverified');
+    expect(disclosure).toContain('1 EUR = 5.0900 RON');
+    expect(disclosure).toContain('rate dated 2030-10-31');
+    expect(disclosure).toContain('Assessed 1 Nov 2030, 10:15:00 UTC');
+    expect(disclosure).toContain('EUR settlement is not guaranteed');
+    expect(disclosure).toContain(value.notices[0]);
+    expect(html.match(/Accessibility, luggage and boarding access/g)).toHaveLength(1);
+    expect(html).not.toContain('Add planning leg');
+    expect(html).not.toContain('/Checkout');
   });
   it('preserves overnight arrival dates and disables no-availability purchase inferences', () => {
     const value = result();

@@ -30,6 +30,44 @@
   line-height: 1.7;
   color: var(--muted);
 }
+.coach-source-details {
+  margin: 14px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.coach-source-details > summary {
+  padding: 11px 12px;
+  cursor: pointer;
+  color: var(--text);
+}
+.coach-source-details > summary:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -3px;
+  border-radius: 8px;
+}
+.coach-source-evidence {
+  border-top: 1px solid var(--line);
+  padding: 0 12px 10px;
+  overflow-wrap: anywhere;
+}
+.coach-source-unknowns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+.coach-source-unknowns dt {
+  color: var(--text);
+}
+.coach-source-unknowns dd {
+  margin: 3px 0 0;
+}
+.coach-source-notices strong {
+  color: var(--text);
+  font-size: 11px;
+}
 .coach-note {
   margin: 12px 0;
 }
@@ -185,7 +223,8 @@
 }
 @media (max-width: 580px) {
   .coach-fields,
-  .coach-option-details dl {
+  .coach-option-details dl,
+  .coach-source-unknowns {
     grid-template-columns: minmax(0, 1fr);
   }
   .coach-option summary {

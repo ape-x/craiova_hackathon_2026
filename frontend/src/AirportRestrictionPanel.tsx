@@ -14,31 +14,44 @@ import {
   airportRestrictionRecoveryReceipt,
   airportRestrictionSubmission,
   emptyAirportRestrictionForm,
+  groupedCaseRestrictions,
   restrictionRecoveryGroupIssue,
 } from './airportRestrictionData';
 import './operationalReports.css';
 
 export function CaseAirportRestrictions({ incident }: { incident: RecoveryIncident }) {
   const active = activeCaseRestrictions(incident);
+  const grouped = groupedCaseRestrictions(incident);
   return (
     <section className="case-airport-restrictions" aria-label="Current case airport restrictions">
       <h4>
-        Airport restrictions for this case <span>{active.length} active directions</span>
+        Airport restrictions for this case{' '}
+        <span>
+          {active.length} active {active.length === 1 ? 'direction' : 'directions'}
+        </span>
       </h4>
       {!active.length && (
         <p className="field-hint">No active airport restriction recorded for this case.</p>
       )}
-      {active.map((item) => (
-        <div className="operator-report-note" key={`${item.airport_code}:${item.operation}`}>
-          <strong>
-            {item.airport_code} · {airportOperationsLabel([item.operation])} restricted
-          </strong>
+      {grouped.map((item) => (
+        <div
+          className="operator-report-note case-restriction-group"
+          key={item.key}
+          role="group"
+          aria-label={`${item.airport_code} · ${airportOperationsLabel(item.operations)} restricted`}
+        >
+          <div className="case-restriction-heading">
+            <strong>{item.airport_code}</strong>
+            {item.operations.map((operation) => (
+              <span className="case-restriction-operation" key={operation}>
+                {airportOperationsLabel([operation])} restricted
+              </span>
+            ))}
+          </div>
           <p>{item.description}</p>
           <small>
             Operator report · {utcTimestamp(item.received_at)}
-            {item.inherited_from_legacy || incident.unavailable_airport_code === item.airport_code
-              ? ' · Original incident constraint'
-              : ''}
+            {item.inherited_from_legacy ? ' · Original incident constraint' : ''}
           </small>
         </div>
       ))}

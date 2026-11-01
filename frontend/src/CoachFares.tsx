@@ -56,14 +56,11 @@ export function CoachFareResults({
           {historical ? 'Historical observation' : 'Observed by this application'}:{' '}
           {coachObservedAt(verified.received_at)}
         </span>
+        <span>Source local times · UTC offset not supplied</span>
       </div>
       <p className="coach-boundary">
-        Seat availability and supplier expiry are unknown. These fares are not allocated to a
-        recovery plan, and no seats are held or booked.
-      </p>
-      <p className="coach-note">
-        Times below are the source’s local clock times. The source did not supply a UTC offset.
-        Verify boarding access, luggage terms and connections before relying on a service.
+        Fare references only. Seat availability is unknown; no transport is allocated, held or
+        booked.
       </p>
       <div className="coach-options">
         {verified.options.map((option) => {
@@ -113,13 +110,12 @@ export function CoachFareResults({
                 </dl>
                 <p>
                   {option.purchase_action_enabled
-                    ? 'A purchase action was shown by the source; this does not confirm seats for the requested party.'
+                    ? 'The source showed an enabled purchase action at observation time.'
                     : 'The source did not show an enabled purchase action for this observation.'}
                 </p>
                 {option.notices.map((notice, index) => (
                   <p key={index}>{notice}</p>
                 ))}
-                <p>Accessibility, luggage acceptance and boarding access are unverified.</p>
               </div>
             </details>
           );
@@ -131,39 +127,60 @@ export function CoachFareResults({
           transport exists.
         </p>
       )}
-      <div className="coach-fx" aria-label="Coach currency reference">
-        <strong>{hasEstimate ? 'Approximate EUR reference' : 'EUR estimate unavailable'}</strong>
-        {reference && (
-          <p>
-            European Central Bank · rate dated {reference.rate_date}
-            {hasEstimate && reference.source_units_per_eur
-              ? ` · 1 EUR = ${reference.source_units_per_eur} RON`
-              : ''}
-            <br />
-            Assessed {coachObservedAt(reference.as_of)} · at most {reference.max_age_days} calendar
-            days ({reference.age_timezone})
-          </p>
-        )}
-        <p>
-          Original RON fares remain unchanged. EUR values are reference estimates, not supplier EUR
-          prices or amounts allocated to the operation’s budget. Revalidate before booking; EUR
-          settlement is not guaranteed.
-        </p>
-        {verified.fx?.source_currency === 'RON' &&
-          verified.fx.state !== 'ready' &&
-          typeof verified.fx.message === 'string' && <p>{verified.fx.message}</p>}
-      </div>
       {verified.rejected_count > 0 && (
         <p className="coach-note">
-          {verified.rejected_count} source entries could not be represented with complete, supported
-          fare evidence.
+          {verified.rejected_count} source{' '}
+          {verified.rejected_count === 1 ? 'entry excluded' : 'entries excluded'} · incomplete or
+          unsupported fare evidence.
         </p>
       )}
-      {verified.notices.map((notice, index) => (
-        <p className="coach-note" key={index}>
-          {notice}
-        </p>
-      ))}
+      <details className="coach-source-details">
+        <summary>
+          Source details · {hasEstimate ? 'EUR reference estimate' : 'EUR estimate unavailable'}
+        </summary>
+        <div className="coach-source-evidence">
+          <dl className="coach-source-unknowns">
+            <div>
+              <dt>Supplier expiry</dt>
+              <dd>Unknown</dd>
+            </div>
+            <div>
+              <dt>Accessibility, luggage and boarding access</dt>
+              <dd>Unverified</dd>
+            </div>
+          </dl>
+          <p>Verify boarding access, luggage terms and connections before relying on a service.</p>
+          <div className="coach-fx" aria-label="Coach currency reference">
+            {reference && (
+              <p>
+                European Central Bank · rate dated {reference.rate_date}
+                {hasEstimate && reference.source_units_per_eur
+                  ? ` · 1 EUR = ${reference.source_units_per_eur} RON`
+                  : ''}
+                <br />
+                Assessed {coachObservedAt(reference.as_of)} · at most {reference.max_age_days}{' '}
+                calendar days ({reference.age_timezone})
+              </p>
+            )}
+            <p>
+              Original RON fares remain unchanged. EUR values are reference estimates, not supplier
+              EUR prices or amounts allocated to the operation’s budget. Revalidate before booking;
+              EUR settlement is not guaranteed.
+            </p>
+            {verified.fx?.source_currency === 'RON' &&
+              verified.fx.state !== 'ready' &&
+              typeof verified.fx.message === 'string' && <p>{verified.fx.message}</p>}
+          </div>
+          {verified.notices.length > 0 && (
+            <div className="coach-source-notices">
+              <strong>Source notices</strong>
+              {verified.notices.map((notice, index) => (
+                <p key={index}>{notice}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      </details>
       {sourceUrl && (
         <a className="coach-source-link" href={sourceUrl} target="_blank" rel="noopener noreferrer">
           Review dated search on BILETERIA <ArrowUpRight size={12} aria-hidden="true" />

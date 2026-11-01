@@ -319,10 +319,6 @@ export function RecoveryJobDetails({
       {Boolean(job.ground_references?.length) && (
         <section className="coach-job-references" aria-label="Recorded ground fare references">
           <h4>Ground fares requiring seat confirmation</h4>
-          <p className="field-hint">
-            These are source observations from this search. They do not add recovered passengers,
-            transport allocations or supplier bookings.
-          </p>
           {job.ground_references?.map((reference, index) => (
             <div className="coach-job-reference" key={`${reference.group_ids.join('-')}-${index}`}>
               <p className="field-hint">

@@ -15,6 +15,7 @@ import {
   airportRestrictionRecoveryReceipt,
   airportRestrictionSubmission,
   emptyAirportRestrictionForm,
+  groupedCaseRestrictions,
   restrictionRecoveryGroupIssue,
 } from './airportRestrictionData';
 import type { AirportRestrictionForm } from './airportRestrictionData';
@@ -113,8 +114,12 @@ describe('case-scoped active airport restrictions', () => {
     ]);
     const html = renderToStaticMarkup(<CaseAirportRestrictions incident={incident} />);
     expect(html).toContain('2 active directions');
-    expect(html).toContain('OTP · Arrivals restricted');
-    expect(html).toContain('OTP · Departures restricted');
+    expect(html).toContain('aria-label="OTP · Arrivals and departures restricted"');
+    expect(html).toContain('Arrivals restricted</span>');
+    expect(html).toContain('Departures restricted</span>');
+    expect(html.match(/case-restriction-group/g)).toHaveLength(1);
+    expect(html.split(incident.description)).toHaveLength(2);
+    expect(html.split('Operator report ·')).toHaveLength(2);
     expect(html).toContain('Original incident constraint');
     expect(html).toContain('Operator report');
     expect(incident).toEqual(before);
@@ -152,7 +157,7 @@ describe('case-scoped active airport restrictions', () => {
     const html = renderToStaticMarkup(<CaseSummary world={world} incident={migrated} />);
     expect(html).toContain('Original incident · Destination unavailable');
     expect(html).toContain(' · OTP');
-    expect(html).toContain('1 active directions');
+    expect(html).toContain('1 active direction');
     expect(html).toContain('OTP · Departures restricted');
     expect(html).not.toContain('OTP · Arrivals restricted');
     expect(html).toContain('OTP · Arrivals · Case restriction cleared');
@@ -162,6 +167,50 @@ describe('case-scoped active airport restrictions', () => {
     expect(renderToStaticMarkup(<CaseAirportRestrictions incident={cleared} />)).toContain(
       'No active airport restriction recorded for this case',
     );
+  });
+
+  it('groups only identical provenance and retains each differing report without changing source records', () => {
+    const original = activeCaseRestrictions(incident)[0];
+    const current: RecoveryIncident = {
+      ...incident,
+      unavailable_airport_code: null,
+      airport_restrictions: [original, { ...original, operation: 'departures' }],
+    };
+    const before = structuredClone(current);
+    const grouped = groupedCaseRestrictions(current);
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]).toMatchObject({
+      airport_code: 'OTP',
+      operations: ['arrivals', 'departures'],
+      report_id: original.report_id,
+      source: original.source,
+      received_at: original.received_at,
+      description: original.description,
+    });
+    expect(current).toEqual(before);
+    for (const difference of [
+      { airport_code: 'SBZ' },
+      { report_id: 'OTHER-REPORT' },
+      { received_at: '2026-11-01T09:00:00Z' },
+      { description: 'A separate departures restriction.' },
+      { inherited_from_legacy: true },
+    ]) {
+      const distinct = {
+        ...current,
+        airport_restrictions: [
+          original,
+          { ...original, operation: 'departures' as const, ...difference },
+        ],
+      };
+      expect(groupedCaseRestrictions(distinct)).toHaveLength(2);
+      const html = renderToStaticMarkup(<CaseAirportRestrictions incident={distinct} />);
+      expect(html.match(/case-restriction-group/g)).toHaveLength(2);
+      expect(html).toContain('Arrivals restricted</span>');
+      expect(html).toContain('Departures restricted</span>');
+      expect(html).toContain(difference.description ?? original.description);
+      if (difference.inherited_from_legacy) expect(html).toContain('Original incident constraint');
+    }
+    expect(groupedCaseRestrictions({ ...current, airport_restrictions: [] })).toEqual([]);
   });
 });
 
