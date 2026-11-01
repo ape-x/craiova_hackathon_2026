@@ -4,11 +4,61 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `f4870cb` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `e4eeb59` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
 
 The subsequent automatic hotel workflow (`b3afa9e`) and scope-bound reusable input profile (`95a0606`) have passed **1,252 backend tests and 273 frontend tests**, strict TypeScript, the production build and formatting. The automatic core passed GitHub Actions on both branches (runs 84/85); the full UI release passed both branch runs 88/89. Actual source-backed automatic acceptance is recorded below. Backend tests include required hotel stays, counted source calls, independent connection/budget validation, chosen-only atomic application, immutable out-of-scope bookings, profile identity before both transfer fingerprints, exact voice reuse and bounded call allowances. Focused counts overlap the full suite and are not added to it. One initial CI run on `95a0606` failed only because the read-derived live minute advanced during a whole-world test comparison. `ca7eea7` excludes that display clock while retaining every operational field and version assertion; both full branch runs 90/91 passed. Application timing and expiry logic were unchanged.
 
 The scoped voice startup release `e10fa81` passed **1,281 backend tests and 282 frontend tests**, strict TypeScript/production build and formatting; GitHub Actions passed on both branches (main 96, codex 97). Both Docker images were built from the exact committed archive. The API healthcheck and routed readiness passed; the web container was running and served the refreshed application. Post-restart comparison preserved every operational field, version 49, both groups, 24 resources and the saved profile; only read-derived `sim_time` changed. No job was active at restart. Browser inspection retained the completed ten-call hotel result, honest quote expiry, original GBP/ECB estimates and sourced Google road. No voice session or supplier refresh was started for these deployment checks. Voice recognition remains the separate acceptance gap below.
+
+### One approved spoken-Heathrow attempt — 1 November 01:51 UTC
+
+The single explicitly authorized attempt ran on `e4eeb59`, after 22 offline
+probe guards and a comparison of all 34 pinned source files with the actual API
+container. The existing EK5 case and its one two-adult LHR→OTP group retained
+the saved hotel profile. Pure projected-report validation passed before any paid
+call. Input was a 16.066-second locally synthesized recording; no microphone,
+ambient recording or speaker playback was used.
+
+Both final provider measurements reported **36 seconds** against the 45-second
+ceiling. Exactly one command was dispatched: **one interpretation plus seven
+recovery calls, eight of eleven allowed**, with no retry. The unchanged ASR
+correctly retained London Heathrow, all linked groups, readiness in thirty
+minutes, the saved full hotel journey and the eleven-call limit. The authoritative
+receipt recorded LHR readiness at **1 November 02:23 UTC**, based on the original
+command receipt rounded up to the UTC minute, and queued only the intended group.
+Command-to-receipt time was 4.028 seconds; this is not completed itinerary latency.
+
+**Overall acceptance failed.** The voice said 31 October instead of 1 November
+and was unfinished when the bounded session closed. The private probe's spoken
+commentary supplied only the time, while startup context contained the historical
+case date. The actual browser already supplied the full numeric readiness date;
+it was not exercised by this Python client. The follow-up labels the case date as
+flight-lookup context only, requests concise acknowledgments preserving the
+backend date/time/zone, and renders the browser's verified UTC date with its full
+Romanian month name. Offline tests cover distinct case/readiness dates, UTC day
+and year rollover and missing-zone input. Corrected spoken output and completion
+before closure have not been demonstrated by another paid attempt. As the
+[official GPT-Live documentation](https://developers.openai.com/api/docs/guides/live-conversations)
+explains, commentary can be paraphrased and append acknowledgments establish
+context delivery, not completed playback.
+
+The recovery job stopped as `unknown_outcome` at ECB, after successful model,
+flight/hotel, APL and Google stages. It dispatched seven of its ten allowed calls
+and produced no verified four-leg plan. The ECB step lasted 3.003 seconds, matching
+the old three-second local deadline; the original exception subtype was not
+retained, so connect/read/total timeout cannot be distinguished retrospectively.
+The follow-up permits one bounded ten-second fetch, preserves shorter enclosing
+cancellation, and records allowlisted failure reasons without retries or stale-rate
+renewal. A separate credential-free public ECB GET returned HTTP 200 in 0.464
+seconds and passed the unchanged XML parser with GBP present. That observation
+proves current source reachability, not successful recovery after the correction.
+
+The follow-up corrections passed **2,236 backend tests and 559 frontend tests**, strict TypeScript, production build and frontend formatting. Existing Starlette/httpx and authored-Scene size warnings remain. These are offline regressions, not another successful spoken or full-provider run.
+
+The attempt lock, approval and original raw evidence remain private and intact.
+The semantic review records failure, not success based on the queued receipt or
+received audio. No booking, payment or driver dispatch occurred. This consumed
+single-test approval does not authorize a second paid session or recovery rerun.
 
 ### Romanian initial airport vehicle quotes
 
@@ -38,11 +88,14 @@ estimated undated driving arrival, connection-only map geometry and historical
 source evidence. A separate local label-update check preserved every other group
 field and its source-scope fingerprint and proved replay without another write.
 The legacy default label can therefore be corrected without replacing passenger
-identities or supply facts. Runtime deployment and browser results are recorded
-after this release is installed.
+identities or supply facts. The exact committed archive was deployed on the same port 8080. Both branch CI runs passed (main 140, codex 141); both image revisions matched e4eeb59. Readiness and a full state/job-history comparison preserved world 49 before the intentional label/import operations. A private SQLite backup passed integrity checking.
+
+The deployed browser made two explicit quote searches (four supplier GETs total): the initial native date control retained 03:46 local and returned EUR191/215/238/261 including the night surcharge; keyboard input then verified 12:00 local and returned EUR188/212/235/258. Only the second search's EUR188 sedan was imported. The resulting inspector preserved the native fare, airport-level endpoints, two-person group scope, estimated arrival and absence of booking/hold. World 49→50 corrected only the legacy group display label; world 50→51 added this single sourced resource. Existing source resources, both groups' other fields, offers and job history were preserved, with no active work or confirmed bookings.
+
+Visual inspection exposed a selected-map defect: unrelated APL geometry made the CAB card inherit a dated Google-road legend, and its annotation overlapped the origin airport. The follow-up scopes the card/key to the selected route and moves the connection-only annotation between endpoints, explicitly not a vehicle position. Mixed-source map regressions preserve actual Google road geometry and overview keys.
 
 Automatic retrieval from this new source, a pickup after a future flight, other
-Romanian airport pairs and the pending paid spoken-Heathrow probe remain
+Romanian airport pairs and successful spoken/full-itinerary acceptance remain
 separate acceptance gates. A manual sourced leg is not evidence for those flows.
 
 ### Case airport restrictions and atomic recovery
@@ -59,11 +112,11 @@ The strict live interpretation schema includes airport reports. Current-utteranc
 
 The case panel has separate record-only and record-plus-recalculate actions, explicit directional controls, exact recovery groups, fresh-hotel prerequisites, conflict feedback and current/history views. An uncertain network result retries the identical payload/key. Arrival, restriction and recovery controls share a mutation lock; received successor jobs refresh the same case panel. A restriction receipt does not move the map to imply passenger relocation.
 
-Both exact-commit `f4870cb` images are now deployed on the same port 8080. GitHub Actions passed on main (run 134, 1m57s) and codex (run 135, 2m15s). The pre-deployment private SQLite snapshot passed integrity checking. All ten retained source flights expose valid route metadata under the new segment checks; this is a source-format check, not a refresh of their expired quotes. Readiness is ready/database connected/simulation false. A complete comparison after deployment and browser inspection preserved every operational field and job history: world 49, two groups, 24 resources, zero active jobs or confirmed bookings, traffic paused.
+At that checkpoint, both exact-commit `f4870cb` images were deployed on the same port 8080. GitHub Actions passed on main (run 134, 1m57s) and codex (run 135, 2m15s). The pre-deployment private SQLite snapshot passed integrity checking. All ten retained source flights expose valid route metadata under the new segment checks; this is a source-format check, not a refresh of their expired quotes. Readiness is ready/database connected/simulation false. A complete comparison after deployment and browser inspection preserved every operational field and job history: world 49, two groups, 24 resources, zero active jobs or confirmed bookings, traffic paused.
 
 The existing browser loaded `/assets/index-B45oZCpG.js` with no console errors. The real EK5 case showed its original incident and zero active airport directions. An unsent local draft selected OTP arrivals, the linked group and eight calls; both actions became available. Selecting Hotels disabled only combined recovery and displayed the fresh-input requirement. The clear-case option remained distinct from globally reopening an airport. The draft was discarded by closing the dialog: no restriction, source search, voice session or booking was submitted. Actual persisted restriction changes and their follow-up solver/provider flows were verified with isolated API/worker tests, not asserted against the live passenger case for inspection.
 
-The unused private Heathrow probe was prepared against this deployment without starting a session. Its same scope/utterance and 45-second/eleven-call ceilings remain unchanged; all 22 pinned source hashes match the container, and 19 offline guard tests passed. No approval record or attempt lock exists. Fresh paid-run consent remains pending.
+The unused private Heathrow probe was prepared against this deployment without starting a session. Its same scope/utterance and 45-second/eleven-call ceilings remain unchanged; all 22 pinned source hashes match the container, and 19 offline guard tests passed. At that checkpoint no approval record or attempt lock existed. The subsequently approved attempt is recorded above.
 
 ### Structured reported arrival and connected onward recovery
 
@@ -81,7 +134,7 @@ Exact-commit `bb86d16` API and web images are deployed to the same port 8080. Bo
 
 The existing browser served `/assets/index-giVHm79_.js` with no console errors. On the real case, an unsent local form draft enabled both explicit actions. Selecting Hotels disabled only combined recalculation and exposed the fresh-input explanation; deselecting it restored the combined action. The expired-context linking message correctly allowed only the saved flight number. The draft was discarded by closing the dialog; no mutation button, supplier search or voice session was triggered. This is deployed form/state verification, not a new live end-to-end recovery or map-movement acceptance. The transaction, successor, solver and current-report camera behavior have the isolated tests described above.
 
-The unused private Heathrow voice probe was refreshed after deployment, including the new ground-query helper in its source hashes. Nineteen socket-blocked probe checks passed and all pinned sources match the actual backend container. Its exact scope, speech, 45-second ceiling and eleven-call limit are unchanged. Fresh consent remains pending; no approval record, attempt lock or paid run was created.
+The unused private Heathrow voice probe was refreshed after deployment, including the new ground-query helper in its source hashes. Nineteen socket-blocked probe checks passed and all pinned sources match the actual backend container. Its exact scope, speech, 45-second ceiling and eleven-call limit are unchanged. At that checkpoint consent was pending and no approval record, attempt lock or paid run was created; the subsequently approved attempt is recorded above.
 
 ### Literal airport names and reviewable voice requests
 
@@ -97,7 +150,7 @@ GitHub Actions passed the core `95e7862` release on both branches (main 125, cod
 
 The existing browser served `/assets/index-d8QDz_3Z.js` with no console errors. Actual textarea editing preserved an exact two-line draft plus a Shift+Enter newline; its 47 px content height matched its scroll height, so the text was visible without internal scrolling. No command was submitted, and the draft was cleared afterward. This verifies the deployed input and unchanged live state. The review dialog, copying gates and voice retry observer were checked offline; no browser voice delegation was performed for this release.
 
-A fresh private Heathrow probe is prepared but has not run: 16.066 seconds of local file-only synthetic speech, a single existing case/group and its unchanged saved hotel inputs, at most one voice session with a 45-second ceiling and one command with eleven total interpretation/recovery calls. Nineteen offline probe guards passed. Prepared source hashes match the deployed backend; wrong or expanded speech is rejected without rewriting. Prior consumed attempts remain untouched. No approval record or attempt lock has been created for this new probe; fresh user consent is requested because the earlier authorization allowed one already-used test. Preparation made only local read-only API calls and file synthesis, with no microphone, playback, paid session, model or supplier search.
+At that checkpoint a fresh private Heathrow probe was prepared but had not run: 16.066 seconds of local file-only synthetic speech, a single existing case/group and its unchanged saved hotel inputs, at most one voice session with a 45-second ceiling and one command with eleven total interpretation/recovery calls. Nineteen offline probe guards passed. Prepared source hashes match the deployed backend; wrong or expanded speech is rejected without rewriting. Prior consumed attempts remain untouched. No approval record or attempt lock had been created at that checkpoint; the later explicit approval and consumed attempt are recorded above. Preparation made only local read-only API calls and file synthesis, with no microphone, playback, paid session, model or supplier search.
 
 ### New report while recovery is in flight
 

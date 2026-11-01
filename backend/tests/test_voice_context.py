@@ -43,7 +43,8 @@ def test_group_selection_resolves_its_actual_case_without_private_source_data(ho
     before = world.model_dump(mode="json")
     context = build_voice_context(world, VoiceScope(group_id="G1"))
     facts = json.loads(context)
-    assert facts["case"] == {"id": "RC-ONE", "flight_number": "RO321", "date_utc": "2026-11-01"}
+    assert facts["case"] == {"id": "RC-ONE", "flight_number": "RO321", "date_utc": "2026-11-01",
+        "date_utc_role": "flight_lookup_reference_only"}
     assert facts["groups"] == [{"id": "G1", "display_label": "Planning group G1", "saved_hotel_profile_scope_valid": True}]
     assert facts["airport_vocabulary"] == {"source": "local_airport_catalog", "entries": [
         {"iata": code, "name": lookup_airport(code)["name"]} for code in ("LHR", "OTP")]}
@@ -53,6 +54,20 @@ def test_group_selection_resolves_its_actual_case_without_private_source_data(ho
                      "budget", "minimum_total_calls", "max_provider_calls", "booking", "quoted_at",
                      "checkin_at", "checkout_at", "pickup_at", "scope_fingerprint", "51.471234"):
         assert excluded not in context
+    assert world.model_dump(mode="json") == before
+
+
+def test_case_date_remains_a_lookup_reference_not_a_readiness_or_current_date(command_setup):
+    _, store, _, _, _ = command_setup
+    world = store.read()
+    world.incidents[0].date_utc = "2026-10-31"
+    world.epoch = "2026-11-01T00:00:00+00:00"
+    world.groups[0].ready_at = 143  # Backend readiness is 1 November, 02:23 UTC.
+    before = world.model_dump(mode="json")
+    facts = json.loads(build_voice_context(world, VoiceScope(group_id="G1")))
+    assert facts["case"]["date_utc"] == "2026-10-31"
+    assert facts["case"]["date_utc_role"] == "flight_lookup_reference_only"
+    assert "ready_at" not in facts["groups"][0] and "current_date" not in facts
     assert world.model_dump(mode="json") == before
 
 
@@ -292,6 +307,11 @@ async def test_provider_uses_documented_startup_input_without_rewriting_speech(c
     assert "Never replace, complete" in REFERENCE_POLICY
     assert "airport, or route" in REFERENCE_POLICY
     assert "observed passenger positions" in REFERENCE_POLICY and "permission to land" in REFERENCE_POLICY
+    assert "not today's date or a passenger readiness date" in session["input"][0]["content"][0]["text"]
+    assert "If that result provides only a time, do not add a date" in session["input"][0]["content"][0]["text"]
+    assert "cel mult două propoziții scurte" in session["instructions"]
+    assert "Dacă rezultatul conține doar ora, nu completa data din context" in session["instructions"]
+    assert "Pregătirea declarată nu este o plecare confirmată" in session["instructions"]
     assert socket.closed
 
 

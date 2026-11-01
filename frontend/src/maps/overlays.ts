@@ -309,8 +309,24 @@ export function buildOverlays(
           title:
             road.geometry === 'sourced_road'
               ? `${review.sourceTime}. Dated Google Routes driving prediction, not vehicle telemetry. ${review.status}. Record: ${item.id}.`
-              : `Road geometry is missing or invalid. This straight line shows endpoints only, not a driving path. ${review.status}. Record: ${item.id}.`,
-          point: road.path[Math.floor((road.path.length - 1) / 2)],
+              : `Connection label, not a vehicle position. Road geometry is missing or invalid. This straight line shows endpoints only, not a driving path. ${review.status}. Record: ${item.id}.`,
+          // A two-endpoint connection has no vehicle position. Place its annotation
+          // between the endpoints instead of obscuring the origin airport label.
+          point:
+            road.geometry === 'connection_only'
+              ? {
+                  lat: (road.path[0].lat + road.path[road.path.length - 1].lat) / 2,
+                  lng:
+                    ((road.path[0].lng +
+                      (((road.path[road.path.length - 1].lng - road.path[0].lng + 540) % 360) -
+                        180) /
+                        2 +
+                      540) %
+                      360) -
+                    180,
+                  altitude: 0,
+                }
+              : road.path[Math.floor((road.path.length - 1) / 2)],
           color: COLORS.muted,
           observed: false,
           selected,

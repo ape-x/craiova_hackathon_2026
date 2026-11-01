@@ -393,6 +393,7 @@ describe('imported transfer selection in the live geographic workspace', () => {
     const props = {
       mode: 'live' as const,
       selectedReview,
+      selectedGeometry: 'sourced_road' as const,
       roadGeometry: { sourced: true, connectionOnly: false },
       hasObservations: false,
     };

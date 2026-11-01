@@ -399,12 +399,13 @@ describe('CAB geometry and source basis', () => {
       <GeographicLegend
         mode="live"
         selectedReview={review}
+        selectedGeometry="connection_only"
         roadGeometry={{ sourced: false, connectionOnly: true }}
         hasObservations={false}
       />,
     );
     expect(html).toContain('Supplier driving estimate without departure-time traffic');
-    expect(html).toContain('no driving path shown');
+    expect(html).toContain('no driving path or vehicle position shown');
     expect(html).not.toMatch(
       /Google Routes|Dated prediction|Booking recorded|vehicle position observed/,
     );

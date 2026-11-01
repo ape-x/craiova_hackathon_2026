@@ -187,8 +187,19 @@ async def _rates(fx):
     result = await fx.rates()
     table = result.get("table")
     if table is None:
-        code = result.get("code","fx_unavailable")
-        raise ProviderError("ECB reference unavailable; no EUR estimate or substitute rate was created",provider="European Central Bank",
+        reasons = {
+            "fx_timeout": "the bounded reference-fetch deadline was exceeded",
+            "fx_transport_error": "the reference connection failed",
+            "fx_http_error": "the reference endpoint returned an unsuccessful HTTP response",
+            "fx_invalid_response": "the reference response could not be validated",
+            "fx_closed": "the reference service is closed",
+            "fx_unavailable": "no verified reference table was returned",
+        }
+        supplied_code = result.get("code")
+        code = supplied_code if isinstance(supplied_code, str) and supplied_code in reasons else "fx_unavailable"
+        # Preserve a useful, allowlisted cause in the durable job receipt. Never
+        # copy an upstream exception/body or a provider-supplied message here.
+        raise ProviderError(f"ECB reference unavailable: {reasons[code]} ({code}); no EUR estimate or substitute rate was created",provider="European Central Bank",
             code="timeout" if code=="fx_timeout" else "connection" if code=="fx_transport_error" else code)
     return {**result,"table":{"rate_date":table.rate_date.isoformat(),"retrieved_at":table.retrieved_at.isoformat(),
         "source_units_per_eur":{key:str(value) for key,value in table.source_units_per_eur.items()},"source":table.source,"source_url":table.source_url}}

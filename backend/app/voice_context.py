@@ -113,6 +113,7 @@ def build_voice_context(world: World, scope: VoiceScope) -> str:
             "id": incident.id,
             "flight_number": _label(incident.requested_flight_number, 32),
             "date_utc": _label(incident.date_utc, 32),
+            "date_utc_role": "flight_lookup_reference_only",
         },
         "groups": [],
         "other_groups_omitted": omitted,

@@ -5,6 +5,7 @@ import type { GoogleMapElement, LoadedMaps } from './contracts';
 import { getMapsLoader } from './loader';
 import { buildOverlays, cameraFor, observedPoint, updateObservationTracks } from './overlays';
 import type { ObservationTracks } from './overlays';
+import { groundPath } from './groundPaths';
 import { ALL_MODELS, buildModelDescriptors } from './models';
 import type { ModelVisibility } from './models';
 import { createModelLayer } from './modelLayer';
@@ -30,14 +31,23 @@ type Runtime = LoadedMaps & { map: GoogleMapElement; initialization: MapInitiali
 export function GeographicLegend({
   mode,
   selectedReview,
+  selectedGeometry = null,
   roadGeometry,
   hasObservations,
 }: {
   mode: World['mode'];
   selectedReview: ReturnType<typeof transferReview> | null;
+  selectedGeometry?: 'sourced_road' | 'connection_only' | null;
   roadGeometry: { sourced: boolean; connectionOnly: boolean };
   hasObservations: boolean;
 }) {
+  // A review card describes its selected transfer, not other routes elsewhere on the map.
+  const visibleGeometry = selectedReview
+    ? {
+        sourced: selectedGeometry === 'sourced_road',
+        connectionOnly: selectedGeometry === 'connection_only',
+      }
+    : roadGeometry;
   return (
     <div className={`geographic-map-legend${selectedReview ? ' is-transfer-review' : ''}`}>
       {selectedReview && (
@@ -46,9 +56,11 @@ export function GeographicLegend({
           <span>{selectedReview.status}</span>
           <small>
             {selectedReview.sourceTime}.{' '}
-            {roadGeometry.sourced
+            {selectedGeometry === 'sourced_road'
               ? 'Dated prediction, not a vehicle position.'
-              : 'Endpoints only; no driving path shown.'}
+              : selectedGeometry === 'connection_only'
+                ? 'Endpoints only; no driving path or vehicle position shown.'
+                : 'Road geometry unverified; no driving path shown.'}
           </small>
         </div>
       )}
@@ -58,13 +70,13 @@ export function GeographicLegend({
           Received observations
         </span>
       )}
-      {roadGeometry.sourced && (
+      {visibleGeometry.sourced && (
         <span>
           <i className="geo-road" />
           Google Routes · predicted road
         </span>
       )}
-      {roadGeometry.connectionOnly && <span>Connection only · road geometry unavailable</span>}
+      {visibleGeometry.connectionOnly && <span>Connection only · road geometry unavailable</span>}
       {mode !== 'live' && (
         <>
           <span>
@@ -346,6 +358,9 @@ export default function GoogleMaps3D({
       ? world.resources.find((item) => item.id === selectedId && privateTransfer(item))
       : undefined;
   const selectedReview = selectedTransfer ? transferReview(world, selectedTransfer, clock) : null;
+  const selectedGeometry = selectedTransfer
+    ? (groundPath(selectedTransfer, world)?.geometry ?? null)
+    : null;
   const hasObservations = world.observations.some(
     (observation) =>
       Boolean(observation.id ?? observation.fr24_id) && observedPoint(observation) !== null,
@@ -387,6 +402,7 @@ export default function GoogleMaps3D({
           <GeographicLegend
             mode={world.mode}
             selectedReview={selectedReview}
+            selectedGeometry={selectedGeometry}
             roadGeometry={roadGeometry}
             hasObservations={hasObservations}
           />

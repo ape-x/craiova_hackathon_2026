@@ -12,7 +12,10 @@ from .reference_fx import MAX_XML_BYTES, NOTICE, SOURCE, SOURCE_URL, convert_to_
 
 
 class EcbRates:
-    TIMEOUT_SECONDS = 3
+    # This feed also supplies required hotel-recovery pricing, not only an
+    # optional display estimate. Tolerate a bounded network delay without a
+    # retry; a shorter enclosing job deadline/cancellation still takes priority.
+    TIMEOUT_SECONDS = 10
     CACHE_SECONDS = 900
     FAILURE_CACHE_SECONDS = 30
     MAX_RATE_AGE_DAYS = 3  # Application policy, not an ECB publication guarantee.

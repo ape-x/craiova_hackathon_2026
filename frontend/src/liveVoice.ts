@@ -48,6 +48,31 @@ function boundedContext(content: string, limit = 480): string {
   return result.trimEnd() + '…';
 }
 
+const ROMANIAN_MONTHS = [
+  'ianuarie',
+  'februarie',
+  'martie',
+  'aprilie',
+  'mai',
+  'iunie',
+  'iulie',
+  'august',
+  'septembrie',
+  'octombrie',
+  'noiembrie',
+  'decembrie',
+];
+
+function reportedReadinessForSpeech(value: string): string {
+  const ready = Date.parse(value);
+  if (!Number.isFinite(ready) || !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value))
+    return 'data și ora declarate în panou';
+  const instant = new Date(ready);
+  // One verified instant supplies both calendar date and time. Neither the
+  // case's flight lookup date nor the browser/replay clock can fill a gap.
+  return `${instant.getUTCDate()} ${ROMANIAN_MONTHS[instant.getUTCMonth()]} ${instant.getUTCFullYear()}, ora ${instant.toISOString().slice(11, 16)} UTC`;
+}
+
 /** Only facts from this backend receipt may describe the outcome or allowance.
  * Reserve room for the qualification; long scope/reason text cannot remove it.
  * Full details remain in the command reply and case panel, without another call.
@@ -65,11 +90,7 @@ export function voiceCommandAcknowledgement(result: MutationResult): string {
   const recorded = result.replayed ? 'deja înregistrat' : 'înregistrat';
   const groups = (count: number) => `${count} ${count === 1 ? 'grup' : 'grupuri'}`;
   if (report?.type === 'arrival_report') {
-    const ready = Date.parse(report.ready_at);
-    const time =
-      Number.isFinite(ready) && /(?:Z|[+-]\d{2}:\d{2})$/i.test(report.ready_at)
-        ? `${new Date(ready).toISOString().slice(0, 16).replace('T', ' ')} UTC`
-        : 'ora declarată în panou';
+    const time = reportedReadinessForSpeech(report.ready_at);
     parts.push(
       `Raport ${recorded}: ${groups(report.group_ids.length)} la ${report.airport_code}, ${report.group_ids.length === 1 ? 'pregătit' : 'pregătite'} de la ${time}.`,
     );

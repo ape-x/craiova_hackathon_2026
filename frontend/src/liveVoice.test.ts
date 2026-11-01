@@ -83,7 +83,7 @@ describe('bounded voice acknowledgements from authoritative receipts', () => {
       }),
     );
     expect(content).toContain('Raport înregistrat: 2 grupuri la OTP');
-    expect(content).toContain('2026-11-01 10:30 UTC');
+    expect(content).toContain('1 noiembrie 2026, ora 10:30 UTC');
     expect(content).toContain('Nu am pornit o căutare.');
     expect(content).toContain(
       'nu confirmare de aterizare, autorizare aeroportuară, itinerar sau rezervare',
@@ -298,10 +298,55 @@ describe('bounded voice acknowledgements from authoritative receipts', () => {
     vi.setSystemTime(new Date('2026-11-02T12:00:00Z'));
     const content = voiceCommandAcknowledgement(receipt);
     expect(content).toContain('Raport deja înregistrat');
-    expect(content).toContain('pregătite de la 2026-11-01 10:30 UTC');
-    expect(content).not.toContain('2026-11-02');
+    expect(content).toContain('pregătite de la 1 noiembrie 2026, ora 10:30 UTC');
+    expect(content).not.toContain('2 noiembrie');
     expect(content).not.toContain('în 30 de minute');
   });
+
+  it('keeps readiness on 1 November when the flight lookup case is dated 31 October', () => {
+    const receipt = reportReceipt({
+      world: {
+        version: 7,
+        mode: 'live',
+        incidents: [{ id: 'CASE1', date_utc: '2026-10-31' }],
+      } as World,
+      recovery_job: queuedJob({ group_ids: ['G1'] }),
+      recovery_total_call_limit: 11,
+    });
+    if (receipt.report?.type !== 'arrival_report') throw new Error('Invalid arrival fixture');
+    receipt.report.group_ids = ['G1'];
+    receipt.report.airport_code = 'LHR';
+    receipt.report.ready_at = '2026-11-01T02:23:00+00:00';
+    const content = voiceCommandAcknowledgement(receipt);
+    expect(content).toContain('1 grup la LHR, pregătit de la 1 noiembrie 2026, ora 02:23 UTC');
+    expect(content).not.toMatch(/31 octombrie|2026-10-31|plecare/);
+    expect(content).toContain('11 apeluri, inclusiv interpretarea');
+    expect(content).toContain('nu confirmare de aterizare');
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+  });
+
+  it.each([
+    ['2026-11-01T00:10:00+02:00', '31 octombrie 2026, ora 22:10 UTC'],
+    ['2026-10-31T23:50:00-04:00', '1 noiembrie 2026, ora 03:50 UTC'],
+    ['2027-01-01T00:05:00+14:00', '31 decembrie 2026, ora 10:05 UTC'],
+  ])('keeps calendar and clock from the same UTC instant: %s', (readyAt, expected) => {
+    const receipt = reportReceipt();
+    if (receipt.report?.type !== 'arrival_report') throw new Error('Invalid arrival fixture');
+    receipt.report.ready_at = readyAt;
+    expect(voiceCommandAcknowledgement(receipt)).toContain(expected);
+  });
+
+  it.each(['02:23', '2026-11-01T02:23:00', 'invalid'])(
+    'does not supply a missing date or timezone for %s',
+    (readyAt) => {
+      const receipt = reportReceipt();
+      if (receipt.report?.type !== 'arrival_report') throw new Error('Invalid arrival fixture');
+      receipt.report.ready_at = readyAt;
+      const content = voiceCommandAcknowledgement(receipt);
+      expect(content).toContain('data și ora declarate în panou');
+      expect(content).not.toMatch(/2026|UTC|noiembrie|octombrie/);
+    },
+  );
 
   it('does not announce queue success for a foreign case or contradictory receipt', () => {
     const foreign = voiceCommandAcknowledgement(
@@ -527,6 +572,7 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
     });
     const spoken = channel.sent.filter((event) => event.type === 'session.commentary.append');
     expect(spoken).toHaveLength(2);
+    expect(spoken[0].content).toContain('1 noiembrie 2026, ora 10:30 UTC');
     expect(spoken[0].content).toContain('Limită totală: 11');
     expect(spoken[1].content).toContain('Raport înregistrat');
     expect(spoken[1].content).toContain('Nu am pornit o căutare.');

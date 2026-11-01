@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from app.ground_transfers import GroundTransfers
+from app.hotel_recovery import _rates as recovery_rates
 from app.providers.apl import APLQuoteRequest
 from app.providers.base import ProviderError
 from app.providers.ecb_rates import EcbRates
@@ -118,6 +119,79 @@ async def test_total_timeout_includes_streaming_and_is_negatively_cached():
         result = fx.enrich(quote(), await fx.rates())
         assert result["fx"]["code"] == "fx_timeout" and closed == [True]
         assert (await fx.rates())["cache"] == "cached" and len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_single_slow_reference_fetch_can_finish_after_previous_three_second_deadline():
+    calls = []
+    async def handler(request):
+        calls.append(request)
+        await asyncio.sleep(3.05)
+        return httpx.Response(200, content=xml())
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        fx = EcbRates(client=client, now=lambda: RETRIEVED)
+        assert fx.TIMEOUT_SECONDS == 10
+        result = await recovery_rates(fx)
+        assert result["table"]["source_units_per_eur"]["GBP"] == "0.8"
+        assert result["table"]["retrieved_at"] == RETRIEVED.isoformat()
+        assert len(calls) == 1
+        assert (await recovery_rates(fx))["cache"] == "cached" and len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_shorter_enclosing_job_deadline_cancels_fetch_without_cache_or_retry():
+    calls, closed = [], []
+    class PendingStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b"<"
+            await asyncio.Event().wait()
+        async def aclose(self):
+            closed.append(True)
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, stream=PendingStream())
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        fx = EcbRates(client=client, now=lambda: RETRIEVED)
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(.01):
+                await recovery_rates(fx)
+        assert len(calls) == 1 and closed == [True]
+        assert fx._cached is None and not fx._gate.locked()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure,code,reason", [
+    (httpx.ReadTimeout("private upstream diagnostic"), "timeout", "fx_timeout"),
+    (httpx.ConnectError("private upstream diagnostic"), "connection", "fx_transport_error"),
+    (httpx.Response(503, text="private upstream diagnostic"), "fx_http_error", "fx_http_error"),
+    (httpx.Response(200, text="private upstream diagnostic"), "fx_invalid_response", "fx_invalid_response"),
+])
+async def test_required_fx_failure_retains_safe_cause_and_never_retries(failure, code, reason):
+    calls = []
+    def handler(request):
+        calls.append(request)
+        if isinstance(failure, Exception):
+            raise failure
+        return failure
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        fx = EcbRates(client=client, now=lambda: RETRIEVED)
+        for _ in range(2):
+            with pytest.raises(ProviderError) as error:
+                await recovery_rates(fx)
+            assert error.value.code == code and reason in str(error.value)
+            assert "private upstream diagnostic" not in str(error.value)
+        assert len(calls) == 1 and fx._cached["table"] is None
+
+
+@pytest.mark.asyncio
+async def test_unrecognized_reference_failure_code_is_not_echoed_as_diagnostic():
+    class Unavailable:
+        async def rates(self):
+            return {"table": None, "code": "private upstream diagnostic"}
+    with pytest.raises(ProviderError) as error:
+        await recovery_rates(Unavailable())
+    assert error.value.code == "fx_unavailable"
+    assert "private upstream diagnostic" not in str(error.value)
 
 
 @pytest.mark.asyncio
