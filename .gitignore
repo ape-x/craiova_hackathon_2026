@@ -28,3 +28,7 @@ backups/
 
 # Private account-console evidence stays local.
 /docs/verification/google-billing-*
+
+# Random documents useful for Hackathon
+# hackathon-docs/
+*:Zone.Identifier
