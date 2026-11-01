@@ -153,6 +153,8 @@ def route_service_arrival_reports(commands, request, world, interpreted):
             except DomainError as exc:
                 conn.execute("ROLLBACK TO service_arrival_recovery")
                 conn.execute("RELEASE service_arrival_recovery")
+                if exc.status == 422 and job_request.romanian_hotel_recovery is not None:
+                    raise RecoveryBlocked("romanian_hotel_setup_required", exc.message) from exc
                 if exc.status == 422 and (job_request.airport_transfers or job_request.after_flight_transfer is not None):
                     raise RecoveryBlocked("airport_transfer_setup_required", exc.message) from exc
                 if (exc.details or {}).get("code") not in ("recovery_queue_full", "recovery_group_active", "recovery_handoff_limit"):
@@ -168,6 +170,9 @@ def route_service_arrival_reports(commands, request, world, interpreted):
             if job_request.after_flight_transfer is not None:
                 from .after_flight_commands import after_flight_reuse_explanation
                 response["explanation"] += after_flight_reuse_explanation(job_request.after_flight_transfer)
+            if job_request.romanian_hotel_recovery is not None:
+                from .romanian_hotel_commands import romanian_hotel_reuse_explanation
+                response["explanation"] += romanian_hotel_reuse_explanation(job_request.romanian_hotel_recovery)
             if result["job"].get("supersedes_job_ids"):
                 response["explanation"] += " Încercările suprapuse trebuie să încheie apelurile deja trimise; rezultatele incerte cer revizuire înainte de alte apeluri."
         except RecoveryBlocked as exc:

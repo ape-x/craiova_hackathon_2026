@@ -6,6 +6,7 @@ import { airportTransferInputs } from './airportTransferRecovery';
 import AirportTransferQuoteObservations from './AirportTransferQuoteObservations';
 import SavedAirportTransferInputs from './SavedAirportTransferInputs';
 import SavedAfterFlightInputs from './SavedAfterFlightInputs';
+import SavedRomanianHotelInputs from './SavedRomanianHotelInputs';
 import AfterFlightTransferFields, {
   AfterFlightTransferRequestDetails,
 } from './AfterFlightTransferFields';
@@ -1100,13 +1101,28 @@ export default function RecoveryJobPanel({
               </label>
             </div>
             {hotelMode && hotelPackage === 'romania_transfero' && (
-              <RomanianHotelRecoveryFields
-                value={romanianHotelFields}
-                onChange={(value) => updateDraft('romanianHotelFields', value)}
-                world={world}
-                group={hotelGroup}
-                allowance={Number(limit)}
-              />
+              <>
+                <RomanianHotelRecoveryFields
+                  value={romanianHotelFields}
+                  onChange={(value) => updateDraft('romanianHotelFields', value)}
+                  world={world}
+                  group={hotelGroup}
+                  allowance={Number(limit)}
+                />
+                <SavedRomanianHotelInputs
+                  world={world}
+                  incident={incident}
+                  groupIds={selectedGroups}
+                  packageSelected={true}
+                  incompatibleSetup={airportTransfers.length > 0 || afterFlightTransfer !== null}
+                  allowance={Number(limit)}
+                  draft={romanianHotelFields}
+                  disabled={
+                    locked || active || loading || Boolean(draftIssue) || Boolean(loadError)
+                  }
+                  onChange={(value) => updateDraft('romanianHotelFields', value)}
+                />
+              </>
             )}
             {hotelMode && hotelPackage === 'uk_apl' && (
               <>

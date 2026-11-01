@@ -181,8 +181,41 @@ one flight search and Decisions. See the [full contract](romanian-hotel-recovery
 Typed arrival/restriction options also accept this field. Null is omitted to
 preserve old idempotency fingerprints. Validation uses the post-report world.
 Known failures return `romanian_hotel_setup_required` and retain the report;
-unexpected errors roll back. No Romanian voice profile is saved, and named
-package requests cannot substitute UK inputs.
+unexpected errors roll back. Named package requests cannot substitute UK inputs.
+
+Only a complete successful proposal saves exact `RomanianHotelRecoveryInputs`
+in `romanian_hotel_profiles`, in the same transaction as inventory, proposal,
+ledger completion and idempotency receipt. The record binds scenario/epoch,
+reciprocal case/group, flight/date and stable party/route identity, with
+`source_job_id` and an aware `saved_at`. It contains no supplier quote or
+authority to search. Failure and rollback preserve the previous profile.
+
+Authenticated `GET /api/incidents/{incident_id}/groups/{group_id}/romanian-hotel-recovery-profile`
+returns `{world_version,incident_id,group_id,configured,inputs?,source_job_id?,saved_at?,reason?}`
+from one read transaction. Missing/stale/invalid profiles return `configured:false`;
+absent case/group returns 404 and nonreciprocal scope or non-live mode returns 409.
+The frontend validates that envelope against its current case, group, world and
+draft before loading. Explicit replacement of a compatible nonempty draft keeps
+group selection, modes and allowance; reads/loads never start supplier work.
+
+Ordinary and post-report RO/EN commands require an affirmative literal request
+for the saved Romanian hotel configuration, exactly one group and all three
+modes. Current dates, readiness, deadlines, restrictions, budget and eligibility
+are revalidated. Negation, conditional/descriptive references, mixed profiles or
+input edits cannot silently become unchanged reuse. Minimum total is **9**:
+one interpretation and eight worker calls, without increasing default **8**.
+Both Romanian and UK saved-hotel follow-ups also check the literal operational
+report excerpts before removing them from recovery text. The same input-change
+rules apply inside and outside those excerpts; only grounded readiness and exact
+selected entity labels are exempted. A quoted outage cannot swallow a baggage,
+party, budget, property, route, margin or second-profile requirement. Valid reports
+remain recorded with a known setup block; unknown transaction failures roll back.
+Voice startup sends only `saved_romanian_hotel_profile_scope_valid`; command
+context supplies only selected reference fields. This follows the separation of
+application instructions and input context described in the
+[OpenAI text guide](https://developers.openai.com/api/docs/guides/text#message-roles-and-instruction-following);
+backend validation remains authoritative. Models, API schemas and transport are
+unchanged. Offline ASGI/worker tests do not prove a new paid spoken acceptance.
 
 ## Manual hotel import and stay policy
 

@@ -100,7 +100,13 @@ Opțiunea **Romanian coach + hotel** din formularul cazului caută separat un
 itinerar OTP → Hotel Aro Palace, Brașov → OTP → zbor. Folosește orare și locuri
 raportate de Direct Aeroport prin Transfero, camera exactă LiteAPI și tariful RON
 al grupului cu estimare EUR la curs ECB. Necesită 1–12 adulți, date și bagaje
-explicite și cel puțin opt apeluri. Nu reutilizează profilul vocal UK.
+explicite și cel puțin opt apeluri. Un plan complet reușit salvează configurația
+românească separat. **Review saved Romania inputs** permite revizuirea și
+încărcarea ei fără căutare automată sau modificarea limitei de apeluri. Reutilizarea
+explicită prin comandă text/vocală necesită minimum **nouă apeluri totale**,
+inclusiv interpretarea; orele și bagajele rămân exacte, iar tarifele sunt căutate
+din nou. Nu reutilizează profilul UK. Acest flux are verificări offline;
+proba completă cu furnizori reali și voce rămâne deschisă.
 [Acoperire, reguli și dovezi reale](docs/romanian-hotel-recovery.md).
 
 ## Transferuri private între aeroport și hotel

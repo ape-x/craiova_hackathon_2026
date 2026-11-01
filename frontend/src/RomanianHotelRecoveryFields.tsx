@@ -147,7 +147,7 @@ export default function RomanianHotelRecoveryFields({
       >
         This complete workflow needs at least 8 provider calls. The current limit is{' '}
         {Number.isFinite(allowance) ? allowance : 'not set'} and is never increased automatically.
-        Fresh typed setup is required; saved UK transfers are not reused.
+        Review fresh or separately saved Romania inputs; saved UK transfers are not reused.
       </p>
     </div>
   );

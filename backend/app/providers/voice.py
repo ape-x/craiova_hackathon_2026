@@ -29,6 +29,8 @@ REFERENCE_POLICY = (
     "checks current constraints and the current request allowance before fresh sourcing. "
     "A scope-valid saved hotel profile is not a saved fare, a booking, or proof that its "
     "dates and current constraints remain usable; the backend must revalidate them. "
+    "Saved UK and Romanian hotel configurations are distinct. A saved Romanian configuration "
+    "requires an explicit current request to reuse that package; never replace one with the other. "
     "The selection is a startup snapshot and may change. Only a verified backend result "
     "can establish that an action occurred.\n"
 )

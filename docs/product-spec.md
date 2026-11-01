@@ -235,6 +235,23 @@ Planul hotelier automat verifică fluxul din formular până la surse reale, Dec
 
 Recuperarea completă prin voce rămâne deschisă. Proba istorică `fe47825` a verificat transportul, delegarea și confirmarea vocală de pornire în 33 de secunde, cu patru apeluri backend, însă fără plan aprobat și fără păstrarea exactă a datei. A doua probă, autorizată separat la 21:32 UTC pe API `95a0606` și interfața `31f49a1`, s-a oprit la verificarea ASR din clientul privat după coruperea datei și numelui grupului: închidere confirmată în 17 secunde, zero interpretări backend, zero apeluri către furnizorii de căutare, zero joburi și lumea neschimbată la versiunea 49. Nu a existat confirmare vocală de job sau recuperare în patru segmente; proba nu a fost reluată. Contextul vocal inițial selectat a fost implementat ulterior. O a treia probă, autorizată separat, a folosit acel context, dar a transcris „LHR” drept „Le Havre”; s-a oprit după 17 secunde, fără cerere backend, job nou sau schimbarea stării. Vocabularul canonic al aeroporturilor și revizia cererii au fost adăugate după această probă; îmbunătățirea recunoașterii nu este încă demonstrată. [Raportul detaliat](verification/report.md#saved-hotel-profile--single-authorized-voice-probe) separă aceste rezultate de succesul formularului; microfonul fizic, redarea și întreruperea în browser rămân de verificat.
 
+Pachetul românesc separat caută OTP → Hotel Aro Palace, Brașov → OTP → zbor,
+pentru un grup explicit adult de cel mult 12 persoane. Transfero / Direct Aeroport
+furnizează orarele, tariful RON al grupului și locurile raportate; LiteAPI furnizează
+hotelul exact, politica și costurile obligatorii. Opt apeluri ale jobului acoperă
+sursele, conversia ECB și deciziile. Sunt verificate orele declarate, marjele de
+conexiune, stocul comun și destinația; nu se inventează disponibilitate sau rezervări.
+
+Numai un plan complet aplicat salvează configurația românească. Revizuirea din
+formular arată orele exacte, bagajele, marjele și încercarea sursă; încărcarea
+necesită aceeași arie și păstrează limita de apeluri. Un draft existent se
+înlocuiește explicit. Comanda text/vocală poate cere reutilizarea configurației
+românești salvate pentru cazul și grupul exacte, cu toate cele trei servicii și
+minimum nouă apeluri totale, inclusiv interpretarea. Sursele sunt căutate din nou;
+schimbările de intrări cer formularul, iar un profil UK nu îl substituie.
+Persistența și traseul comandă → worker → itinerar au verificări offline;
+acceptanța completă cu voce și furnizori reali rămâne distinctă.
+
 ## 10. Criterii de acceptare ale fluxului live asistat
 
 - Selectarea exactă a zborului și a grupurilor precedă căutările; un caz nou nu șterge operațiunea.

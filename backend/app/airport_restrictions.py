@@ -302,6 +302,9 @@ def enqueue_airport_restriction_recovery(conn, store, jobs, response, request, *
     if interpretation_calls and job_request.after_flight_transfer is not None:
         from .after_flight_commands import after_flight_reuse_explanation
         response["explanation"] += after_flight_reuse_explanation(job_request.after_flight_transfer)
+    if interpretation_calls and job_request.romanian_hotel_recovery is not None:
+        from .romanian_hotel_commands import romanian_hotel_reuse_explanation
+        response["explanation"] += romanian_hotel_reuse_explanation(job_request.romanian_hotel_recovery)
     if result["job"].get("supersedes_job_ids"):
         response["explanation"] += " Earlier overlapping attempts must drain; unknown outcomes require review before successor calls."
 

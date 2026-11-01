@@ -17,6 +17,7 @@ from .airport_cab_recovery import AIRPORT_TRANSFER_CONTEXT, AirportCabRecoveryIn
 from .airport_cab_profile import AirportCabProfiles
 from .after_flight_inputs import AfterFlightTransferInput
 from .after_flight_profile import AfterFlightProfiles
+from .romanian_hotel_profile import RomanianHotelProfiles
 from .after_flight_recovery import run_after_flight_recovery, validate_after_flight_job
 from .confirmed_allocations import confirmed_group_ids, require_consistent_confirmations
 from .hotel_location import coordinate_timezone, property_zone
@@ -282,6 +283,7 @@ class RecoveryJobs:
         self.transfero_provider=transfero_provider
         self.airport_cab_profiles=AirportCabProfiles(store)
         self.after_flight_profiles=AfterFlightProfiles(store)
+        self.romanian_hotel_profiles=RomanianHotelProfiles(store)
         self.ledger=RecoveryLedger(store,settings.request_timeout_seconds+60)
         self.task=None
 

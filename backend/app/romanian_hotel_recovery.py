@@ -402,6 +402,9 @@ async def run_romanian_hotel_recovery(jobs, job, owner, world, started):
         return answer
     def completed(conn, response):
         jobs.ledger.complete_in_transaction(conn, job["id"], owner, response, completed_result)
+        committed = jobs.store._load(conn)
+        selected_group = next(item for item in committed.groups if item.id == group_id)
+        jobs.romanian_hotel_profiles.save_in_transaction(conn, committed, selected_group, inputs, job["id"])
     task = asyncio.create_task(asyncio.to_thread(jobs.store.mutate, "recovery-job-apply:"+job["id"], {"job_id": job["id"]}, world.version,
         apply, on_commit=completed, request_started=started))
     try:

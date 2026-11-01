@@ -488,6 +488,19 @@ export interface RomanianHotelRecoveryInput {
   airport_processing_minutes: number;
   hotel_connection_minutes: number;
 }
+export type RomanianHotelRecoveryProfile = {
+  world_version: number;
+  incident_id: string;
+  group_id: string;
+} & (
+  | {
+      configured: true;
+      inputs: RomanianHotelRecoveryInput;
+      source_job_id: string;
+      saved_at: string;
+    }
+  | { configured: false; reason: string }
+);
 export type AirportTransferProfile =
   | {
       group_id: string;

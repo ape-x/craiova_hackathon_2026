@@ -2,6 +2,7 @@ import type {
   AppConfig,
   AirportTransferProfiles,
   AfterFlightTransferProfiles,
+  RomanianHotelRecoveryProfile,
   FlightLookup,
   IncidentInput,
   IncidentResult,
@@ -140,6 +141,12 @@ export const api = {
   afterFlightTransferProfiles: (incidentId: string, signal?: AbortSignal) =>
     request<AfterFlightTransferProfiles>(
       `/incidents/${encodeURIComponent(incidentId)}/after-flight-transfer-profiles`,
+      undefined,
+      signal,
+    ),
+  romanianHotelRecoveryProfile: (incidentId: string, groupId: string, signal?: AbortSignal) =>
+    request<RomanianHotelRecoveryProfile>(
+      `/incidents/${encodeURIComponent(incidentId)}/groups/${encodeURIComponent(groupId)}/romanian-hotel-recovery-profile`,
       undefined,
       signal,
     ),

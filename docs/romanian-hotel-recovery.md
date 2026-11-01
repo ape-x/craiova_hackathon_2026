@@ -63,10 +63,34 @@ constraint checks. Unused alternatives do not become inventory. Ground services
 have no sourced road geometry or tracked position; map reference lines must not
 imply either. No booking occurs.
 
-Fresh typed inputs are required; no Romanian voice profile is saved. Named
-Transfero, Direct Aeroport or Aro Palace requests cannot reuse UK hotel inputs.
+The first complete successful typed plan saves its exact inputs in a separate
+Romanian profile, atomically with the proposal and completed job. Failed,
+cancelled, quote-only or unchosen attempts cannot replace it. Stable identity
+binds the operation, reciprocal case/group, flight/date, party and route.
+Readiness, deadline, budget and all saved inputs are checked against current
+conditions before each new search.
+
+**Review saved Romania inputs** retrieves the selected group's configuration
+without contacting suppliers. The review shows exact times, baggage, margins,
+source job and save time. Loading does not submit a search or change the group,
+services or call allowance. A nonempty compatible draft requires explicit
+replacement; changed scope/version or incompatible setup prevents loading.
+Past dates remain exact for editing, not silently advanced.
+
+An affirmative RO/EN command can explicitly reuse this saved Romanian package:
+“Recover CASE for G1 using the saved Romanian hotel configuration with maximum
+9 calls.” This needs **nine total calls**, including interpretation and the
+eight-call fresh-source workflow. Default eight is never increased. Requests
+to edit dates, rooms, bags, route or margins require typed review. Descriptive
+source names, passenger labels, negated or conditional requests and another
+profile do not authorize reuse. The voice startup receives only an identity
+validity flag; the command interpreter receives a bounded reference summary.
+Neither contains saved fares or authorizes spending.
+
+Named Transfero, Direct Aeroport or Aro Palace requests cannot reuse UK inputs.
 A valid operational report survives a known recovery setup block; unexpected
-transaction errors roll it back.
+transaction errors roll it back. Persistence, review and command-to-worker flow
+have offline test evidence; fresh-provider and spoken acceptance remain open.
 
 ## Dated discovery — 1 November 2026
 

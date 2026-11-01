@@ -379,6 +379,23 @@ def create_app(settings: Settings | None=None) -> FastAPI:
                 raise DomainError(409,"Saved after-flight transfer configurations require live mode")
             return {"world_version":world.version,"profiles":jobs.after_flight_profiles.public_for_case(world,incident_id,conn=conn)}
 
+    @app.get("/api/incidents/{incident_id}/groups/{group_id}/romanian-hotel-recovery-profile",dependencies=[Depends(operator)])
+    def romanian_hotel_recovery_profile(incident_id: str, group_id: str):
+        with store.connect() as conn:
+            conn.execute("BEGIN")
+            world=store._load(conn)
+            if world.mode!="live":
+                raise DomainError(409,"Saved Romanian hotel configurations require live mode")
+            case=next((item for item in world.incidents if item.id==incident_id),None)
+            group=next((item for item in world.groups if item.id==group_id),None)
+            if case is None or group is None:
+                raise DomainError(404,"Selected case or passenger group no longer exists")
+            if group.incident_id!=case.id or group.id not in case.group_ids:
+                raise DomainError(409,"Selected passenger group must belong to this exact case")
+            profile=next(item for item in jobs.romanian_hotel_profiles.public_for_case(world,incident_id,conn=conn)
+                if item["group_id"]==group_id)
+            return {"world_version":world.version,"incident_id":incident_id,**profile}
+
     @app.get("/api/recovery-jobs/{job_id}",dependencies=[Depends(operator)])
     def recovery_job_get(job_id: str):
         return jobs.get(job_id)
@@ -481,7 +498,8 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         if body.scope is None:
             return await voice.create(body.sdp)
         context=await asyncio.to_thread(build_voice_context,await asyncio.to_thread(store.read),body.scope,
-            airport_cab_profiles=jobs.airport_cab_profiles,after_flight_profiles=jobs.after_flight_profiles)
+            airport_cab_profiles=jobs.airport_cab_profiles,after_flight_profiles=jobs.after_flight_profiles,
+            romanian_hotel_profiles=jobs.romanian_hotel_profiles)
         return await voice.create(body.sdp,reference_context=context)
 
     @app.post("/api/traffic/start",dependencies=[Depends(operator)])

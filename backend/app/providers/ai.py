@@ -215,7 +215,7 @@ explicitly identified in the current request; copy their existing IDs. Never
 create, move, count-infer or silently exclude groups. Confirmed bookings are protected.
 Use balanced unless fastest/lowest_cost was requested. modes contains flight
 unless the request explicitly asks for bus/hotel (include requested modes).
-For a complete saved hotel journey, modes MUST contain flight, hotel and bus.
+For a complete saved UK hotel journey, modes MUST contain flight, hotel and bus.
 If one explicitly selected group has hotel_recovery_profile.configured=true,
 a request to recalculate its complete journey reuses that saved hotel workflow.
 An explicitly flight-only search remains flight-only. Requests for hotel recovery
@@ -227,6 +227,17 @@ or copy an allowance from history. Additional requested dates, times, pickup,
 rooms or other hotel-input changes require requires_input_changes=true and typed setup.
 The saved hotel job requires at least 10 job calls, plus this interpretation:
 11 total. Do not raise the default total 8 or an explicit lower limit to fit it.
+The separate Romanian Hotel Aro Palace / Transfero package requires an explicit
+current request to reuse its saved Romanian hotel configuration; a source name
+describing an affected service or a passenger label is not such a request.
+romanian_hotel_recovery_profile is operator input only, not a quote or booking.
+Explicit unchanged reuse for one named group includes flight, hotel and bus and
+does not itself require input changes. Never substitute the UK profile or an
+initial/after-flight transfer. Changed stay times, rooms, bags or connection
+margins require requires_input_changes=true and typed review; do not infer them.
+Missing or stale profiles still require the requested complete modes so the
+backend can explain the setup gap. Eight job calls plus interpretation require
+nine total; never increase the default eight or an explicit lower allowance.
 An explicit request to reuse saved airport-transfer inputs (Romanian example:
 "folosind configurația salvată de transfer") includes bus in modes. Its
 airport_transfer_profile summary is operator input only, not a fare, booking,
@@ -437,6 +448,12 @@ def compact_world(world: dict) -> dict:
         after_flight_summary = world.get("after_flight_transfer_profiles", {}).get(group.get("id"))
         if after_flight_summary is not None:
             item["after_flight_transfer_profile"] = after_flight_summary
+        romanian_summary = world.get("romanian_hotel_profiles", {}).get(group.get("id"))
+        if romanian_summary is not None:
+            item["romanian_hotel_recovery_profile"] = {key: romanian_summary[key] for key in (
+                "configured", "source", "requires_typed_setup", "reason", "hotel_id",
+                "origin_airport", "onward_airport", "destination_airport", "checkin_at", "checkout_at",
+                "minimum_total_calls", "requires_current_validation") if key in romanian_summary}
         groups.append(item)
     return {
         key: world.get(key) for key in ("version", "epoch", "sim_time", "budget", "currency", "mode", "airports")

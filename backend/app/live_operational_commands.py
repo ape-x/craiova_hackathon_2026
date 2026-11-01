@@ -14,7 +14,8 @@ from pydantic import ValidationError
 from .airport_catalog import lookup_airport
 from .hotel_recovery import HotelRecoveryInputs, REQUIRED_CALLS, validate_hotel_job
 from .hotel_recovery_profile import HotelRecoveryProfileError, read_hotel_recovery_profile
-from .romanian_hotel_commands import SETUP_EXPLANATION, romanian_hotel_requested, romanian_hotel_instruction
+from .romanian_hotel_commands import (RomanianHotelSetupRequired, romanian_hotel_instruction,
+    romanian_hotel_reuse_explanation, require_complete_hotel_report_inputs, resolve_saved_romanian_hotel)
 from .live_commands import (
     _DURATION_NUMBERS, _read_reference_date, _reference_pattern, hotel_input_time_requested, literal_call_limit, mentioned,
     normalized, reference_date,
@@ -283,17 +284,21 @@ def _job_request(world, request, case, groups, intent, total, report, *, jobs, c
     spans = [_fragment(request.text, item.report_reference) for item in (report, *additional_reports)]
     for report_text, report_start in sorted(spans, key=lambda item: item[1], reverse=True):
         followup = followup[:report_start] + " " * len(report_text) + followup[report_start + len(report_text):]
-    if romanian_hotel_requested(followup):
-        raise RecoveryBlocked("romanian_hotel_setup_required", SETUP_EXPLANATION)
+    hotel = "hotel" in intent.modes or bool(re.search(r"\b(?:hotel\w*|cazare\w*|accommodation)\b", normalized(followup)))
+    try:
+        require_complete_hotel_report_inputs(world, case, groups, followup, (report, *additional_reports), hotel_requested=hotel)
+        romanian_inputs = resolve_saved_romanian_hotel(jobs, world, case, groups,
+            intent.modes, followup, allowance, conn=conn)
+    except RomanianHotelSetupRequired as exc:
+        raise RecoveryBlocked(exc.code, str(exc)) from exc
     from .airport_cab_commands import AirportTransferSetupRequired, resolve_saved_airport_transfers
     from .after_flight_commands import resolve_saved_after_flight_transfer
     try:
-        after_flight_transfer = resolve_saved_after_flight_transfer(jobs, world, case, groups,
+        after_flight_transfer = None if romanian_inputs is not None else resolve_saved_after_flight_transfer(jobs, world, case, groups,
             intent.modes, followup, allowance, conn=conn)
     except AirportTransferSetupRequired as exc:
         raise RecoveryBlocked(exc.code, str(exc)) from exc
-    hotel = "hotel" in intent.modes or bool(re.search(r"\b(?:hotel\w*|cazare\w*|accommodation)\b", normalized(followup)))
-    if hotel:
+    if hotel and romanian_inputs is None:
         if len(groups) != 1 or set(intent.modes) != {"flight", "hotel", "bus"}:
             raise RecoveryBlocked("hotel_setup_required", "Traseul cu hotel necesită exact un grup și hotel, ambele transferuri și zbor.")
         # The report's location/readiness is not a hotel edit. Other requested
@@ -308,7 +313,7 @@ def _job_request(world, request, case, groups, intent, total, report, *, jobs, c
         if allowance < REQUIRED_CALLS:
             raise RecoveryBlocked("insufficient_call_allowance", f"Hotelul necesită {REQUIRED_CALLS + 1} apeluri totale, inclusiv interpretarea. Limita curentă {total} nu a fost mărită.")
     try:
-        airport_transfers = [] if after_flight_transfer is not None else resolve_saved_airport_transfers(
+        airport_transfers = [] if after_flight_transfer is not None or romanian_inputs is not None else resolve_saved_airport_transfers(
             jobs, world, case, groups, intent.modes, followup, allowance, conn=conn)
     except AirportTransferSetupRequired as exc:
         raise RecoveryBlocked(exc.code, str(exc)) from exc
@@ -316,7 +321,8 @@ def _job_request(world, request, case, groups, intent, total, report, *, jobs, c
         idempotency_key="live-command-" + Store.fingerprint({"key": request.idempotency_key, "scenario": world.scenario_id}),
         group_ids=groups, objective=intent.objective, modes=intent.modes,
         max_provider_calls=allowance, instructions=request.text, hotel_recovery=inputs,
-        airport_transfers=airport_transfers, after_flight_transfer=after_flight_transfer)
+        airport_transfers=airport_transfers, after_flight_transfer=after_flight_transfer,
+        romanian_hotel_recovery=romanian_inputs)
     if inputs is not None:
         try:
             validate_hotel_job(world, payload)
@@ -613,6 +619,8 @@ def route_operational_report(commands, request, world, interpreted):
                 conn.execute("ROLLBACK TO spoken_report_recovery")
                 conn.execute("RELEASE spoken_report_recovery")
                 code = (exc.details or {}).get("code")
+                if exc.status == 422 and job_request.romanian_hotel_recovery is not None:
+                    raise RecoveryBlocked("romanian_hotel_setup_required", exc.message) from exc
                 if exc.status == 422 and (job_request.airport_transfers or job_request.after_flight_transfer is not None):
                     raise RecoveryBlocked("airport_transfer_setup_required", exc.message) from exc
                 if code not in ("recovery_queue_full", "recovery_group_active", "recovery_handoff_limit"):
@@ -628,6 +636,8 @@ def route_operational_report(commands, request, world, interpreted):
             if job_request.after_flight_transfer is not None:
                 from .after_flight_commands import after_flight_reuse_explanation
                 response["explanation"] += after_flight_reuse_explanation(job_request.after_flight_transfer)
+            if job_request.romanian_hotel_recovery is not None:
+                response["explanation"] += romanian_hotel_reuse_explanation(job_request.romanian_hotel_recovery)
             if result["job"].get("supersedes_job_ids"):
                 response["explanation"] += " Cererea nouă înlocuiește încercările depășite pentru grupurile selectate. Așteaptă încheierea apelurilor deja trimise; un rezultat incert cere revizuire înainte de alte apeluri."
         except RecoveryBlocked as exc:
