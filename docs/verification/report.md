@@ -4,7 +4,51 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `25aa322` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `98397d2` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+
+### Scoped recovery navigation and confirmation accounting — 1 November 2026
+
+Release `98397d2` routes live workspace recovery through explicit case selection.
+The passenger inspector selects only its exact reciprocal case/group, or opens
+review/setup when confirmed or unlinked. Returning from Operation data restores
+the full unsent search draft, including its call allowance, services, instructions
+and nested hotel/transfer inputs. Stale scope is rejected without selecting a
+replacement group or accepting a new default allowance. Unknown mutation retries
+retain their original request body/key/version; abortable read-only lookups remain
+separate.
+
+Live confirmation evidence is checked before planning, provider dispatch and
+proposal application. Orphan or contradictory bookings require review. Fixed
+itinerary legs supply capacity and vehicle occupancy even without legacy
+reservation rows, without double counting matching rows or writing new bookings.
+Coherent shared-service confirmations remain valid. Existing capacity/fare-history
+fixtures were made internally consistent rather than weakening these guards.
+
+Final local verification passed **2,807 backend tests and 878 frontend tests
+across 54 files**, plus TypeScript/production build, formatting and diff checks.
+Coverage includes stale/mismatched navigation, pending and unknown mutation locks,
+exact draft round-trips with 3/9-call limits and nested inputs, confirmation evidence,
+three-group capacity, partial feasible plans and conflicting vehicle services.
+
+Both containers were built from the exact committed archive and deployed only to
+`http://localhost:8080`, with a verified private SQLite backup and rollback image
+tags. Browser QA confirmed the case picker, dated case identity, exact inspector
+preselection, and a round-trip preserving limit 3, Ground transport and the typed
+instructions. The unlinked group opened explicit setup without selecting another
+group or linking it. No source search was submitted. The loaded bundle was
+`index-C3rQEUMK.js`, with zero captured console errors; temporary form edits were
+restored and the modal closed.
+
+GitHub CI passed for the exact code revision on `main` (run 167) and
+`codex/airport-recovery-live` (run 166).
+
+The full world except its clock and all recovery-job history remained unchanged:
+version 52, 2 groups, 25 resources, zero active jobs or confirmed offers/resources.
+FR24 stayed paused at 81 requests / 3,215 reserved credits; CAB remained 2 receipts /
+4 HTTP calls; recovery steps remained 27; both saved-transfer profile counts stayed
+zero. No new voice, model, flight or transport-source acceptance run was performed.
+The previous failed spoken attempt remains recorded; full voice and supplier
+acceptance gates below are still open. See [release evidence](scoped-recovery-release.json).
 
 ### Saved after-flight inputs and live command composition — 1 November 2026
 

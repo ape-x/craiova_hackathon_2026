@@ -1,0 +1,76 @@
+{
+  "checked_at_utc": "2026-11-01T05:19:12.249394+00:00",
+  "code_revision": "98397d2e484094692566f2bda35bb8d20cbfd4f4",
+  "deployed_api_revision": "98397d2e484094692566f2bda35bb8d20cbfd4f4",
+  "deployed_web_revision": "98397d2e484094692566f2bda35bb8d20cbfd4f4",
+  "url": "http://localhost:8080",
+  "exact_commit_archive_build": true,
+  "additional_app_servers_started": false,
+  "backup_integrity": "ok",
+  "rollback_images_retained": true,
+  "checks": {
+    "backend_tests_passed": 2807,
+    "frontend_tests_passed": 878,
+    "frontend_test_files": 54,
+    "typescript": true,
+    "production_build": true,
+    "format": true,
+    "diff_check": true
+  },
+  "browser": {
+    "bundle": "/assets/index-C3rQEUMK.js",
+    "captured_console_errors": 0,
+    "case_picker": true,
+    "exact_inspector_preselection": true,
+    "data_return_preserved_limit": 3,
+    "data_return_preserved_services": [
+      "flight",
+      "bus"
+    ],
+    "data_return_preserved_instructions": true,
+    "unlinked_group_requires_explicit_setup": true,
+    "search_submitted": false,
+    "temporary_form_changes_restored": true
+  },
+  "operational_state": {
+    "world_version": 52,
+    "groups": 2,
+    "resources": 25,
+    "active_jobs": 0,
+    "confirmed_offers": 0,
+    "confirmed_resources": 0,
+    "traffic_running": false,
+    "whole_world_except_clock_unchanged": true,
+    "all_case_job_history_unchanged": true
+  },
+  "unchanged_usage": {
+    "fr24_requests": 81,
+    "fr24_credits": 3215,
+    "cab_receipts": [
+      2,
+      4
+    ],
+    "recovery_steps": 27,
+    "saved_transfer_profiles": 0,
+    "saved_after_flight_profiles": 0
+  },
+  "limitations": [
+    "No fresh paid voice/model/flight/transport source acceptance run in this release.",
+    "Prior spoken attempt did not complete end to end.",
+    "Full production acceptance remains open as detailed in report.md."
+  ],
+  "code_ci": [
+    {
+      "branch": "main",
+      "number": 167,
+      "status": "success",
+      "url": "https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41276303320"
+    },
+    {
+      "branch": "codex/airport-recovery-live",
+      "number": 166,
+      "status": "success",
+      "url": "https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41276303222"
+    }
+  ]
+}
