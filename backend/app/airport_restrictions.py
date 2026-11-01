@@ -8,6 +8,7 @@ from pydantic import Field, ValidationError, field_validator
 
 from .airport_catalog import lookup_airport
 from .hotel_recovery import validate_hotel_job
+from .romanian_hotel_recovery import validate_romanian_hotel_job
 from .airport_cab_recovery import validate_airport_transfer_job
 from .inventory_lifecycle import resource_history
 from .live_service import _find, _live
@@ -248,7 +249,7 @@ def enqueue_airport_restriction_recovery(conn, store, jobs, response, request, *
         # proves the solver's fixed-allocation set is infeasible.
         blocked("recovery_prerequisite_failed", "Confirmed travel in this case conflicts with its remaining airport restrictions. Operator review is required before automatic recovery for any groups in the case; no booking was cancelled or replaced.")
         return
-    if "hotel" in job_request.modes and job_request.hotel_recovery is None:
+    if "hotel" in job_request.modes and job_request.hotel_recovery is None and job_request.romanian_hotel_recovery is None:
         blocked("hotel_setup_required", "Explicit valid hotel and transfer inputs are required; no saved profile was silently reused and no requested mode was dropped.")
         return
     try:
@@ -257,6 +258,13 @@ def enqueue_airport_restriction_recovery(conn, store, jobs, response, request, *
         if exc.status != 422:
             raise
         blocked("hotel_setup_required", exc.message)
+        return
+    try:
+        validate_romanian_hotel_job(current, job_request)
+    except DomainError as exc:
+        if exc.status != 422:
+            raise
+        blocked("romanian_hotel_setup_required", exc.message)
         return
     if jobs is None or not jobs.ai or not jobs.ai.configured:
         blocked("recovery_service_unavailable", "The real recovery service is unavailable; no source or model call was dispatched.")

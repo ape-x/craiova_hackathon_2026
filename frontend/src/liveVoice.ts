@@ -158,6 +158,7 @@ export function voiceCommandAcknowledgement(result: MutationResult): string {
     const reasons = {
       insufficient_call_allowance: 'limita de apeluri este insuficientă',
       hotel_setup_required: 'configurația hotelului trebuie completată sau revizuită',
+      romanian_hotel_setup_required: 'completează formularul pentru hotel și transport în România',
       airport_transfer_setup_required: 'configurația transferului trebuie completată sau revizuită',
       ai_not_configured: 'serviciul AI necesar nu este disponibil',
       recovery_service_unavailable: 'serviciul de recuperare nu este disponibil',
@@ -267,6 +268,7 @@ function combinedReportAcknowledgement(
     const reasons: Record<string, string> = {
       insufficient_call_allowance: 'limită insuficientă',
       hotel_setup_required: 'revizuiește hotelul',
+      romanian_hotel_setup_required: 'completează pachetul hotel din România',
       airport_transfer_setup_required: 'revizuiește transferul',
       recovery_queue_unavailable: 'coadă indisponibilă',
       ai_not_configured: 'AI indisponibil',

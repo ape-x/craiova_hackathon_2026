@@ -1,0 +1,1 @@
+OFFLINE AUTHORED FIXTURE ONLY. Standard ticket includes one hold bag and one hand bag. Additional bags require operator agreement. Boarding and flight connection margins are explicit planning constraints. No reservation or supplier expiry is represented.

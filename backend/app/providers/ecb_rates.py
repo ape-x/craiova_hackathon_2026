@@ -73,7 +73,9 @@ class EcbRates:
         except (ValueError, TypeError):
             return {"table": None, "code": "fx_invalid_response"}
 
-    def enrich(self, quote, rates):
+    def enrich(self, quote, rates, *, source_currency="GBP"):
+        if source_currency not in ("GBP", "RON"):
+            raise ValueError("Unsupported source planning currency")
         result = copy.deepcopy(quote)
         options = result.get("options", [])
         for option in options:
@@ -82,7 +84,9 @@ class EcbRates:
               "reference": None, "cache": rates.get("cache") if options else None,
               "settlement_guaranteed": False, "revalidation_required": True,
               "message": "No transfer option requires conversion." if not options else
-                  "ECB reference unavailable; the original GBP quote remains available. Revalidate before booking."}
+                  f"ECB reference unavailable; the original {source_currency} quote remains available. Revalidate before booking."}
+        if source_currency == "RON":
+            fx["source_currency"] = "RON"
         result["fx"] = fx
         if not options:
             return result
@@ -94,19 +98,21 @@ class EcbRates:
             converted = []
             for option in options:
                 price = option["price"]
-                if price["currency"] != "GBP":
-                    raise ValueError("APL quote currency changed")
-                converted.append(convert_to_eur(price["amount"], "GBP", rates["table"],
+                if price["currency"] != source_currency:
+                    raise ValueError("Source quote currency changed")
+                converted.append(convert_to_eur(price["amount"], source_currency, rates["table"],
                                                as_of=as_of, max_rate_age_days=self.MAX_RATE_AGE_DAYS))
             fx.update(state=converted[0]["state"], reference=converted[0]["reference"])
+            if source_currency == "RON":
+                fx["reference"]["source_currency"] = "RON"
             if fx["state"] == "ready":
                 for option, conversion in zip(options, converted):
                     option["eur_reference_estimate"] = conversion["eur_reference_estimate"]
                 fx["message"] = NOTICE + " Revalidate the supplier quote and payment conversion before booking. This is not a firm EUR budget amount."
             elif fx["state"] == "stale_rate":
-                fx["message"] = f"The ECB reference exceeds this app's {self.MAX_RATE_AGE_DAYS}-calendar-day freshness policy; no EUR estimate is shown. The GBP quote remains available."
+                fx["message"] = f"The ECB reference exceeds this app's {self.MAX_RATE_AGE_DAYS}-calendar-day freshness policy; no EUR estimate is shown. The {source_currency} quote remains available."
             else:
-                fx["message"] = "The ECB feed has no GBP reference rate; no EUR estimate is shown. The GBP quote remains available."
+                fx["message"] = f"The ECB feed has no {source_currency} reference rate; no EUR estimate is shown. The {source_currency} quote remains available."
         except (KeyError, ValueError, TypeError):
             fx["code"] = "fx_conversion_unavailable"
         return result

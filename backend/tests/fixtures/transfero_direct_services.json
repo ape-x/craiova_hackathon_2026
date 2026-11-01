@@ -1,0 +1,128 @@
+{
+  "outbound": {
+    "id": "52010636",
+    "cid": "267023",
+    "locuri": "13",
+    "oraplecare": "14:30",
+    "orasosire": "17:30",
+    "durata": "03:00",
+    "tip": "van",
+    "company": {
+      "id": "2995",
+      "name": "Direct Aeroport"
+    },
+    "tickets": {
+      "adulti": {
+        "oneway": {
+          "name": "Dus",
+          "id": "8239",
+          "tax": 46,
+          "pret": 260,
+          "pret_u": 260,
+          "rate": 2,
+          "pret_ron": 260
+        },
+        "ban": "RON"
+      }
+    },
+    "segments": [
+      {
+        "departure": {
+          "datetime": "02.11.2026 14:30",
+          "date": "02.11.2026",
+          "time": "14:30",
+          "station": {
+            "name": "Terminal SOSIRI / ARRIVALS",
+            "city": "Aeroport Otopeni",
+            "lat": "44.56907",
+            "long": "26.0758"
+          }
+        },
+        "arrival": {
+          "datetime": "02.11.2026 17:30",
+          "date": "02.11.2026",
+          "time": "17:30",
+          "station": {
+            "name": "Hotel Aro Palace",
+            "city": "Brasov",
+            "lat": "45.64533",
+            "long": "25.59147"
+          }
+        },
+        "name": "Aeroport Baneasa - Aeroport Otopeni - Brasov",
+        "duration": "03:00",
+        "seat_select": false,
+        "termsid": "57392",
+        "linkid": "52010636",
+        "vehicle": "van",
+        "company": {
+          "id": "2995",
+          "name": "Direct Aeroport"
+        }
+      }
+    ]
+  },
+  "return": {
+    "id": "52013530",
+    "cid": "265519",
+    "locuri": "19",
+    "oraplecare": "06:00",
+    "orasosire": "08:30",
+    "durata": "02:30",
+    "tip": "van",
+    "company": {
+      "id": "2995",
+      "name": "Direct Aeroport"
+    },
+    "tickets": {
+      "adulti": {
+        "oneway": {
+          "name": "Dus",
+          "id": "8239",
+          "tax": 46,
+          "pret": 260,
+          "pret_u": 260,
+          "rate": 2,
+          "pret_ron": 260
+        },
+        "ban": "RON"
+      }
+    },
+    "segments": [
+      {
+        "departure": {
+          "datetime": "03.11.2026 06:00",
+          "date": "03.11.2026",
+          "time": "06:00",
+          "station": {
+            "name": "Hotel Aro Palace",
+            "city": "Brasov",
+            "lat": "45.64533",
+            "long": "25.59147"
+          }
+        },
+        "arrival": {
+          "datetime": "03.11.2026 08:30",
+          "date": "03.11.2026",
+          "time": "08:30",
+          "station": {
+            "name": "Terminal PLECARI/ DEPARTURES",
+            "city": "Aeroport Otopeni",
+            "lat": "44.5713386535645",
+            "long": "26.0765895843506"
+          }
+        },
+        "name": "Brasov - Aeroport Otopeni - Aeroport Baneasa",
+        "duration": "02:30",
+        "seat_select": false,
+        "termsid": "57392",
+        "linkid": "52013530",
+        "vehicle": "van",
+        "company": {
+          "id": "2995",
+          "name": "Direct Aeroport"
+        }
+      }
+    ]
+  }
+}

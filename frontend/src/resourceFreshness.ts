@@ -3,6 +3,7 @@ import type { Resource, World } from './types';
 import { sourceInstant } from './sourceInstant';
 export { sourceInstant } from './sourceInstant';
 import { postflightConnectionEvidence } from './postflightConnection';
+import { isTransfero, transferoEvidence } from './transferoData';
 
 export interface ResourceFreshness {
   state: 'current' | 'stale' | 'unknown';
@@ -127,11 +128,12 @@ export function resourceFreshness(
   const quotedAt = sourceInstant(resource.provenance?.quoted_at);
   const apl = resource.source === 'Airport Pickups London';
   const cab = resource.source === 'Bucharest.CAB';
+  const transfero = isTransfero(resource);
   const postflight =
     cab &&
     (resource.provenance?.direction === 'after_flight_airport_to_airport' ||
       Object.hasOwn(resource.provenance ?? {}, 'postflight_connection'));
-  const receiptSource = apl || cab;
+  const receiptSource = apl || cab || transfero;
   const receipt = receiptSource ? resource.quote_freshness : null;
   const receivedAt = sourceInstant(receipt?.received_at);
   const returning = apl && resource.airport_arrival_assumption != null;
@@ -165,7 +167,7 @@ export function resourceFreshness(
   )
     return {
       ...unknown,
-      detail: `${apl ? 'APL' : 'Bucharest.CAB'} requires an app receipt window without an invented supplier quote time or expiry. Revalidation is required.`,
+      detail: `${resource.source} requires an app receipt window without an invented supplier quote time or expiry. Revalidation is required.`,
     };
   if (resource.valid_until) {
     const cutoff = sourceInstant(resource.valid_until);
@@ -213,6 +215,16 @@ export function resourceFreshness(
           'The Google Routes receipt time is in the future. Return planning freshness cannot be established.',
       };
     let advanceCutoff: number | null = null;
+    if (transfero) {
+      const evidence = transferoEvidence(resource);
+      if (!evidence)
+        return {
+          ...unknown,
+          detail:
+            'Scheduled-service source evidence or advance-notice policy is incomplete. Revalidation is required.',
+        };
+      advanceCutoff = evidence.advanceCutoff;
+    }
     if (cab) {
       const quote = object(resource.provenance?.airport_cab_quote);
       const query = object(quote?.request),
@@ -275,11 +287,13 @@ export function resourceFreshness(
         : {}),
       detail: postflight
         ? 'Connection planning uses the earliest of the CAB receipt window (120 seconds), source advance-notice limit, incoming flight’s 120-second quote window and any incoming supplier validity deadline. CAB supplier expiry and fleet availability remain unknown; this is not a vehicle hold. Source revisions and eligibility still require backend revalidation.'
-        : cab
-          ? 'The application limits planning to the earlier of 120 seconds after receipt and the supplier’s conservative advance-notice cutoff. Supplier quote time and expiry are unknown; this is not a vehicle hold.'
-          : returning
-            ? 'The app applies a 120-second window to both the APL response and Google Routes prediction receipts. The earlier cutoff limits return planning; revalidate both sources for a new plan. Supplier quote time and expiry are unknown; this is not a supplier hold.'
-            : 'The app applies a 120-second planning freshness window from receipt. Supplier quote time and expiry are unknown; this is not a supplier hold.',
+        : transfero
+          ? 'The application uses the earlier of the 120-second receipt window and the conservative 12-hour notice cutoff. Reported seats are unreserved, supplier expiry is unknown, and arrival is a timetable estimate.'
+          : cab
+            ? 'The application limits planning to the earlier of 120 seconds after receipt and the supplier’s conservative advance-notice cutoff. Supplier quote time and expiry are unknown; this is not a vehicle hold.'
+            : returning
+              ? 'The app applies a 120-second window to both the APL response and Google Routes prediction receipts. The earlier cutoff limits return planning; revalidate both sources for a new plan. Supplier quote time and expiry are unknown; this is not a supplier hold.'
+              : 'The app applies a 120-second planning freshness window from receipt. Supplier quote time and expiry are unknown; this is not a supplier hold.',
     };
   }
   if (!resource.requires_revalidation || quotedAt === null) return unknown;
@@ -334,7 +348,9 @@ export function liveResourceStatus(
         ? 'Unbooked vehicle quote'
         : resource.capacity_scope === 'quoted_request'
           ? 'Unbooked quote'
-          : 'Documented service',
+          : resource.capacity_scope === 'source_reported_seats'
+            ? 'Unreserved scheduled quote'
+            : 'Documented service',
     tone: 'cyan',
     planningCurrent,
   } as const;

@@ -3,6 +3,8 @@ import { ChevronDown, FileClock, Loader2 } from 'lucide-react';
 import { ApiError, formatCost } from './api';
 import { archiveReasonLabel, loadInventoryRecord } from './inventoryHistory';
 import { PriceEvidenceDetails, privateTransfer } from './priceEvidence';
+import TransferoScheduleDetails from './TransferoScheduleDetails';
+import HotelResourcePrice from './HotelResourcePrice';
 import { freshnessTime, sourceInstant } from './resourceFreshness';
 import { locationName } from './resourceLabels';
 import type { InventoryResourceRecord } from './types';
@@ -91,12 +93,15 @@ export function SourceRecordDetails({
             </dd>
           </div>
         )}
-        {!privateTransfer(resource) && total != null && Number.isFinite(total) && (
-          <div>
-            <dt>Recorded planning total</dt>
-            <dd>{formatCost(total)}</dd>
-          </div>
-        )}
+        {!privateTransfer(resource) &&
+          resource.price_evidence == null &&
+          total != null &&
+          Number.isFinite(total) && (
+            <div>
+              <dt>Recorded planning total</dt>
+              <dd>{formatCost(total)}</dd>
+            </div>
+          )}
         {record.archived && (
           <div>
             <dt>Archived</dt>
@@ -116,6 +121,8 @@ export function SourceRecordDetails({
         )}
       </dl>
       {!isAirportCab(resource) && <PriceEvidenceDetails evidence={resource.price_evidence} />}
+      <TransferoScheduleDetails resource={resource} />
+      <HotelResourcePrice resource={resource} />
       {isAirportCab(resource) && <AirportCabFareDetails resource={resource} />}
     </section>
   );

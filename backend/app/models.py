@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_serializer, model_validator
 from .scenario_schema import STRUCTURED_PAYLOADS, WeatherDefinition
-from .pricing import AplPriceEvidence, AplQuoteFreshness, CostEvidence
+from .pricing import PriceEvidence, AplQuoteFreshness, CostEvidence
 from .initial_position import InitialPositionAssumption
 from .airport_arrival import AirportArrivalAssumption
 
@@ -63,7 +63,7 @@ class Resource(Model):
     capacity_scope: str = "synthetic"
     booking_status: Literal["unbooked", "confirmed"] = "unbooked"
     transport_mode: Literal["private_transfer"] | None = None
-    price_evidence: AplPriceEvidence | None = None
+    price_evidence: PriceEvidence | None = None
     quote_freshness: AplQuoteFreshness | None = None
     initial_position_assumption: InitialPositionAssumption | None = None
     airport_arrival_assumption: AirportArrivalAssumption | None = None
@@ -99,7 +99,7 @@ class Leg(Model):
     arrival: int
     cost: float
     transport_mode: Literal["private_transfer"] | None = None
-    price_evidence: AplPriceEvidence | None = None
+    price_evidence: PriceEvidence | None = None
     initial_position_assumption: InitialPositionAssumption | None = None
     airport_arrival_assumption: AirportArrivalAssumption | None = None
     postflight_connection: dict[str, Any] | None = None

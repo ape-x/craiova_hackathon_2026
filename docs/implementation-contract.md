@@ -167,6 +167,23 @@ The successful plan has four resources: initial private transfer, sourced hotel 
 
 The live solver supports up to six itinerary legs, including physical hotel transfers. It validates elapsed time and dates; it does not apply the internal simulation's epoch-day rule as a mandatory live hotel requirement. Waiting summaries use the actual location's time zone when known and disclose unknown zones. The optional typed `group.provenance.hotel_stay_requirement` records operator-requested check-in/out, exact rooms and minimum rest. One actual sourced stay must cover the whole interval; disjoint stays or waiting cannot substitute. Free-form instructions alone do not establish this constraint. A hotel alone is never a recovered journey.
 
+## Romanian scheduled transport and hotel package
+
+The separate `romanian_hotel_recovery` package uses
+`source:'transfero_direct_aeroport'`, `hotel_id:'lpce923'`, exact offset-aware
+`checkin_at`/`checkout_at`, `rooms`, `minimum_rest_minutes`, `suitcases`, `handbags`,
+`standard_baggage_confirmed:true`, `hotel_connection_minutes>=20` and
+`airport_processing_minutes>=180`. One adult-only OTP group and all three modes
+are required; UK hotel and CAB package inputs cannot be combined with it.
+Eight worker calls cover two coach searches, hotel rates/metadata, ECB, Responses,
+one flight search and Decisions. See the [full contract](romanian-hotel-recovery.md).
+
+Typed arrival/restriction options also accept this field. Null is omitted to
+preserve old idempotency fingerprints. Validation uses the post-report world.
+Known failures return `romanian_hotel_setup_required` and retain the report;
+unexpected errors roll back. No Romanian voice profile is saved, and named
+package requests cannot substitute UK inputs.
+
 ## Manual hotel import and stay policy
 
 The hotel-import request shape is unchanged. With `stay_times_confirmed=false`, the server fetches metadata for the exact property even when the rate already contains coordinates, bounded to ten properties with concurrency three. Property-coordinate IANA time zones and the pinned time-zone data anchor the supplied check-in window and checkout cutoff to the quoted dates. A bounded check-in window may span midnight; absent `checkin_end`, only the exact published start is automatically accepted.

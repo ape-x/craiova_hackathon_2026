@@ -39,6 +39,14 @@ import {
 } from './recoveryJobs';
 import { Tag } from './ui';
 import HotelRecoveryFields from './HotelRecoveryFields';
+import RomanianHotelRecoveryFields, {
+  RomanianHotelRequestDetails,
+} from './RomanianHotelRecoveryFields';
+import {
+  emptyRomanianHotelRecoveryForm,
+  romanianHotelGroupIssue,
+  romanianHotelRecoveryInput,
+} from './romanianHotelRecovery';
 import HistoricalSource from './HistoricalSource';
 import { CoachFareResults } from './CoachFares';
 import {
@@ -303,6 +311,7 @@ export function RecoveryJobDetails({
           additional provider charges; it does not resolve the previous call’s unknown outcome.
         </p>
       )}
+      <RomanianHotelRequestDetails input={job.romanian_hotel_recovery} />
       {result && (
         <section className="case-job-result" aria-label="Recorded recovery result">
           <h4>Recorded proposal result</h4>
@@ -376,12 +385,33 @@ export function RecoveryJobDetails({
               </p>
             </section>
           )}
+          {result.romanian_hotel_recovery && job.status === 'completed' && (
+            <section className="hotel-recovery-result" aria-label="Recorded Romania hotel journey">
+              <h4>Hotel Aro Palace and both scheduled transport directions</h4>
+              <p>
+                Outbound departure:{' '}
+                {utcTimestamp(result.romanian_hotel_recovery.outbound_departure_at)}. Return
+                departure: {utcTimestamp(result.romanian_hotel_recovery.return_departure_at)}.
+              </p>
+              <p>
+                Onward flight search date: {result.romanian_hotel_recovery.flight_query_date}{' '}
+                (Europe/Bucharest).
+              </p>
+              <p className="field-hint">
+                The recorded complete proposal includes the requested hotel stay, both Transfero /
+                Direct Aeroport services and the onward flight. RON fares use an explicitly marked
+                ECB estimate for the EUR planning budget. Nothing is reserved; source timetable
+                arrival and named boarding facilities do not establish a guaranteed arrival, door or
+                bay.
+              </p>
+            </section>
+          )}
           {Boolean(result.waits?.length) && (
             <section className="case-job-waits" aria-label="Recorded journey waiting times">
               <h4>Waiting in the recorded itinerary</h4>
               <p className="field-hint">
                 Planned waiting time is shown separately from travel and hotel stays.{' '}
-                {result.hotel_recovery
+                {result.hotel_recovery || result.romanian_hotel_recovery
                   ? 'These waits are outside the requested hotel interval; they do not replace the required stay.'
                   : 'An overnight wait is informational; no mandatory rest requirement was assumed.'}
               </p>
@@ -554,6 +584,8 @@ export default function RecoveryJobPanel({
     limit: '8',
     instructions: '',
     hotelMode: false,
+    hotelPackage: 'uk_apl',
+    romanianHotelFields: emptyRomanianHotelRecoveryForm(),
     hotelFields: emptyHotelRecoveryForm(),
     airportTransfers: [],
     afterFlightTransfer: null,
@@ -589,6 +621,8 @@ export default function RecoveryJobPanel({
     limit,
     instructions,
     hotelMode,
+    hotelPackage = 'uk_apl',
+    romanianHotelFields = emptyRomanianHotelRecoveryForm(),
     hotelFields,
     airportTransfers,
     afterFlightTransfer,
@@ -632,7 +666,11 @@ export default function RecoveryJobPanel({
       ? eligible.find((group) => group.id === selectedGroups[0])
       : undefined;
   const hotelGroup =
-    hotelGroupCandidate && !hotelRecoveryGroupIssue(hotelGroupCandidate, world)
+    hotelGroupCandidate &&
+    !(hotelPackage === 'romania_transfero' ? romanianHotelGroupIssue : hotelRecoveryGroupIssue)(
+      hotelGroupCandidate,
+      world,
+    )
       ? hotelGroupCandidate
       : undefined;
   const active = jobs.some(recoveryJobActive);
@@ -845,6 +883,7 @@ export default function RecoveryJobPanel({
               return;
             }
             let hotelRecovery: RecoveryJobInput['hotel_recovery'];
+            let romanianHotelRecovery: RecoveryJobInput['romanian_hotel_recovery'];
             let transfers: RecoveryJobInput['airport_transfers'];
             let afterFlight: RecoveryJobInput['after_flight_transfer'];
             try {
@@ -872,7 +911,16 @@ export default function RecoveryJobPanel({
             }
             if (hotelMode) {
               try {
-                hotelRecovery = hotelRecoveryInput(hotelFields, selectedGroups, world, maxCalls);
+                if (hotelPackage === 'romania_transfero') {
+                  romanianHotelRecovery = romanianHotelRecoveryInput(
+                    romanianHotelFields,
+                    selectedGroups,
+                    world,
+                    maxCalls,
+                  );
+                } else {
+                  hotelRecovery = hotelRecoveryInput(hotelFields, selectedGroups, world, maxCalls);
+                }
               } catch (cause) {
                 setActionError(
                   cause instanceof Error ? cause.message : 'Review the hotel recovery inputs.',
@@ -888,6 +936,9 @@ export default function RecoveryJobPanel({
                 max_provider_calls: maxCalls,
                 instructions: instructions.trim(),
                 ...(hotelRecovery ? { hotel_recovery: hotelRecovery } : {}),
+                ...(romanianHotelRecovery
+                  ? { romanian_hotel_recovery: romanianHotelRecovery }
+                  : {}),
                 ...(transfers.length ? { airport_transfers: transfers } : {}),
                 ...(afterFlight ? { after_flight_transfer: afterFlight } : {}),
               }),
@@ -923,14 +974,42 @@ export default function RecoveryJobPanel({
               </fieldset>
             )}
             {hotelMode && (
-              <p className="field-hint">
-                Choose exactly one linked, explicitly all-adult group. UK origin and onward-airport
-                coverage are checked before source searches.
-              </p>
+              <>
+                <label className="field">
+                  Hotel recovery package
+                  <select
+                    value={hotelPackage}
+                    onChange={(event) =>
+                      updateDraft(
+                        'hotelPackage',
+                        event.target.value as 'uk_apl' | 'romania_transfero',
+                      )
+                    }
+                  >
+                    <option value="uk_apl">
+                      UK · APL private transfers + sourced hotel + flight
+                    </option>
+                    <option value="romania_transfero">
+                      Romania · Direct Aeroport + Hotel Aro Palace + flight
+                    </option>
+                  </select>
+                </label>
+                <p className="field-hint">
+                  Choose exactly one linked, explicitly all-adult group.{' '}
+                  {hotelPackage === 'romania_transfero'
+                    ? 'This package begins at reported OTP and returns there before a real onward flight.'
+                    : 'UK origin and onward-airport coverage are checked before source searches.'}{' '}
+                  Package selection does not change your group selection or provider-call allowance.
+                </p>
+              </>
             )}
             <div className="case-group-options">
               {groups.map((group) => {
-                const hotelIssue = hotelMode ? hotelRecoveryGroupIssue(group, world) : null;
+                const hotelIssue = hotelMode
+                  ? (hotelPackage === 'romania_transfero'
+                      ? romanianHotelGroupIssue
+                      : hotelRecoveryGroupIssue)(group, world)
+                  : null;
                 return (
                   <label className="case-group" key={group.id}>
                     <input
@@ -1011,7 +1090,7 @@ export default function RecoveryJobPanel({
                 Maximum provider calls
                 <input
                   type="number"
-                  min={hotelMode ? 10 : 3}
+                  min={hotelMode ? (hotelPackage === 'romania_transfero' ? 8 : 10) : 3}
                   max={26}
                   step={1}
                   required
@@ -1020,7 +1099,16 @@ export default function RecoveryJobPanel({
                 />
               </label>
             </div>
-            {hotelMode && (
+            {hotelMode && hotelPackage === 'romania_transfero' && (
+              <RomanianHotelRecoveryFields
+                value={romanianHotelFields}
+                onChange={(value) => updateDraft('romanianHotelFields', value)}
+                world={world}
+                group={hotelGroup}
+                allowance={Number(limit)}
+              />
+            )}
+            {hotelMode && hotelPackage === 'uk_apl' && (
               <>
                 <p className={Number(limit) < 10 ? 'case-source-warning' : 'field-hint'}>
                   This workflow needs at least 10 provider calls. Your limit is {limit || 'not set'}

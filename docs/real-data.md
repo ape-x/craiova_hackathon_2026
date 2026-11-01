@@ -17,6 +17,14 @@ adds inventory, holds rooms, reserves seats or modifies the recovery scenario.
 | Romanian airport transfer | Bucharest.CAB consumer quotation, OTP → CRA | Native EUR cash/no-extras vehicle-category fare for an explicit pickup and adult party. Initial airport-level leg only; source driving duration is an estimate without departure-time traffic. Fleet stock and supplier expiry remain unknown. |
 | Planned incoming flight plus OTP → CRA transfer | Real incoming flight offer and a separate Bucharest.CAB quote for that exact flight | Explicit processing/pickup window; source arrival is scheduled, not observed. The vehicle is unreserved and road arrival estimated. No terminal or protected connection is established. |
 
+## Romanian scheduled transport and hotel package
+
+The separate **Romanian coach + hotel** recovery option supports
+OTP → Hotel Aro Palace → OTP → onward flight. It uses Transfero / Direct Aeroport,
+exact LiteAPI property quotes and transparent RON/ECB EUR estimates, with at least
+eight source/model calls. See its [coverage and source contract](romanian-hotel-recovery.md).
+It does not expand the BILETERIA fare-only search or imply nationwide coverage.
+
 ## Romanian airport vehicle quotes
 
 The **Bucharest.CAB** panel in **Real hotels & routes** supports an explicit
@@ -367,7 +375,7 @@ and provider evidence is tracked in the
 [verification report](verification/report.md), separately from implementation and
 mocked tests.
 
-## Automatic sourced hotel package
+## Automatic sourced UK hotel package
 
 The case form can request one adult-only group's complete initial transfer →
 hotel stay → return transfer → onward flight plan. Initial and onward airports
@@ -418,13 +426,15 @@ The bounded [Bucharest.CAB OTP → CRA flows](#romanian-airport-vehicle-quotes),
 or bound to a planned incoming flight, are separate from this remaining network-coverage gap. They do not establish
 reverse-direction service, CRA/SBZ-wide coverage, coach stock or rail connections.
 
-Further read-only consumer research on 1 November found two useful, **not yet
-integrated** sources. [Transfero](https://www.transfero.ro/bilete-online/) returned
-OTP Arrivals → Hotel Aro Palace, Brașov for 2 November: a two-adult RON260 total
-and three source-reported seats. The same departure disappeared for four adults.
-No requested OTP↔SBZ or OTP↔GHV offer was returned for that date; CRA was absent
-from the observed selector. Its local-clock times, baggage and expiry need their
-own contract; a hotel stop must not be relabeled as an airport.
+Read-only consumer research on 1 November found
+[Transfero](https://www.transfero.ro/bilete-online/) services between OTP and
+Hotel Aro Palace. The separate [Romanian hotel package](romanian-hotel-recovery.md)
+now integrates that exact property and both directions, with dated schedules,
+party RON fares, shared reported seat stock and explicit connection rules.
+Fresh-provider application acceptance remains open. Research returned no requested
+OTP↔SBZ or OTP↔GHV service for the queried date; CRA was absent from the observed
+selector. These results do not establish broader coverage, and the hotel stop is
+never relabeled as an airport.
 
 The [CFR consumer flow](https://www.cfrcalatori.ro/cum-cumpar-online/) returned
 R-E9900 Craiova railway station → București Nord on 2 November, 02:10–06:23,

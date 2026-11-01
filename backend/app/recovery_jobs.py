@@ -21,6 +21,7 @@ from .after_flight_recovery import run_after_flight_recovery, validate_after_fli
 from .confirmed_allocations import confirmed_group_ids, require_consistent_confirmations
 from .hotel_location import coordinate_timezone, property_zone
 from .hotel_recovery import HotelRecoveryInputs, _rates, _restore_rates, run_hotel_recovery, validate_hotel_job
+from .romanian_hotel_recovery import RomanianHotelRecoveryInputs, run_romanian_hotel_recovery, validate_romanian_hotel_job
 from .live_data import identifier
 from .live_travel import append_travel_quote, retire_travel_quotes
 from .models import Model, Mutation, Strategy
@@ -40,10 +41,16 @@ class RecoveryJobRequest(Mutation):
     hotel_recovery: HotelRecoveryInputs | None = None
     airport_transfers: list[AirportCabRecoveryInput] = Field(default_factory=list, max_length=12)
     after_flight_transfer: AfterFlightTransferInput | None = None
+    romanian_hotel_recovery: RomanianHotelRecoveryInputs | None = None
 
     @model_validator(mode="before")
     @classmethod
     def exact_after_flight_scope(cls, value):
+        if isinstance(value, dict) and value.get("romanian_hotel_recovery") is not None:
+            ids = value.get("group_ids")
+            if (not isinstance(ids, list) or len(ids) != 1 or not isinstance(ids[0], str)
+                    or identifier(ids[0]) != ids[0]):
+                raise ValueError("Romanian hotel recovery requires one exact passenger group identifier without normalization or duplicates")
         if isinstance(value, dict) and value.get("after_flight_transfer") is not None:
             transfer = value["after_flight_transfer"]
             identity = transfer.group_id if isinstance(transfer, AfterFlightTransferInput) else transfer.get("group_id") if isinstance(transfer, dict) else None
@@ -60,6 +67,8 @@ class RecoveryJobRequest(Mutation):
             result.pop("airport_transfers",None)
         if self.after_flight_transfer is None:
             result.pop("after_flight_transfer",None)
+        if self.romanian_hotel_recovery is None:
+            result.pop("romanian_hotel_recovery",None)
         return result
 
     @field_validator("group_ids")
@@ -265,11 +274,12 @@ def current_flight_connection(world,groups,option):
 
 
 class RecoveryJobs:
-    def __init__(self,settings,store,service,travel_provider,ai,*,hotel_provider=None,apl_provider=None,fx_provider=None,coach_fares=None,airport_cab=None):
+    def __init__(self,settings,store,service,travel_provider,ai,*,hotel_provider=None,apl_provider=None,fx_provider=None,coach_fares=None,airport_cab=None,transfero_provider=None):
         self.settings,self.store,self.service,self.travel,self.ai=settings,store,service,travel_provider,ai
         self.hotel_provider,self.apl_provider,self.fx_provider=hotel_provider,apl_provider,fx_provider
         self.coach_fares=coach_fares
         self.airport_cab=airport_cab
+        self.transfero_provider=transfero_provider
         self.airport_cab_profiles=AirportCabProfiles(store)
         self.after_flight_profiles=AfterFlightProfiles(store)
         self.ledger=RecoveryLedger(store,settings.request_timeout_seconds+60)
@@ -282,6 +292,7 @@ class RecoveryJobs:
             return replay
         world=self.store.read()
         digest=scope_fingerprint(world,incident_id,request.group_ids)
+        validate_romanian_hotel_job(world,request)
         validate_hotel_job(world,request)
         validate_airport_transfer_job(world,request,self.airport_cab)
         validate_after_flight_job(world,request,self.airport_cab)
@@ -292,6 +303,7 @@ class RecoveryJobs:
         if not conn.in_transaction:
             raise RuntimeError("Recovery job creation requires an active transaction")
         digest=scope_fingerprint(world,incident_id,request.group_ids)
+        validate_romanian_hotel_job(world,request)
         validate_hotel_job(world,request)
         validate_airport_transfer_job(world,request,self.airport_cab)
         validate_after_flight_job(world,request,self.airport_cab)
@@ -487,6 +499,9 @@ class RecoveryJobs:
         gaps=[]
         if not self.ai or not self.ai.configured:
             await self._update(job,owner,status="blocked",stage="finished",message="Real AI is unavailable; no scripted planning fallback was used.",gaps=[gap("ai_not_configured","Connect the real Responses and Decisions provider.",job["group_ids"])])
+            return
+        if job["_request"].get("romanian_hotel_recovery") is not None:
+            await run_romanian_hotel_recovery(self,job,owner,world,started)
             return
         if job["_request"].get("hotel_recovery") is not None:
             await run_hotel_recovery(self,job,owner,world,started)

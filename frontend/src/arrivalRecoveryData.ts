@@ -71,7 +71,7 @@ export function arrivalRecoveryIssue(
   )
     return 'Choose the services to consider for this recovery request.';
   if (form.modes.includes('hotel'))
-    return 'Hotel recovery needs fresh stay dates, pickup and drop-off inputs for the reported location. Record arrival only, then complete “Hotel + both transfers + onward flight” below. Saved hotel inputs will not be reused.';
+    return 'Hotel recovery needs fresh stay dates and the selected package’s passenger, baggage and connection inputs for the reported location. Record arrival only, then choose a package in “Hotel + both transfers + onward flight” below. Saved hotel inputs will not be reused.';
   if (!['balanced', 'fastest', 'lowest_cost'].includes(form.objective))
     return 'Choose a recovery objective.';
   if (

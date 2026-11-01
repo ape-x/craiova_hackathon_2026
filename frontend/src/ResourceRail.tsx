@@ -345,7 +345,9 @@ export default function ResourceRail({
                           ? 'Vehicle quote'
                           : resource.capacity_scope === 'quoted_request'
                             ? 'Group quote'
-                            : `${count} ${resource.kind === 'hotel' ? 'rooms' : 'seats'}`}
+                            : resource.capacity_scope === 'source_reported_seats'
+                              ? `${resource.capacity} seats at receipt`
+                              : `${count} ${resource.kind === 'hotel' ? 'rooms' : 'seats'}`}
                   </span>
                   <ChevronRight size={12} />
                 </button>

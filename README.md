@@ -94,6 +94,15 @@ Comenzile text/vocale în română sau engleză pot cere explicit „folosește 
 
 Probele reale istorice ale cotației/importului manual sunt distincte de noul flux combinat CAB + zbor și de reutilizarea vocală, verificate deocamdată numai offline, cu furnizori simulați în teste. Nu a fost demonstrată o rulare vocală CAB cu servicii reale. [Contractul sursei](docs/real-data.md#romanian-airport-vehicle-quotes) și [raportul de verificare](docs/verification/report.md) separă aceste dovezi.
 
+## Hotel și curse programate în România
+
+Opțiunea **Romanian coach + hotel** din formularul cazului caută separat un
+itinerar OTP → Hotel Aro Palace, Brașov → OTP → zbor. Folosește orare și locuri
+raportate de Direct Aeroport prin Transfero, camera exactă LiteAPI și tariful RON
+al grupului cu estimare EUR la curs ECB. Necesită 1–12 adulți, date și bagaje
+explicite și cel puțin opt apeluri. Nu reutilizează profilul vocal UK.
+[Acoperire, reguli și dovezi reale](docs/romanian-hotel-recovery.md).
+
 ## Transferuri private între aeroport și hotel
 
 Fluxul manual este limitat la aeroporturi din Regatul Unit acceptate de furnizorii conectați. Ambele direcții păstrează prețul original APL în GBP și estimarea ECB în EUR.

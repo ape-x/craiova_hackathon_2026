@@ -1,6 +1,7 @@
 import type { AirportTransferDraft } from './airportTransferRecovery';
 import type { AfterFlightTransferDraft } from './afterFlightTransfer';
 import type { emptyHotelRecoveryForm } from './hotelRecovery';
+import type { RomanianHotelRecoveryForm } from './romanianHotelRecovery';
 import type { RecoveryDataContext } from './recoveryDataContext';
 import { initialRecoverySelection } from './recoveryNavigation';
 import type { RecoveryIncident, RecoveryJobInput, World } from './types';
@@ -12,6 +13,8 @@ export interface RecoveryFormDraft {
   limit: string;
   instructions: string;
   hotelMode: boolean;
+  hotelPackage?: 'uk_apl' | 'romania_transfero';
+  romanianHotelFields?: RomanianHotelRecoveryForm;
   hotelFields: ReturnType<typeof emptyHotelRecoveryForm>;
   airportTransfers: AirportTransferDraft[];
   afterFlightTransfer: AfterFlightTransferDraft | null;

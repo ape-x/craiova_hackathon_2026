@@ -24,6 +24,11 @@ from .airport_cab_evidence import (
     QUOTE_KEY as AIRPORT_CAB_QUOTE, OPTION_KEY as AIRPORT_CAB_OPTION,
     airport_cab_current, airport_cab_fleet_errors, valid_airport_cab_resource,
 )
+from .transfero_evidence import (
+    SOURCE as TRANSFERO_SOURCE, QUOTE_KEY as TRANSFERO_QUOTE, CONTEXT_KEY as TRANSFERO_CONTEXT,
+    OPTION_KEY as TRANSFERO_OPTION, transfero_current, valid_transfero_resource,
+    transfero_connection, transfero_remaining, transfero_capacity_errors,
+)
 
 
 def units(resource: Resource, group: PassengerGroup) -> int:
@@ -44,6 +49,8 @@ def live_resource_current(resource: Resource) -> bool:
         now=datetime.now(timezone.utc)
         if resource.source == AIRPORT_CAB_SOURCE:
             return airport_cab_current(resource, now=now)
+        if resource.source == TRANSFERO_SOURCE:
+            return transfero_current(resource, now=now)
         if resource.source == APL_SOURCE:
             deadline = app_receipt_deadline(resource)
             if deadline is None or resource.valid_until is not None or resource.provenance.get("quoted_at") is not None:
@@ -130,6 +137,9 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
             path_ok = (isinstance(connection, dict) and connection.get("incoming_resource_id") in used_ids and current == "OTP") if postflight else not used_ids and current == g.origin
             if not path_ok or not valid_airport_cab_resource(world, r, g, now=datetime.now(timezone.utc)):
                 return False
+        elif r.source == TRANSFERO_SOURCE or any(key in r.provenance for key in (TRANSFERO_QUOTE, TRANSFERO_CONTEXT, TRANSFERO_OPTION)):
+            if not valid_transfero_resource(world, r, g, now=datetime.now(timezone.utc)):
+                return False
         elif r.source == APL_SOURCE or r.price_evidence is not None or r.quote_freshness is not None:
             if world.currency != "EUR" or not valid_apl_resource_price(r, g, require_current=g.status != "confirmed"):
                 return False
@@ -176,6 +186,9 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
 
 def connection_minutes(previous: Resource | None, resource: Resource) -> int | None:
     """A declared airport allowance replaces the generic connection default."""
+    handled, minutes = transfero_connection(previous, resource)
+    if handled:
+        return minutes
     if resource.provenance.get("direction") == POSTFLIGHT_DIRECTION or POSTFLIGHT_KEY in resource.provenance:
         connection = resource.provenance.get(POSTFLIGHT_KEY)
         if (not isinstance(connection, dict) or previous is None or previous.kind != "flight"
@@ -329,6 +342,7 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
     for rid,count in used.items():
         if count > resources[rid].capacity:
             errors.append(f"{rid}: capacity exceeded ({count}/{resources[rid].capacity})")
+    errors.extend(transfero_capacity_errors(world, used))
     errors.extend(vehicle_schedule_errors([resources[i] for i in occupied_resources]))
     errors.extend(airport_cab_fleet_errors([resources[i] for i in occupied_resources]))
     if total_cost > world.budget+0.005:
@@ -410,6 +424,8 @@ def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] 
                     continue
                 needs = Counter({leg.resource_id:units(resources[leg.resource_id],g) for leg in itin.legs})
                 if any(used[rid]+q>resources[rid].capacity for rid,q in needs.items()):
+                    continue
+                if transfero_capacity_errors(projected, used + needs):
                     continue
                 selected_resources = [resources[rid] for rid in occupied|set(needs)]
                 if vehicle_schedule_errors(selected_resources) or airport_cab_fleet_errors(

@@ -516,7 +516,14 @@ class RealDataProvider:
         except (ValueError, TypeError, KeyError) as exc:
             raise _invalid(source) from exc
 
-    async def _liteapi_offers(self, airport: dict, request: Any) -> list[dict]:
+    async def hotel_offers(self, hotel_id: str, request: Any) -> list[dict]:
+        """One exact property; never substitute a nearby result or perform discovery."""
+        if self.hotel_offer_provider != "liteapi":
+            raise ProviderError("Exact property rates require production LiteAPI.", provider="Nuitee / LiteAPI", code="not_configured")
+        _opaque_id(hotel_id, required=True)
+        return await self._liteapi_offers({}, request, hotel_id=hotel_id)
+
+    async def _liteapi_offers(self, airport: dict, request: Any, *, hotel_id: str | None = None) -> list[dict]:
         source = "Nuitee / LiteAPI"
         if not self.liteapi_configured:
             raise ProviderError("Connect your Nuitee / LiteAPI account to view prices and availability.", provider=source, code="not_configured")
@@ -530,11 +537,12 @@ class RealDataProvider:
         occupancies = [{"adults": quotient + (index < remainder), "children": []} for index in range(request.rooms)]
         payload = await self._request("POST", "https://api.liteapi.travel/v3.0/hotels/rates", source,
             headers={"X-API-Key": key}, json={
-                "latitude": airport["latitude"], "longitude": airport["longitude"], "radius": 20000,
+                **({"hotelIds": [hotel_id]} if hotel_id is not None else
+                   {"latitude": airport["latitude"], "longitude": airport["longitude"], "radius": 20000}),
                 "checkin": request.checkin.isoformat(), "checkout": request.checkout.isoformat(),
                 "currency": "EUR", "guestNationality": getattr(self.settings, "liteapi_guest_nationality", "RO"),
                 "occupancies": occupancies, "includeHotelData": True,
-                "maxRatesPerHotel": 1, "limit": 10, "timeout": 8,
+                "maxRatesPerHotel": 1, "limit": 1 if hotel_id is not None else 10, "timeout": 8,
             })
         observed_at = datetime.now(timezone.utc).isoformat()
         # The rates schema makes sandbox optional; production responses may omit it.
@@ -569,8 +577,9 @@ class RealDataProvider:
                     locations[hotel["id"]] = {"latitude": _number(hotel["latitude"], -90, 90), "longitude": _number(hotel["longitude"], -180, 180)}
             result = []
             for hotel in rows:
-                hotel_id = hotel["hotelId"]
-                if not isinstance(hotel_id, str) or hotel_id not in names:
+                selected_hotel_id = hotel["hotelId"]
+                if (not isinstance(selected_hotel_id, str) or selected_hotel_id not in names
+                        or (hotel_id is not None and selected_hotel_id != hotel_id)):
                     raise ValueError("Rates without hotel name")
                 room_types = hotel.get("roomTypes")
                 if not isinstance(room_types, list) or not 1 <= len(room_types) <= 20:
@@ -623,11 +632,11 @@ class RealDataProvider:
                 refundable = False if any(rate["refundable"] is False for rate in room_rates) else True if all(rate["refundable"] is True for rate in room_rates) else None
                 result.append({
                     **_quote_context(request, "liteapi", observed_at),
-                    "id": hotel_id, "name": names[hotel_id], "total_price": format(amount, "f"), "currency": "EUR", "url": None,
+                    "id": selected_hotel_id, "name": names[selected_hotel_id], "total_price": format(amount, "f"), "currency": "EUR", "url": None,
                     "provider_offer_id": selected["offerId"], "occupancies": occupancies,
                     "guest_nationality": getattr(self.settings, "liteapi_guest_nationality", "RO"),
                     "refundable": refundable, "room_rates": room_rates, "pricing": pricing,
-                    **locations.get(hotel_id, {}),
+                    **locations.get(selected_hotel_id, {}),
                 })
             return result
         except (ValueError, TypeError, KeyError, AttributeError, InvalidOperation) as exc:

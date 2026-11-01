@@ -1,7 +1,7 @@
 import type { TransferFxReference } from './transferQuoteData';
 
 export type ResourceKind = 'bus' | 'flight' | 'hotel';
-export interface PriceEvidence {
+export interface AplPriceEvidence {
   kind: 'apl_ecb_reference';
   original: { amount: string; currency: 'GBP' };
   estimated_eur: { amount: string; currency: 'EUR' };
@@ -11,6 +11,17 @@ export interface PriceEvidence {
   settlement_guaranteed: false;
   revalidation_required: true;
 }
+export interface TransferoPriceEvidence {
+  kind: 'transfero_ecb_reference';
+  original: { amount: string; currency: 'RON' };
+  estimated_eur: { amount: string; currency: 'EUR' };
+  price_scope: 'requested_party';
+  fx_reference: TransferFxReference;
+  policy_id: 'ecb_reference_v1';
+  settlement_guaranteed: false;
+  revalidation_required: true;
+}
+export type PriceEvidence = AplPriceEvidence | TransferoPriceEvidence;
 export interface QuoteFreshness {
   basis: 'app_receipt';
   received_at: string;
@@ -34,6 +45,7 @@ export interface CostEvidence {
   total_eur: string;
   estimated_eur: string;
   original_gbp: string;
+  original_ron?: string;
   policy_id: 'ecb_reference_v1';
   settlement_guaranteed: false;
   revalidation_required: true;
@@ -102,7 +114,8 @@ export interface Resource {
   requires_revalidation?: boolean;
   external_offer_id?: string | null;
   booking_status?: string;
-  capacity_scope?: 'quoted_request' | 'private_vehicle_quote' | 'operator_confirmed';
+  capacity_scope?:
+    'quoted_request' | 'private_vehicle_quote' | 'operator_confirmed' | 'source_reported_seats';
 }
 export interface InventoryResourceRecord {
   scenario_id: string;
@@ -458,8 +471,22 @@ export interface RecoveryJobInput {
   max_provider_calls: number;
   instructions: string;
   hotel_recovery?: HotelRecoveryInput;
+  romanian_hotel_recovery?: RomanianHotelRecoveryInput;
   airport_transfers?: AirportTransferRecoveryInput[];
   after_flight_transfer?: AfterFlightTransferInput | null;
+}
+export interface RomanianHotelRecoveryInput {
+  source: 'transfero_direct_aeroport';
+  hotel_id: 'lpce923';
+  checkin_at: string;
+  checkout_at: string;
+  rooms: number;
+  minimum_rest_minutes: number;
+  suitcases: number;
+  handbags: number;
+  standard_baggage_confirmed: true;
+  airport_processing_minutes: number;
+  hotel_connection_minutes: number;
 }
 export type AirportTransferProfile =
   | {
@@ -537,6 +564,24 @@ export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions' | 'ho
       return_pickup_at: string;
       return_pickup_basis: 'checkout_plus_10_minute_app_allowance';
       required_provider_calls: 10;
+    };
+    romanian_hotel_recovery?: {
+      inputs: RomanianHotelRecoveryInput;
+      hotel_id: 'lpce923';
+      hotel_node_id: string;
+      outbound_resource_id: string;
+      return_resource_id: string;
+      onward_resource_id: string;
+      outbound_departure_at: string;
+      return_departure_at: string;
+      flight_query_date: string;
+      required_provider_calls: 8;
+      policy: {
+        minimum_advance_hours: 12;
+        boarding_minutes: 20;
+        minimum_airport_margin_minutes: 180;
+        facility_level_only: true;
+      };
     };
     waits?: {
       group_id: string;
@@ -622,6 +667,7 @@ export interface RecoveryBlockedReceipt {
   code:
     | 'insufficient_call_allowance'
     | 'hotel_setup_required'
+    | 'romanian_hotel_setup_required'
     | 'airport_transfer_setup_required'
     | 'ai_not_configured'
     | 'recovery_service_unavailable'

@@ -3,6 +3,7 @@ import type { GeoPoint } from './contracts';
 import { sourceInstant } from '../resourceFreshness';
 import { airportArrivalEvidence } from '../airportArrival';
 import { isAirportCab } from '../airportCabPresentation';
+import { isTransfero, transferoEvidence } from '../transferoData';
 
 /** Decode Google's 1e5 polyline format with bounded input, work and coordinates. */
 export function decodeRoadPolyline(encoded: unknown): GeoPoint[] | null {
@@ -92,9 +93,11 @@ export function groundPath(
 ): { path: GeoPoint[]; geometry: 'sourced_road' | 'connection_only' } | null {
   if (
     resource.transport_mode !== 'private_transfer' &&
-    resource.price_evidence?.kind !== 'apl_ecb_reference'
+    resource.price_evidence?.kind !== 'apl_ecb_reference' &&
+    !isTransfero(resource)
   )
     return null;
+  if (isTransfero(resource) && !transferoEvidence(resource)) return null;
   const origin = world.airports.find((node) => node.id === resource.origin),
     destination = world.airports.find((node) => node.id === resource.destination);
   if (!origin || !destination) return null;
@@ -105,7 +108,7 @@ export function groundPath(
   if (!start || !end) return null;
   const fallback = { path: [start, end], geometry: 'connection_only' as const };
   // CAB's source contract has a duration estimate, but no road geometry.
-  if (isAirportCab(resource)) return fallback;
+  if (isAirportCab(resource) || isTransfero(resource)) return fallback;
   const route = object(resource.provenance?.google_route),
     request = object(route?.request),
     road = object(route?.road_endpoints);

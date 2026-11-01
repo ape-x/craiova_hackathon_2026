@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .airport_catalog import lookup_airport
 from .airport_cab_evidence import SOURCE as AIRPORT_CAB_SOURCE, QUOTE_KEY as AIRPORT_CAB_QUOTE
+from .providers.transfero import SOURCE as TRANSFERO_SOURCE
 from .hotel_location import property_location, property_zone
 from .hotel_policy import HotelPolicyError, validate_stay_policy
 from .live_data import (
@@ -418,6 +419,10 @@ class LiveOperations:
                 raise DomainError(409,
                     "Bucharest.CAB supplies unreserved vehicle-category quotes; source booking confirmation is not implemented. No booking or passenger state was changed.",
                     {"code": "airport_cab_booking_not_supported"})
+            if any(resources[resource_id].source == TRANSFERO_SOURCE or "transfero_quote" in resources[resource_id].provenance for resource_id in expected_ids):
+                raise DomainError(409,
+                    "Transfero supplies unreserved scheduled-service quotes; source booking confirmation is not implemented. No booking or passenger state was changed.",
+                    {"code": "transfero_booking_not_supported"})
             reservations = [reservation for reservation in world.reservations if reservation.offer_id == offer.id and reservation.status in ("proposed", "accepted")]
             expected = {(resource_id, units(resources[resource_id], group)) for resource_id in expected_ids}
             if len(reservations) != len(expected) or {(item.resource_id, item.quantity) for item in reservations} != expected:

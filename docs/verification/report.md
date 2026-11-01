@@ -6,6 +6,45 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 API and frontend `baf061f` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
 
+### Romanian scheduled transport and hotel package — 1 November 2026
+
+The new typed package connects OTP → exact Hotel Aro Palace → OTP → a sourced
+onward flight. It preserves party-priced RON, dated ECB EUR estimates, mandatory
+hotel fees, shared seat stock across receipt revisions, exact stay policy and
+explicit boarding/airport margins. Eight durable calls cover both scheduled
+services, hotel rates/metadata, ECB, Responses, flight source and Decisions.
+Only the chosen complete four-leg proposal is applied atomically. No booking
+or Romanian saved-profile voice reuse is implemented; named requests cannot
+silently substitute UK hotel inputs.
+
+Real source discovery made two successful query-only Transfero searches and three
+LiteAPI hotel requests. The latter returned EUR114.48 plus EUR1.86 mandatory fees
+for two adults on 2–3 November. The saved consumer responses each contain 13
+services at RON260 per two-adult party; a production-parser replay accepted all
+26 without another request. Prior saved four-adult responses establish RON520
+party pricing and stable service identities. These are historical observations,
+not a fresh complete application run. See [source evidence](romanian-hotel-source-discovery.json)
+and the [bounded source contract](../romanian-hotel-recovery.md).
+
+Local checks passed **3,057 backend tests**, followed by **347 command/report
+regressions** after the independent review's final guard correction, including
+three added cases. Frontend **957 tests across 57 files**, TypeScript/production
+build, formatting and diff checks passed. The existing Starlette warning and
+large internal simulation bundle warning remain. Provider/pricing/shared-stock
+and workflow/request/UI reviews found no unresolved blocking issue.
+
+Offline workflow tests exercise eight calls, real adapter contracts with mocked
+transports, four chosen resources, party/tax/FX evidence, exact policy, fixed
+other-group stock, cancellation, changed scope, expiry, unknown outcomes and
+atomic replacement at inventory capacity. A swallowed package-selection clause
+in a model's report quotation is now rejected before masking; a source brand
+merely describing an affected service does not become a new package request.
+
+Release deployment and read-only browser evidence are recorded separately after
+replacing the existing services. Google account administration, fresh spoken
+recovery and complete fresh-provider acceptance remain open. No earlier voice
+allowance was reused and FR24 polling remains paused.
+
 ### Exact itinerary review and ground-route capacity — 1 November 2026
 
 Release `baf061f` adds **Review itinerary** to a successful recovery's current

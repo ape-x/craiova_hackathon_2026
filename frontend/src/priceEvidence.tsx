@@ -7,10 +7,11 @@ import './priceEvidence.css';
 const exactAmount = /^(?:0|[1-9]\d{0,12})(?:\.\d{1,12})?$/;
 const centsAmount = /^(?:0|[1-9]\d{0,12})\.\d{2}$/;
 
-function money(amount: unknown, currency: 'GBP' | 'EUR', cents = false): string | null {
+function money(amount: unknown, currency: 'GBP' | 'EUR' | 'RON', cents = false): string | null {
   if (typeof amount !== 'string' || !(cents ? centsAmount : exactAmount).test(amount)) return null;
   const [whole, fraction = ''] = amount.split('.');
-  return `${currency === 'GBP' ? '£' : '€'}${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction.padEnd(2, '0')}`;
+  const value = `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction.padEnd(2, '0')}`;
+  return currency === 'RON' ? `${value} RON` : `${currency === 'GBP' ? '£' : '€'}${value}`;
 }
 
 export function privateTransfer(
@@ -38,13 +39,20 @@ function referenceFor(evidence: PriceEvidence | null | undefined) {
 
 function priceEstimate(evidence: PriceEvidence | null | undefined): string | null {
   const reference = referenceFor(evidence);
-  return evidence?.kind === 'apl_ecb_reference' &&
-    evidence.price_scope === 'per_vehicle' &&
+  const original =
+    evidence?.kind === 'apl_ecb_reference'
+      ? evidence.price_scope === 'per_vehicle' &&
+        evidence.original?.currency === 'GBP' &&
+        money(evidence.original.amount, 'GBP') !== null
+      : evidence?.kind === 'transfero_ecb_reference' &&
+        evidence.price_scope === 'requested_party' &&
+        evidence.original?.currency === 'RON' &&
+        money(evidence.original.amount, 'RON') !== null;
+  return evidence &&
+    original &&
     evidence.policy_id === 'ecb_reference_v1' &&
     evidence.settlement_guaranteed === false &&
     evidence.revalidation_required === true &&
-    evidence.original?.currency === 'GBP' &&
-    money(evidence.original.amount, 'GBP') !== null &&
     evidence.estimated_eur?.currency === 'EUR' &&
     reference !== null &&
     typeof reference.source_units_per_eur === 'string' &&
@@ -54,7 +62,11 @@ function priceEstimate(evidence: PriceEvidence | null | undefined): string | nul
     : null;
 }
 
-function validSummary(evidence: CostEvidence | null | undefined, total: number): boolean {
+function validSummary(
+  evidence: CostEvidence | null | undefined,
+  total: number,
+  ronRequired = false,
+): boolean {
   return (
     evidence?.kind === 'includes_ecb_reference' &&
     evidence.policy_id === 'ecb_reference_v1' &&
@@ -63,6 +75,8 @@ function validSummary(evidence: CostEvidence | null | undefined, total: number):
     money(evidence.total_eur, 'EUR', true) !== null &&
     money(evidence.estimated_eur, 'EUR', true) !== null &&
     money(evidence.original_gbp, 'GBP') !== null &&
+    (!ronRequired || evidence.original_ron !== undefined) &&
+    (evidence.original_ron === undefined || money(evidence.original_ron, 'RON') !== null) &&
     Number.isFinite(total) &&
     Number(evidence.total_eur) === total
   );
@@ -94,7 +108,11 @@ export function costPresentation(value: Itinerary | Plan | undefined, resources:
             maximumFractionDigits: 2,
           }).format(value?.total_cost ?? 0)
         : formatCost(value?.total_cost ?? 0)
-      : validSummary(summary, value!.total_cost)
+      : validSummary(
+            summary,
+            value!.total_cost,
+            legs.some((leg) => leg.price_evidence?.kind === 'transfero_ecb_reference'),
+          )
         ? `≈ ${money(summary!.total_eur, 'EUR', true)}`
         : 'Estimated total unavailable',
   };
@@ -102,13 +120,22 @@ export function costPresentation(value: Itinerary | Plan | undefined, resources:
 
 export function PriceEvidenceDetails({ evidence }: { evidence: PriceEvidence | null | undefined }) {
   if (evidence == null) return null;
+  const coach = evidence.kind === 'transfero_ecb_reference';
+  const currency = coach ? 'RON' : 'GBP';
   const original =
-    evidence.original?.currency === 'GBP' ? money(evidence.original.amount, 'GBP') : null;
+    evidence.original?.currency === currency ? money(evidence.original.amount, currency) : null;
   const estimate = priceEstimate(evidence);
   const reference = referenceFor(evidence);
   return (
-    <div className="price-evidence" aria-label="Private transfer price evidence">
-      <strong>{original ? `${original} per vehicle` : 'Supplier GBP price unavailable'}</strong>
+    <div
+      className="price-evidence"
+      aria-label={coach ? 'Scheduled transport price evidence' : 'Private transfer price evidence'}
+    >
+      <strong>
+        {original
+          ? `${original} ${coach ? 'for the requested party' : 'per vehicle'}`
+          : `Supplier ${currency} price unavailable`}
+      </strong>
       <span>
         {estimate
           ? `Approximately ${estimate} · EUR reference estimate`
@@ -122,7 +149,7 @@ export function PriceEvidenceDetails({ evidence }: { evidence: PriceEvidence | n
           {' · '}rate dated {reference.rate_date}
           {typeof reference.source_units_per_eur === 'string' &&
           exactAmount.test(reference.source_units_per_eur)
-            ? ` · 1 EUR = ${reference.source_units_per_eur} GBP`
+            ? ` · 1 EUR = ${reference.source_units_per_eur} ${currency}`
             : ''}
         </span>
       )}
@@ -152,10 +179,30 @@ export function EstimatedCostNote({
     ) : null;
   }
   const summary = value.cost_evidence;
+  const legs =
+    'legs' in value
+      ? value.legs
+      : value.allocations.flatMap((allocation) => allocation.itinerary.legs);
+  const charges = summary
+    ? [
+        summary.original_ron === undefined || Number(summary.original_gbp) > 0
+          ? `${money(summary.original_gbp, 'GBP')} in private-transfer charges`
+          : '',
+        summary.original_ron !== undefined
+          ? `${money(summary.original_ron, 'RON')} in scheduled-coach fares`
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' and ')
+    : '';
   return (
     <p className="estimated-cost-note">
-      {validSummary(summary, value.total_cost)
-        ? `Includes ${money(summary!.original_gbp, 'GBP')} in private-transfer charges, valued at approximately ${money(summary!.estimated_eur, 'EUR', true)} using ECB reference rates. `
+      {validSummary(
+        summary,
+        value.total_cost,
+        legs.some((leg) => leg.price_evidence?.kind === 'transfero_ecb_reference'),
+      )
+        ? `Includes ${charges}, valued at approximately ${money(summary!.estimated_eur, 'EUR', true)} using ECB reference rates. `
         : 'The estimate breakdown is incomplete. '}
       This EUR planning total is not a guaranteed settlement amount. Revalidate before booking.
     </p>

@@ -1,4 +1,4 @@
-"""Typed APL/ECB planning estimates; original GBP remains the supplier price.
+"""Typed supplier/ECB planning estimates; original GBP/RON remain source prices.
 
 All arithmetic and comparisons are local. This module neither fetches a rate nor
 certifies settlement, supplier stock, a booking, or a road journey.
@@ -8,10 +8,10 @@ from __future__ import annotations
 import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Context, Decimal, InvalidOperation, ROUND_HALF_EVEN, localcontext
-from typing import Literal
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, model_serializer
 
 ECB_SOURCE = "European Central Bank"
 ECB_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
@@ -87,6 +87,19 @@ class EurMoney(PriceModel):
         return value
 
 
+class RonMoney(PriceModel):
+    amount: str
+    currency: Literal["RON"]
+
+    @field_validator("amount")
+    @classmethod
+    def valid_amount(cls, value):
+        exact_amount(value, positive=True)
+        if not re.fullmatch(r"[0-9]+\.[0-9]{2}", value):
+            raise ValueError("RON coach fares must retain exact cents")
+        return value
+
+
 class TransferFxReference(PriceModel):
     source: Literal["European Central Bank"]
     source_url: Literal["https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"]
@@ -130,6 +143,30 @@ class AplPriceEvidence(PriceModel):
         return self
 
 
+class RonFxReference(TransferFxReference):
+    source_currency: Literal["RON"]
+
+
+class TransferoPriceEvidence(PriceModel):
+    kind: Literal["transfero_ecb_reference"]
+    original: RonMoney
+    estimated_eur: EurMoney
+    price_scope: Literal["requested_party"]
+    fx_reference: RonFxReference
+    policy_id: Literal["ecb_reference_v1"]
+    settlement_guaranteed: Literal[False]
+    revalidation_required: Literal[True]
+
+    @model_validator(mode="after")
+    def verify_conversion(self):
+        if self.estimated_eur.amount != eur_estimate(self.original.amount, self.fx_reference.source_units_per_eur):
+            raise ValueError("EUR estimate differs from exact RON price and matching ECB rate")
+        return self
+
+
+PriceEvidence = Annotated[AplPriceEvidence | TransferoPriceEvidence, Field(discriminator="kind")]
+
+
 class AplQuoteFreshness(PriceModel):
     basis: Literal["app_receipt"]
     received_at: str
@@ -147,17 +184,27 @@ class CostEvidence(PriceModel):
     total_eur: str
     estimated_eur: str
     original_gbp: str
+    original_ron: str | None = None
     policy_id: Literal["ecb_reference_v1"]
     settlement_guaranteed: Literal[False]
     revalidation_required: Literal[True]
 
-    @field_validator("total_eur", "estimated_eur", "original_gbp")
+    @field_validator("total_eur", "estimated_eur", "original_gbp", "original_ron")
     @classmethod
     def valid_amount(cls, value):
+        if value is None:
+            return value
         # Aggregated plans may contain several individually bounded prices.
         if not isinstance(value, str) or len(value) > 64 or not re.fullmatch(r"[0-9]+(?:\.[0-9]{1,12})?", value):
             raise ValueError("Invalid exact cost summary")
         return value
+
+    @model_serializer(mode="wrap")
+    def omit_absent_ron(self, handler):
+        result = handler(self)
+        if self.original_ron is None:
+            result.pop("original_ron", None)
+        return result
 
     @field_validator("total_eur", "estimated_eur")
     @classmethod
@@ -207,6 +254,28 @@ def build_apl_price_evidence(quote: dict, option_id: str, *, now=None, require_c
         settlement_guaranteed=False, revalidation_required=True)
 
 
+def build_transfero_price_evidence(quote: dict, option_id: str, *, now=None, require_current=True) -> TransferoPriceEvidence:
+    """Require original party RON, a matching RON rate and explicit estimate flags."""
+    from .providers.transfero import validate_normalized_option
+    now = now or datetime.now(timezone.utc)
+    option = validate_normalized_option(quote, option_id, now=now, require_current=require_current)
+    fx = quote.get("fx")
+    if (not isinstance(fx, dict) or fx.get("state") != "ready" or fx.get("source") != ECB_SOURCE
+            or fx.get("source_url") != ECB_URL or fx.get("source_currency") != "RON"
+            or fx.get("settlement_guaranteed") is not False or fx.get("revalidation_required") is not True):
+        raise ValueError("A current matching RON ECB reference is required")
+    reference = RonFxReference.model_validate(fx.get("reference"))
+    if aware_timestamp(reference.as_of) > now or (require_current and (now.astimezone(ECB_ZONE).date() - date.fromisoformat(reference.rate_date)).days > MAX_RATE_AGE_DAYS):
+        raise ValueError("ECB assessment is future-dated or stale")
+    converted = option.get("eur_reference_estimate")
+    if not isinstance(converted, dict) or converted.get("kind") != "ecb_reference_estimate" or converted.get("rounding") != "half_even_to_cent":
+        raise ValueError("A complete EUR reference estimate is required")
+    return TransferoPriceEvidence(kind="transfero_ecb_reference", original=option["price"],
+        estimated_eur={"amount": converted.get("amount"), "currency": converted.get("currency")},
+        price_scope="requested_party", fx_reference=reference, policy_id=POLICY_ID,
+        settlement_guaranteed=False, revalidation_required=True)
+
+
 def valid_apl_resource_price(resource, group, *, now=None, require_current=True) -> bool:
     """Check typed evidence against source facts, party scope and legacy numbers."""
     try:
@@ -226,6 +295,9 @@ def valid_apl_resource_price(resource, group, *, now=None, require_current=True)
 
 
 def app_receipt_deadline(resource) -> datetime | None:
+    if resource.source == "Transfero":
+        from .transfero_evidence import transfero_deadline
+        return transfero_deadline(resource)
     if resource.quote_freshness is None:
         return None
     freshness = AplQuoteFreshness.model_validate(_plain(resource.quote_freshness))
@@ -240,20 +312,23 @@ def app_receipt_deadline(resource) -> datetime | None:
 
 
 def cost_summary(legs) -> CostEvidence | None:
-    """Sum exact GBP and estimated EUR once per selected private vehicle."""
+    """Sum exact original currencies and EUR estimates once per selected leg."""
     entries = [_plain(item) for item in legs]
     estimated = [item["price_evidence"] for item in entries if item.get("price_evidence") is not None]
     if not estimated:
         return None
-    prices = [AplPriceEvidence.model_validate(item) for item in estimated]
+    prices = [(TransferoPriceEvidence if item.get("kind") == "transfero_ecb_reference" else AplPriceEvidence).model_validate(item) for item in estimated]
     with localcontext(Context(prec=50, rounding=ROUND_HALF_EVEN)):
         total = sum((Decimal(str(item["cost"])) for item in entries), Decimal(0))
         eur = sum((exact_amount(item.estimated_eur.amount) for item in prices), Decimal(0))
-        gbp = sum((exact_amount(item.original.amount) for item in prices), Decimal(0))
+        gbp = sum((exact_amount(item.original.amount) for item in prices if item.original.currency == "GBP"), Decimal(0))
+        ron_prices = [item for item in prices if item.original.currency == "RON"]
+        ron = sum((exact_amount(item.original.amount) for item in ron_prices), Decimal(0))
         if not total.is_finite() or total < eur or total != total.quantize(Decimal("0.01")):
             raise ValueError("Leg totals are inconsistent with reference-estimate costs")
         return CostEvidence(kind="includes_ecb_reference", total_eur=format(total.quantize(Decimal("0.01")), "f"),
             estimated_eur=format(eur.quantize(Decimal("0.01")), "f"), original_gbp=format(gbp, "f"),
+            original_ron=format(ron, "f") if ron_prices else None,
             policy_id=POLICY_ID, settlement_guaranteed=False, revalidation_required=True)
 
 

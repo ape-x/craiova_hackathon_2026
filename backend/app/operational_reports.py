@@ -11,6 +11,7 @@ import unicodedata
 from pydantic import Field, ValidationError, field_validator, model_serializer
 
 from .hotel_recovery import HotelRecoveryInputs, validate_hotel_job
+from .romanian_hotel_recovery import RomanianHotelRecoveryInputs, validate_romanian_hotel_job
 from .airport_cab_recovery import AirportCabRecoveryInput, validate_airport_transfer_job
 from .after_flight_inputs import AfterFlightTransferInput
 from .after_flight_recovery import validate_after_flight_job
@@ -45,12 +46,15 @@ class ArrivalRecoveryOptions(Model):
     modes: list[Literal["flight", "hotel", "bus"]] = Field(default_factory=lambda: ["flight"], min_length=1, max_length=3)
     max_provider_calls: int = Field(default=8, ge=3, le=26, strict=True)
     hotel_recovery: HotelRecoveryInputs | None = None
+    romanian_hotel_recovery: RomanianHotelRecoveryInputs | None = None
     airport_transfers: list[AirportCabRecoveryInput] = Field(default_factory=list, max_length=12)
     after_flight_transfer: AfterFlightTransferInput | None = None
 
     @model_serializer(mode="wrap")
     def compatible_payload(self, handler):
         result = handler(self)
+        if self.romanian_hotel_recovery is None:
+            result.pop("romanian_hotel_recovery", None)
         if not self.airport_transfers:
             result.pop("airport_transfers", None)
         if self.after_flight_transfer is None:
@@ -216,7 +220,7 @@ class OperationalReports:
                 blocked("recovery_service_unavailable", "Recovery service is unavailable; no provider call was dispatched.")
                 return
             current = self.store._load(conn)
-            if "hotel" in options.modes and options.hotel_recovery is None:
+            if "hotel" in options.modes and options.hotel_recovery is None and options.romanian_hotel_recovery is None:
                 blocked("hotel_setup_required", "Supply fresh hotel and transfer inputs for the reported location and readiness. A saved hotel profile was not reused or omitted from the requested journey.")
                 return
             try:
@@ -236,6 +240,13 @@ class OperationalReports:
                 if exc.status != 422:
                     raise
                 blocked("hotel_setup_required", exc.message + " No saved hotel inputs were substituted.")
+                return
+            try:
+                validate_romanian_hotel_job(current, job_request)
+            except DomainError as exc:
+                if exc.status != 422:
+                    raise
+                blocked("romanian_hotel_setup_required", exc.message + " No hotel, coach departure or luggage was inferred.")
                 return
             try:
                 validate_airport_transfer_job(current, job_request, getattr(self.jobs,"airport_cab",None))

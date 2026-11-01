@@ -44,6 +44,9 @@ import { unavailabilityIssue } from './operationalReports';
 import { AirportArrivalDetails, SupplierMeetingInstructions } from './TransferEvidence';
 import { AirportCabFareDetails, isAirportCab } from './airportCabPresentation';
 import PostflightConnectionDetails from './PostflightConnectionDetails';
+import TransferoScheduleDetails from './TransferoScheduleDetails';
+import HotelResourcePrice, { isLiteApiHotel } from './HotelResourcePrice';
+import { isTransfero } from './transferoData';
 import { groupRecoveryEntry, type GroupRecoveryIntent } from './groupRecoveryEntry';
 import { resolveRecoveryItinerary, type RecoveryItineraryIntent } from './recoveryItineraryReview';
 import {
@@ -188,6 +191,8 @@ export function ItineraryView({
                 </details>
               )}
               {!cab && <PriceEvidenceDetails evidence={leg.price_evidence} />}
+              {resource && <TransferoScheduleDetails resource={resource} />}
+              {resource && <HotelResourcePrice resource={resource} />}
               {cab && resource && <AirportCabFareDetails resource={resource} leg={leg} />}
             </div>
           </div>
@@ -520,46 +525,60 @@ function ResourceFacts({
           </span>
         )}
         <span>
-          {resource.capacity_scope === 'private_vehicle_quote'
-            ? planningCurrent
-              ? 'Quoted group'
-              : 'Recorded quoted group'
-            : resource.capacity_scope === 'quoted_request'
+          {resource.capacity_scope === 'source_reported_seats'
+            ? 'Source-reported'
+            : resource.capacity_scope === 'private_vehicle_quote'
               ? planningCurrent
-                ? 'Quote scope'
-                : 'Recorded quote scope'
-              : planningCurrent
-                ? 'Available / total'
-                : 'Recorded capacity'}{' '}
+                ? 'Quoted group'
+                : 'Recorded quoted group'
+              : resource.capacity_scope === 'quoted_request'
+                ? planningCurrent
+                  ? 'Quote scope'
+                  : 'Recorded quote scope'
+                : planningCurrent
+                  ? 'Available / total'
+                  : 'Recorded capacity'}{' '}
           {resource.capacity_scope === 'private_vehicle_quote'
             ? ''
             : resource.kind === 'hotel'
               ? 'rooms'
               : 'seats'}{' '}
           <b>
-            {resource.capacity_scope === 'private_vehicle_quote'
-              ? `${resource.capacity} passengers · one vehicle quote`
-              : resource.capacity_scope === 'quoted_request'
-                ? `${resource.capacity} · requested group only`
-                : planningCurrent
-                  ? `${availableUnits(world, resource.id)} / ${resource.capacity}`
-                  : resource.capacity}
+            {resource.capacity_scope === 'source_reported_seats'
+              ? `${resource.capacity} at receipt · unreserved`
+              : resource.capacity_scope === 'private_vehicle_quote'
+                ? `${resource.capacity} passengers · one vehicle quote`
+                : resource.capacity_scope === 'quoted_request'
+                  ? `${resource.capacity} · requested group only`
+                  : planningCurrent
+                    ? `${availableUnits(world, resource.id)} / ${resource.capacity}`
+                    : resource.capacity}
           </b>
         </span>
         <span>
           Accessibility{' '}
-          <b>{cab ? 'Unverified' : resource.accessible ? 'Supported' : 'Not supported'}</b>
+          <b>
+            {cab || isTransfero(resource)
+              ? 'Unverified'
+              : resource.accessible
+                ? 'Supported'
+                : 'Not supported'}
+          </b>
         </span>
-        {resource.price_evidence == null && !privateTransfer(resource) && (
-          <span>
-            {resource.quote_total_cost != null
-              ? 'Group quote total'
-              : `Cost per ${resource.kind === 'hotel' ? 'room' : 'person'}`}{' '}
-            <b>{formatCost(resource.quote_total_cost ?? resource.cost_per_person)}</b>
-          </span>
-        )}
+        {resource.price_evidence == null &&
+          !privateTransfer(resource) &&
+          !isLiteApiHotel(resource) && (
+            <span>
+              {resource.quote_total_cost != null
+                ? 'Group quote total'
+                : `Cost per ${resource.kind === 'hotel' ? 'room' : 'person'}`}{' '}
+              <b>{formatCost(resource.quote_total_cost ?? resource.cost_per_person)}</b>
+            </span>
+          )}
       </div>
       {!cab && <PriceEvidenceDetails evidence={resource.price_evidence} />}
+      <TransferoScheduleDetails resource={resource} />
+      <HotelResourcePrice resource={resource} />
       {cab && (
         <>
           <p className="field-hint">
@@ -1141,11 +1160,13 @@ export default function Inspector({
               <div>
                 <span className="eyebrow">
                   {world.mode === 'live'
-                    ? resource.capacity_scope === 'private_vehicle_quote'
-                      ? 'PRIVATE-TRANSFER QUOTE RECORD'
-                      : resource.capacity_scope === 'quoted_request'
-                        ? 'GROUP QUOTE RECORD'
-                        : 'OPERATOR-VERIFIED RESOURCE'
+                    ? resource.capacity_scope === 'source_reported_seats'
+                      ? 'SCHEDULED TRANSPORT QUOTE RECORD'
+                      : resource.capacity_scope === 'private_vehicle_quote'
+                        ? 'PRIVATE-TRANSFER QUOTE RECORD'
+                        : resource.capacity_scope === 'quoted_request'
+                          ? 'GROUP QUOTE RECORD'
+                          : 'OPERATOR-VERIFIED RESOURCE'
                     : 'SIMULATED RESOURCE'}
                 </span>
                 <h3>

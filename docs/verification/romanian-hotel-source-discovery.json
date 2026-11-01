@@ -1,0 +1,128 @@
+{
+  "observed_on": "2026-11-01",
+  "kind": "historical_read_only_source_discovery",
+  "consumer_search": {
+    "source": "Transfero / Direct Aeroport",
+    "endpoint": "https://www.transfero.ro/wp-admin/admin-ajax.php",
+    "method": "POST",
+    "action": "get_busses",
+    "successful_searches": 2,
+    "initial_method_discovery_get_no_data": 1,
+    "services_per_direction": {
+      "outbound": 13,
+      "return": 13
+    },
+    "examples": [
+      {
+        "direction": "outbound",
+        "departure_local": "02.11.2026 11:00",
+        "arrival_local": "02.11.2026 14:00",
+        "timezone": "Europe/Bucharest",
+        "origin": "Terminal SOSIRI / ARRIVALS",
+        "destination": "Hotel Aro Palace",
+        "reported_seats": 13,
+        "quoted_party_total": {
+          "amount": "260",
+          "currency": "RON"
+        },
+        "adults": 2,
+        "children": 0,
+        "vehicle_label": "van"
+      },
+      {
+        "direction": "return",
+        "departure_local": "03.11.2026 06:00",
+        "arrival_local": "03.11.2026 08:30",
+        "timezone": "Europe/Bucharest",
+        "origin": "Hotel Aro Palace",
+        "destination": "Terminal PLECARI/ DEPARTURES",
+        "reported_seats": 19,
+        "quoted_party_total": {
+          "amount": "260",
+          "currency": "RON"
+        },
+        "adults": 2,
+        "children": 0,
+        "vehicle_label": "van"
+      }
+    ]
+  },
+  "hotel": {
+    "source": "Nuitee / LiteAPI",
+    "environment": "live",
+    "requests": 3,
+    "hotel_id": "lpce923",
+    "name": "Hotel Aro Palace",
+    "address": "Eroilor Boulevard Nr 27 - 29, Brasov, RO",
+    "checkin_date": "2026-11-02",
+    "checkout_date": "2026-11-03",
+    "adults": 2,
+    "rooms": 1,
+    "currency": "EUR",
+    "pricing": {
+      "booking_total": {
+        "amount": "114.48",
+        "currency": "EUR"
+      },
+      "excluded_fee_totals": [
+        {
+          "amount": "1.86",
+          "currency": "EUR"
+        }
+      ],
+      "mandatory_total": {
+        "amount": "116.34",
+        "currency": "EUR"
+      },
+      "status": "complete",
+      "unresolved_reasons": [],
+      "payment_timing": "unconfirmed"
+    },
+    "stay_policy": {
+      "hotel_id": "lpce923",
+      "source": "Nuitee / LiteAPI",
+      "source_url": "https://api.liteapi.travel/v3.0/data/hotel",
+      "retrieved_at": "2026-11-01T06:35:30.267214+00:00",
+      "status": "provided",
+      "checkin_start": "03:00 PM",
+      "checkin_end": null,
+      "checkout": "12:00 PM",
+      "special_instructions_present": false,
+      "additional_instructions_present": false
+    }
+  },
+  "onward_flight_searched": false,
+  "new_ecb_request": false,
+  "application_inventory_changed": false,
+  "booking_hold_payment_or_message": false,
+  "fresh_end_to_end_application_acceptance": false,
+  "notes": [
+    "Seat counts and prices are dated observations, not current offers or held stock.",
+    "Ground fare520RON and hotel116.34EUR have not been combined without a fresh exchange-rate source.",
+    "An applicable onward flight and complete planning constraints remain required."
+  ],
+  "production_parser_replay": {
+    "offline_actual_captured_responses": true,
+    "production_terms_hash_used": true,
+    "new_network_requests": 0,
+    "application_state_changed": false,
+    "results": [
+      {
+        "direction": "otp_to_hotel",
+        "validated_options": 13,
+        "rejected": 0,
+        "party_fares_ron": [
+          "260.00"
+        ]
+      },
+      {
+        "direction": "hotel_to_otp",
+        "validated_options": 13,
+        "rejected": 0,
+        "party_fares_ron": [
+          "260.00"
+        ]
+      }
+    ]
+  }
+}

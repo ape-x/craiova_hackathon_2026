@@ -27,6 +27,7 @@ from .live_data import ManifestImport, ManualResourceInput, PassengerGenerationI
 from .live_service import LiveOperations, HotelQuoteImport, ExternalConfirmation, GroupLabelUpdate
 from .live_travel import LiveTravel, LiveTravelSearch, TravelQuoteImport
 from .providers.travel import TravelProvider
+from .providers.transfero import TransferoProvider
 from .recovery_jobs import RecoveryJobs, RecoveryJobRequest, RecoveryCancellation
 from .live_commands import LiveCommands
 from .ground_transfers import GroundTransfers, create_transfer_router
@@ -104,8 +105,10 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     ground_transfers=GroundTransfers(settings)
     coach_fares=CoachFares(settings,fx=ground_transfers.fx)
     airport_cab=AirportCabPlanning(settings,store)
+    transfero=TransferoProvider(settings)
     jobs=RecoveryJobs(settings,store,service,travel_provider,ai,hotel_provider=real_data.provider,
-        apl_provider=ground_transfers.provider,fx_provider=ground_transfers.fx,coach_fares=coach_fares,airport_cab=airport_cab)
+        apl_provider=ground_transfers.provider,fx_provider=ground_transfers.fx,coach_fares=coach_fares,airport_cab=airport_cab,
+        transfero_provider=transfero)
     service.live_commands=LiveCommands(store,jobs)
     ground_planning=GroundPlanning(store,ground_transfers,real_data.provider)
     operational_reports=OperationalReports(store,jobs)
@@ -151,7 +154,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         with suppress(asyncio.CancelledError):
             await task
         await jobs.aclose()
-        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose(),ground_transfers.aclose(),coach_fares.aclose(),airport_cab.aclose())
+        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose(),ground_transfers.aclose(),coach_fares.aclose(),airport_cab.aclose(),transfero.aclose())
 
     app=FastAPI(title="Airport Recovery Live",version="0.1.0",lifespan=lifespan,docs_url=None if settings.production else "/docs",redoc_url=None,openapi_url=None if settings.production else "/openapi.json")
     app.state.store,app.state.service,app.state.settings=store,service,settings

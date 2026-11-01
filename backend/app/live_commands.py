@@ -17,6 +17,7 @@ from .providers.base import ProviderError
 from .recovery_jobs import RecoveryJobRequest
 from .hotel_recovery import HotelRecoveryInputs, REQUIRED_CALLS, validate_hotel_job
 from .hotel_recovery_profile import HotelRecoveryProfileError, read_hotel_recovery_profile
+from .romanian_hotel_commands import SETUP_EXPLANATION, romanian_hotel_requested
 from .store import DomainError, Store, utcnow
 
 
@@ -242,6 +243,8 @@ class LiveCommands:
             return reported
         raw = interpreted.get("recovery")
         if raw is None:
+            if romanian_hotel_requested(request.text):
+                return self._reply(request, world, SETUP_EXPLANATION + " Interpretarea a folosit 1 apel.")
             # A dropped recovery intent must never turn an explicitly named
             # case into global planning. Generic event commands and requests
             # without a case/flight binding retain their existing semantics.
@@ -310,6 +313,9 @@ class LiveCommands:
                 return self._reply(request, world, "Numește explicit grupurile existente legate de acest caz; nu am selectat un subset presupus. Nicio căutare pornită; interpretarea a folosit 1 apel.")
         if not groups or len(groups) > 24 or set(groups) & confirmed:
             return self._reply(request, world, "Selectează între 1 și 24 de grupuri legate de caz, fără rezervări confirmate. Nu am pornit căutarea și nu am înlocuit rezervări. Interpretarea a folosit 1 apel.")
+        if romanian_hotel_requested(request.text):
+            return self._reply(request, world, SETUP_EXPLANATION + " Interpretarea a folosit 1 apel.",
+                               recovery_total_call_limit=total_limit)
         from .airport_cab_commands import AirportTransferSetupRequired, resolve_saved_airport_transfers
         from .after_flight_commands import after_flight_reuse_explanation, resolve_saved_after_flight_transfer
         try:

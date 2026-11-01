@@ -6,6 +6,7 @@ import { getMapsLoader } from './loader';
 import { buildOverlays, cameraFor, observedPoint, updateObservationTracks } from './overlays';
 import type { ObservationTracks } from './overlays';
 import { groundPath } from './groundPaths';
+import { isTransfero } from '../transferoData';
 import { ALL_MODELS, buildModelDescriptors } from './models';
 import type { ModelVisibility } from './models';
 import { createModelLayer } from './modelLayer';
@@ -355,7 +356,9 @@ export default function GoogleMaps3D({
   }).length;
   const selectedTransfer =
     world.mode === 'live'
-      ? world.resources.find((item) => item.id === selectedId && privateTransfer(item))
+      ? world.resources.find(
+          (item) => item.id === selectedId && (privateTransfer(item) || isTransfero(item)),
+        )
       : undefined;
   const selectedReview = selectedTransfer ? transferReview(world, selectedTransfer, clock) : null;
   const selectedGeometry = selectedTransfer

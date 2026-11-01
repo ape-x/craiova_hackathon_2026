@@ -1,6 +1,7 @@
 import type { Resource, World } from './types';
 import { privateTransfer } from './priceEvidence';
 import { isAirportCab } from './airportCabPresentation';
+import { isTransfero } from './transferoData';
 import { flightSegments } from './journeyPresentation';
 import {
   freshnessTime,
@@ -21,6 +22,8 @@ function cleanLabel(value: unknown): string | null {
 }
 
 export function resourceTitle(resource: Resource): string {
+  if (isTransfero(resource))
+    return cleanLabel(resource.name) ?? 'Direct Aeroport scheduled transport';
   if (!privateTransfer(resource)) return resource.id;
   const name = cleanLabel(resource.name);
   return name && name !== resource.id
@@ -77,9 +80,11 @@ export function transferReview(world: World, resource: Resource, now: number) {
     status: `${recordedBooking(world, resource) ? 'Booking recorded' : 'Unbooked'} · ${freshness.label}${!resource.available ? ' · Unavailable' : resource.status === 'superseded' ? ' · Superseded' : ''}`,
     sourceTime: isAirportCab(resource)
       ? 'Supplier driving estimate without departure-time traffic'
-      : received === null
-        ? 'Road prediction source time unavailable'
-        : `Road prediction received ${freshnessTime(received)}`,
+      : isTransfero(resource)
+        ? 'Source timetable; arrival is estimated'
+        : received === null
+          ? 'Road prediction source time unavailable'
+          : `Road prediction received ${freshnessTime(received)}`,
   };
 }
 
@@ -94,9 +99,9 @@ export function geographicContext(world: World, selectedId: string | null) {
       ? world.airports.find((item) => item.id === resource.origin)
       : undefined) ??
     world.airports[0];
-  const transfer = resource && privateTransfer(resource);
+  const transfer = resource && (privateTransfer(resource) || isTransfero(resource));
   const locationLabel = transfer
-    ? `${resourceTitle(resource)} · private transfer`
+    ? `${resourceTitle(resource)} · ${isTransfero(resource) ? 'scheduled transport' : 'private transfer'}`
     : home?.kind === 'meeting_point'
       ? `${locationName(world, home.id)} · reported meeting point`
       : home?.kind === 'hotel'

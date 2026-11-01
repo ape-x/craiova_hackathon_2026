@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from .airport_catalog import lookup_airport
 from .hotel_recovery import HotelRecoveryInputs, REQUIRED_CALLS, validate_hotel_job
 from .hotel_recovery_profile import HotelRecoveryProfileError, read_hotel_recovery_profile
+from .romanian_hotel_commands import SETUP_EXPLANATION, romanian_hotel_requested, romanian_hotel_instruction
 from .live_commands import (
     _DURATION_NUMBERS, _read_reference_date, _reference_pattern, hotel_input_time_requested, literal_call_limit, mentioned,
     normalized, reference_date,
@@ -252,6 +253,8 @@ def _total_limit(text, intent):
 
 
 def _recovery_requested(text):
+    if romanian_hotel_instruction(text):
+        return True
     from .after_flight_commands import saved_after_flight_recovery_requested
     if saved_after_flight_recovery_requested(text):
         return True
@@ -280,6 +283,8 @@ def _job_request(world, request, case, groups, intent, total, report, *, jobs, c
     spans = [_fragment(request.text, item.report_reference) for item in (report, *additional_reports)]
     for report_text, report_start in sorted(spans, key=lambda item: item[1], reverse=True):
         followup = followup[:report_start] + " " * len(report_text) + followup[report_start + len(report_text):]
+    if romanian_hotel_requested(followup):
+        raise RecoveryBlocked("romanian_hotel_setup_required", SETUP_EXPLANATION)
     from .airport_cab_commands import AirportTransferSetupRequired, resolve_saved_airport_transfers
     from .after_flight_commands import resolve_saved_after_flight_transfer
     try:

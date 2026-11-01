@@ -10,6 +10,7 @@ from decimal import Decimal
 from .airport_catalog import lookup_airport
 from .airport_constraints import airport_operation_search_allowed, case_airport_operation_blocked
 from .solver import connection_minutes, fixed_itinerary_usage, fixed_offers, resource_cost, resource_feasible, units
+from .transfero_evidence import SOURCE as TRANSFERO_SOURCE, CONTEXT_KEY as TRANSFERO_CONTEXT, transfero_remaining
 
 
 MAX_GROUND_LEGS = 5  # The live solver allows six legs, including the flight.
@@ -50,7 +51,7 @@ def ground_paths(world, group, occupied):
     nodes = {node.id: node for node in world.airports}
     forward, reverse = defaultdict(list), defaultdict(list)
     for resource in world.resources:
-        if resource.kind not in ("bus", "hotel") or resource.capacity - occupied[resource.id] < units(resource, group):
+        if resource.kind not in ("bus", "hotel") or transfero_remaining(world, resource, occupied) < units(resource, group):
             continue
         forward[resource.origin].append(resource)
         if resource.kind == "bus" and resource.airport_arrival_assumption is None:
@@ -91,7 +92,10 @@ def ground_paths(world, group, occupied):
             if legs and not backwards and legs[-1].airport_arrival_assumption is not None:
                 continue
             if airport(location, backwards):
-                paths.append(GroundPath(location, minute, cost, frozenset(item.id for item in legs), locations, has_hotel))
+                flight_buffer = 30
+                if legs and not backwards and legs[-1].source == TRANSFERO_SOURCE:
+                    flight_buffer = legs[-1].provenance[TRANSFERO_CONTEXT]["inputs"]["airport_processing_minutes"]
+                paths.append(GroundPath(location, minute, cost, frozenset(item.id for item in legs), locations, has_hotel, flight_buffer))
             if len(legs) >= MAX_GROUND_LEGS:
                 continue
             for resource in (reverse if backwards else forward).get(location, ()):
