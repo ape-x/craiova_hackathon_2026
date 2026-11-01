@@ -69,7 +69,7 @@ export function locationName(world: Pick<World, 'airports'>, id: string): string
 }
 
 export function transferReview(world: World, resource: Resource, now: number) {
-  const freshness = resourceFreshness(resource, now);
+  const freshness = resourceFreshness(resource, now, world);
   const route = resource.provenance?.google_route as Record<string, unknown> | undefined;
   const received = route?.source === 'Google Routes' ? sourceInstant(route.fetched_at) : null;
   return {

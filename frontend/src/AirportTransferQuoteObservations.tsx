@@ -1,5 +1,6 @@
 import type { AirportTransferQuoteSummary, World } from './types';
 import { freshnessTime, sourceInstant } from './resourceFreshness';
+import PostflightConnectionDetails from './PostflightConnectionDetails';
 
 function timestamp(value: string) {
   const instant = sourceInstant(value);
@@ -43,6 +44,10 @@ export default function AirportTransferQuoteObservations({
             App planning cutoff recorded as {timestamp(quote.usable_until)}. This is historical
             application eligibility, not supplier expiry or current availability.
           </p>
+          <PostflightConnectionDetails
+            value={quote.postflight_connection}
+            pickupAt={sourceInstant(quote.pickup_at)}
+          />
           <ul>
             {quote.options.map((option) => (
               <li key={option.id}>

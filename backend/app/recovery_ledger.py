@@ -48,6 +48,8 @@ class RecoveryLedger:
         result = {key:value for key,value in job.items() if not key.startswith("_")}
         if job.get("_request", {}).get("airport_transfers"):
             result["airport_transfers"] = job["_request"]["airport_transfers"]
+        if job.get("_request", {}).get("after_flight_transfer") is not None:
+            result["after_flight_transfer"] = job["_request"]["after_flight_transfer"]
         result["steps"] = [json.loads(row[0]) for row in conn.execute("SELECT data FROM recovery_steps WHERE job_id=? ORDER BY rowid", (job["id"],))]
         return result
 

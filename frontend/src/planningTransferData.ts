@@ -124,7 +124,7 @@ export function returnFlightChoices(world: World, groupId: string, now: number) 
         item.eligible_group_ids[0] === groupId,
     )
     .map((resource) => {
-      const freshness = resourceFreshness(resource, now);
+      const freshness = resourceFreshness(resource, now, world);
       const departure = sourceInstant(resource.provenance?.departure_at),
         epoch = sourceInstant(world.epoch);
       const sourceValid =

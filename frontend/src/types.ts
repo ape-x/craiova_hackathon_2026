@@ -145,6 +145,19 @@ export interface Leg {
   transport_mode?: 'private_transfer' | null;
   initial_position_assumption?: InitialPositionAssumption | null;
   airport_arrival_assumption?: AirportArrivalAssumption | null;
+  postflight_connection?: PostflightConnection | null;
+}
+export interface PostflightConnection {
+  source: 'operator_declared_processing_window';
+  arrival_basis: 'supplier_schedule_not_observed';
+  pickup_rule: 'max_window_start_ceil_arrival_plus_processing';
+  incoming_resource_id: string;
+  incoming_resource_fingerprint: string;
+  source_arrival_at: string;
+  airport_processing_minutes: number;
+  pickup_window_start: string;
+  pickup_window_end: string;
+  derived_pickup_at: string;
 }
 export interface Itinerary {
   legs: Leg[];
@@ -370,6 +383,9 @@ export type RecoveryJobStage =
   | 'validating'
   | 'planning_queries'
   | 'searching_flights'
+  | 'selecting_incoming_flights'
+  | 'sourcing_airport_transfers'
+  | 'searching_airport_transfer'
   | 'searching_hotels'
   | 'searching_ground'
   | 'locating_hotel'
@@ -401,7 +417,19 @@ export interface AirportTransferRecoveryInput {
   suitcases: number;
   handbags: number;
 }
+export interface AfterFlightTransferInput {
+  group_id: string;
+  via_airport: 'OTP';
+  destination_airport: 'CRA';
+  pickup_window_start: string;
+  pickup_window_end: string;
+  airport_processing_minutes: number;
+  suitcases: number;
+  handbags: number;
+  max_inbound_options: 1 | 2;
+}
 export interface AirportTransferQuoteSummary {
+  postflight_connection?: PostflightConnection | null;
   group_id: string;
   quote_id: string;
   quote_sequence: number;
@@ -431,6 +459,7 @@ export interface RecoveryJobInput {
   instructions: string;
   hotel_recovery?: HotelRecoveryInput;
   airport_transfers?: AirportTransferRecoveryInput[];
+  after_flight_transfer?: AfterFlightTransferInput | null;
 }
 export type AirportTransferProfile =
   | {
@@ -482,6 +511,11 @@ export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions' | 'ho
     offer_ids: string[];
     resource_ids: string[];
     source_counts: Record<string, number>;
+    after_flight_transfer?: {
+      inputs: AfterFlightTransferInput;
+      incoming_resource_id: string;
+      transfer_resource_id: string;
+    };
     hotel_recovery?: {
       hotel_id: string;
       hotel_node_id: string;

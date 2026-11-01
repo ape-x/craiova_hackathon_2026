@@ -6,6 +6,10 @@ import { airportTransferInputs } from './airportTransferRecovery';
 import type { AirportTransferDraft } from './airportTransferRecovery';
 import AirportTransferQuoteObservations from './AirportTransferQuoteObservations';
 import SavedAirportTransferInputs from './SavedAirportTransferInputs';
+import AfterFlightTransferFields, {
+  AfterFlightTransferRequestDetails,
+} from './AfterFlightTransferFields';
+import { afterFlightTransferInput, type AfterFlightTransferDraft } from './afterFlightTransfer';
 import { Loader2, RefreshCw, Square } from 'lucide-react';
 import { api, ApiError, TransportError } from './api';
 import type {
@@ -179,6 +183,32 @@ export function RecoveryJobDetails({
         </section>
       )}
       <AirportTransferRequestDetails inputs={job.airport_transfers} world={world} />
+      <AfterFlightTransferRequestDetails input={job.after_flight_transfer} world={world} />
+      {job.result?.after_flight_transfer && (
+        <section className="case-job-result" aria-label="Recorded chosen flight and transfer">
+          {job.status === 'completed' &&
+          job.result.offer_ids.length > 0 &&
+          job.result.resource_ids.includes(job.result.after_flight_transfer.incoming_resource_id) &&
+          job.result.resource_ids.includes(
+            job.result.after_flight_transfer.transfer_resource_id,
+          ) ? (
+            <>
+              <h4>Connection chosen in this completed attempt</h4>
+              <p>
+                Flight {job.result.after_flight_transfer.incoming_resource_id} → transfer{' '}
+                {job.result.after_flight_transfer.transfer_resource_id}. This is the recorded
+                proposal; review its current validity and connection evidence in the itinerary. It
+                does not confirm landing or supplier bookings.
+              </p>
+            </>
+          ) : (
+            <p>
+              Chosen connection is not confirmed by this attempt’s result. Review the case before
+              use.
+            </p>
+          )}
+        </section>
+      )}
       <AirportTransferQuoteObservations quotes={job.airport_transfer_quotes} world={world} />
       {Boolean(job.blocking_job_ids?.length) && (
         <section className="case-job-result" aria-label="Attempts requiring review">
@@ -442,6 +472,9 @@ export default function RecoveryJobPanel({
   const [hotelMode, setHotelMode] = useState(false);
   const [hotelFields, setHotelFields] = useState(emptyHotelRecoveryForm);
   const [airportTransfers, setAirportTransfers] = useState<AirportTransferDraft[]>([]);
+  const [afterFlightTransfer, setAfterFlightTransfer] = useState<AfterFlightTransferDraft | null>(
+    null,
+  );
   const running = useRef(false);
   const mounted = useRef(true);
   const current = useRef({ world, onRefresh, onMutationPending });
@@ -618,7 +651,16 @@ export default function RecoveryJobPanel({
             }
             let hotelRecovery: RecoveryJobInput['hotel_recovery'];
             let transfers: RecoveryJobInput['airport_transfers'];
+            let afterFlight: RecoveryJobInput['after_flight_transfer'];
             try {
+              afterFlight = afterFlightTransferInput(
+                afterFlightTransfer,
+                world,
+                selectedGroups,
+                modes,
+                maxCalls,
+                hotelMode || airportTransfers.length > 0,
+              );
               transfers = airportTransferInputs(
                 airportTransfers,
                 world,
@@ -652,6 +694,7 @@ export default function RecoveryJobPanel({
                 instructions: instructions.trim(),
                 ...(hotelRecovery ? { hotel_recovery: hotelRecovery } : {}),
                 ...(transfers.length ? { airport_transfers: transfers } : {}),
+                ...(afterFlight ? { after_flight_transfer: afterFlight } : {}),
               }),
             );
           }}
@@ -828,7 +871,8 @@ export default function RecoveryJobPanel({
                 </p>
               </>
             )}
-            {((!hotelMode && modes.includes('bus')) || airportTransfers.length > 0) && (
+            {((!hotelMode && !afterFlightTransfer && modes.includes('bus')) ||
+              airportTransfers.length > 0) && (
               <AirportTransferRecoveryFields
                 world={world}
                 groupIds={selectedGroups}
@@ -839,16 +883,30 @@ export default function RecoveryJobPanel({
                 hotelRecovery={hotelMode}
               />
             )}
-            {!hotelMode && modes.includes('bus') && selectedGroups.length > 0 && (
-              <SavedAirportTransferInputs
+            {((!hotelMode && modes.includes('bus')) || Boolean(afterFlightTransfer)) && (
+              <AfterFlightTransferFields
                 world={world}
-                incident={incident}
                 groupIds={selectedGroups}
-                value={airportTransfers}
-                onChange={setAirportTransfers}
-                disabled={locked || active || loading}
+                modes={modes}
+                allowance={Number(limit)}
+                value={afterFlightTransfer}
+                onChange={setAfterFlightTransfer}
+                incompatibleSetup={hotelMode || airportTransfers.length > 0}
               />
             )}
+            {!hotelMode &&
+              !afterFlightTransfer &&
+              modes.includes('bus') &&
+              selectedGroups.length > 0 && (
+                <SavedAirportTransferInputs
+                  world={world}
+                  incident={incident}
+                  groupIds={selectedGroups}
+                  value={airportTransfers}
+                  onChange={setAirportTransfers}
+                  disabled={locked || active || loading}
+                />
+              )}
             <label className="field">
               Additional recovery requirements
               <textarea

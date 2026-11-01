@@ -1,5 +1,6 @@
 import type { MutationResult, World } from './types';
 import AirportTransferRecoveryFields from './AirportTransferRecoveryFields';
+import AfterFlightTransferFields from './AfterFlightTransferFields';
 import { arrivalRecoveryReceipt } from './arrivalRecoveryData';
 import type { ArrivalRecoveryForm } from './arrivalRecoveryData';
 
@@ -12,7 +13,12 @@ export function ArrivalRecoveryFields({
   value: ArrivalRecoveryForm;
   onChange: (value: ArrivalRecoveryForm) => void;
   legend?: string;
-  transferContext?: { world: World; groupIds: string[]; scopeKey?: string } | null;
+  transferContext?: {
+    world: World;
+    groupIds: string[];
+    scopeKey?: string;
+    reportedArrivalGroupIds?: string[];
+  } | null;
 }) {
   return (
     <fieldset className="arrival-recovery-options">
@@ -75,7 +81,8 @@ export function ArrivalRecoveryFields({
         interpretation call is added to this direct request.
       </p>
       {transferContext &&
-        (value.modes.includes('bus') || Boolean(value.airportTransfers?.length)) && (
+        ((value.modes.includes('bus') && !value.afterFlightTransfer) ||
+          Boolean(value.airportTransfers?.length)) && (
           <AirportTransferRecoveryFields
             {...transferContext}
             value={value.airportTransfers ?? []}
@@ -89,6 +96,24 @@ export function ArrivalRecoveryFields({
         <p className="case-source-warning">
           The reported airport or readiness is incomplete. Airport-transfer setup cannot be reused
           until reviewed.
+        </p>
+      )}
+      {transferContext && (value.modes.includes('bus') || Boolean(value.afterFlightTransfer)) && (
+        <AfterFlightTransferFields
+          {...transferContext}
+          value={value.afterFlightTransfer}
+          onChange={(afterFlightTransfer) => onChange({ ...value, afterFlightTransfer })}
+          modes={value.modes}
+          allowance={Number(value.maxProviderCalls)}
+          incompatibleSetup={
+            value.modes.includes('hotel') || Boolean(value.airportTransfers?.length)
+          }
+        />
+      )}
+      {transferContext === null && value.afterFlightTransfer && (
+        <p className="case-source-warning">
+          The reported airport or readiness is incomplete. Review the after-flight setup before
+          recalculating.
         </p>
       )}
     </fieldset>

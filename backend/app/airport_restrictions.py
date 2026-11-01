@@ -268,6 +268,15 @@ def enqueue_airport_restriction_recovery(conn, store, jobs, response, request, *
             raise
         blocked("airport_transfer_setup_required", exc.message + " Pickup and luggage were not inferred or reused.")
         return
+    if job_request.after_flight_transfer is not None:
+        from .after_flight_recovery import validate_after_flight_job
+        try:
+            validate_after_flight_job(current, job_request, getattr(jobs, "airport_cab", None))
+        except DomainError as exc:
+            if exc.status != 422:
+                raise
+            blocked("airport_transfer_setup_required", exc.message + " No future flight arrival or vehicle was inferred.")
+            return
     conn.execute("SAVEPOINT airport_restriction_recovery")
     try:
         result = jobs.start_in_transaction(conn, current, incident.id, job_request, supersede_active=True)

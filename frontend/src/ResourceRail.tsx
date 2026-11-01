@@ -282,7 +282,7 @@ export default function ResourceRail({
             ))
           : resources.map(({ resource, flightLabel }) => {
               const count = availableUnits(world, resource.id);
-              const freshness = resourceFreshness(resource, now);
+              const freshness = resourceFreshness(resource, now, world);
               const booked = world.mode === 'live' && recordedBooking(world, resource);
               const liveStatus =
                 world.mode === 'live' ? liveResourceStatus(resource, freshness, booked) : null;

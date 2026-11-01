@@ -4,16 +4,23 @@ import type { ArrivalReportForm, ArrivalReportInput } from './operationalReports
 import { utcInputToIso } from './liveData';
 import { airportTransferInputs, airportTransferScope } from './airportTransferRecovery';
 import type { AirportTransferDraft } from './airportTransferRecovery';
+import { afterFlightTransferInput, type AfterFlightTransferDraft } from './afterFlightTransfer';
 
 export type ArrivalRecoveryInput = Pick<
   RecoveryJobInput,
-  'objective' | 'modes' | 'max_provider_calls' | 'hotel_recovery' | 'airport_transfers'
+  | 'objective'
+  | 'modes'
+  | 'max_provider_calls'
+  | 'hotel_recovery'
+  | 'airport_transfers'
+  | 'after_flight_transfer'
 >;
 export interface ArrivalRecoveryForm {
   objective: RecoveryJobInput['objective'];
   modes: RecoveryJobInput['modes'];
   maxProviderCalls: string;
   airportTransfers?: AirportTransferDraft[];
+  afterFlightTransfer?: AfterFlightTransferDraft | null;
 }
 export const emptyArrivalRecoveryForm = (): ArrivalRecoveryForm => ({
   objective: 'balanced',
@@ -38,6 +45,8 @@ export function projectedArrivalRecovery(world: World, form: ArrivalReportForm) 
         ),
       },
       groupIds: form.groupIds,
+      // Preview only: arrivalReportInput validates the actual report before submission.
+      reportedArrivalGroupIds: [...form.groupIds],
       scopeKey: airportTransferScope(world, form.groupIds, JSON.stringify([airport, form.readyAt])),
     };
   } catch {
@@ -48,7 +57,12 @@ export function projectedArrivalRecovery(world: World, form: ArrivalReportForm) 
 export function arrivalRecoveryIssue(
   form: ArrivalRecoveryForm,
   groupCount: number,
-  context?: { world: World; groupIds: string[]; scopeKey?: string } | null,
+  context?: {
+    world: World;
+    groupIds: string[];
+    scopeKey?: string;
+    reportedArrivalGroupIds?: string[];
+  } | null,
 ): string | null {
   if (
     !form.modes.length ||
@@ -68,6 +82,25 @@ export function arrivalRecoveryIssue(
     return 'Enter a whole-number recovery call limit from 3 to 26.';
   if (!Number.isInteger(groupCount) || groupCount < 1 || groupCount > 24)
     return 'Select 1–24 linked groups for report and recalculation. Report-only supports a larger scope.';
+  if (form.afterFlightTransfer) {
+    if (!context)
+      return 'Complete the reported airport and readiness before reviewing after-flight transfer inputs.';
+    try {
+      afterFlightTransferInput(
+        form.afterFlightTransfer,
+        context.world,
+        context.groupIds,
+        form.modes,
+        Number(form.maxProviderCalls),
+        Boolean(form.airportTransfers?.length),
+        context.scopeKey,
+        Date.now(),
+        context.reportedArrivalGroupIds,
+      );
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : 'Review after-flight transfer inputs.';
+    }
+  }
   if (form.airportTransfers?.length) {
     if (!context)
       return 'Complete the reported airport and readiness before reviewing airport-transfer inputs.';
@@ -112,6 +145,19 @@ export function arrivalReportSubmission(
           projected.scopeKey,
         )
       : [];
+  const afterFlight = projected
+    ? afterFlightTransferInput(
+        recovery.afterFlightTransfer,
+        projected.world,
+        input.group_ids,
+        recovery.modes,
+        Number(recovery.maxProviderCalls),
+        transfers.length > 0,
+        projected.scopeKey,
+        Date.now(),
+        projected.reportedArrivalGroupIds,
+      )
+    : undefined;
   return {
     ...input,
     recovery: {
@@ -119,6 +165,7 @@ export function arrivalReportSubmission(
       modes: [...recovery.modes],
       max_provider_calls: Number(recovery.maxProviderCalls),
       ...(transfers.length ? { airport_transfers: transfers } : {}),
+      ...(afterFlight ? { after_flight_transfer: afterFlight } : {}),
     },
   };
 }

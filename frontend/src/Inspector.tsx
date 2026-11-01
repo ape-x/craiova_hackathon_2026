@@ -43,6 +43,7 @@ import { OperatorReportNote, ResourceUnavailabilityDialog } from './OperationalR
 import { unavailabilityIssue } from './operationalReports';
 import { AirportArrivalDetails, SupplierMeetingInstructions } from './TransferEvidence';
 import { AirportCabFareDetails, isAirportCab } from './airportCabPresentation';
+import PostflightConnectionDetails from './PostflightConnectionDetails';
 import {
   costPresentation,
   EstimatedCostNote,
@@ -144,6 +145,12 @@ export function ItineraryView({
                 </span>
               )}
               <AirportArrivalDetails assumption={leg.airport_arrival_assumption} />
+              <PostflightConnectionDetails
+                value={leg.postflight_connection}
+                required={resource?.provenance?.direction === 'after_flight_airport_to_airport'}
+                incomingResourceId={offer.itinerary.legs[index - 1]?.resource_id ?? null}
+                departureSchedule={{ epoch: world?.epoch, departure: leg.departure }}
+              />
               {transfer && !cab && (
                 <SupplierMeetingInstructions
                   value={resourceMeetingEvidence(resource?.provenance)}
@@ -470,6 +477,11 @@ function ResourceFacts({
         </>
       )}
       <AirportArrivalDetails assumption={resource.airport_arrival_assumption} />
+      <PostflightConnectionDetails
+        value={resource.provenance?.postflight_connection}
+        required={resource.provenance?.direction === 'after_flight_airport_to_airport'}
+        departureSchedule={{ epoch: world.epoch, departure: resource.departure }}
+      />
       {transfer && !cab && (
         <SupplierMeetingInstructions
           value={resourceMeetingEvidence(resource.provenance)}
@@ -478,7 +490,11 @@ function ResourceFacts({
       )}
       <div className="fact-list">
         <span>
-          {transfer ? 'Requested pickup' : 'Departure'}{' '}
+          {resource.provenance?.direction === 'after_flight_airport_to_airport'
+            ? 'Planning departure'
+            : transfer
+              ? 'Requested pickup'
+              : 'Departure'}{' '}
           <b>
             {transfer && operationEpoch !== null
               ? freshnessTime(operationEpoch + resource.departure * 60_000)
@@ -590,6 +606,16 @@ function ResourceFacts({
               <b>{freshnessTime(freshness.receivedAt)}</b>
             </span>
           )}
+          {freshness?.incomingQuotedAt != null && (
+            <span>
+              Bound incoming flight quoted at <b>{freshnessTime(freshness.incomingQuotedAt)}</b>
+            </span>
+          )}
+          {freshness?.incomingValidUntil != null && (
+            <span>
+              Incoming supplier validity until <b>{freshnessTime(freshness.incomingValidUntil)}</b>
+            </span>
+          )}
           {resource.valid_until ? (
             <span>
               Recorded validity until{' '}
@@ -600,9 +626,11 @@ function ResourceFacts({
           ) : (freshness?.basis === 'quoted_at' || freshness?.basis === 'app_receipt') &&
             freshness.cutoff !== null ? (
             <span>
-              {resource.airport_arrival_assumption != null
-                ? 'Return planning freshness through'
-                : 'Local freshness through'}{' '}
+              {freshness.incomingResourceId
+                ? 'Connection planning freshness through'
+                : resource.airport_arrival_assumption != null
+                  ? 'Return planning freshness through'
+                  : 'Local freshness through'}{' '}
               <b>{freshnessTime(freshness.cutoff)}</b>
             </span>
           ) : null}
@@ -858,7 +886,8 @@ export default function Inspector({
   const now = useFreshnessClock(world.mode === 'live');
   const group = world.groups.find((item) => item.id === selectedId);
   const resource = world.resources.find((item) => item.id === selectedId);
-  const freshness = resource && world.mode === 'live' ? resourceFreshness(resource, now) : null;
+  const freshness =
+    resource && world.mode === 'live' ? resourceFreshness(resource, now, world) : null;
   const booked = Boolean(resource && world.mode === 'live' && recordedBooking(world, resource));
   const liveStatus = resource && freshness ? liveResourceStatus(resource, freshness, booked) : null;
   const airport = world.airports.find((item) => item.id === selectedId);

@@ -214,6 +214,9 @@ def protected_inventory(world, *, removing_resource_ids=(), keep_resource_ids=()
                 locations.update(_resource_locations(item))
                 if item.airport_arrival_assumption:
                     resources.add(item.airport_arrival_assumption.onward_resource_id)
+                connection = item.provenance.get("postflight_connection")
+                if isinstance(connection, dict) and isinstance(connection.get("incoming_resource_id"), str):
+                    resources.add(connection["incoming_resource_id"])
         changed = len(resources) != before
     return resources, locations
 

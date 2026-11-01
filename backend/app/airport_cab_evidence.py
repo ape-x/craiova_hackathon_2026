@@ -1,4 +1,4 @@
-"""Pure checks for initial airport-to-airport private category quotes.
+"""Pure checks for initial and flight-bound airport vehicle category quotes.
 
 The supplier offers a dated vehicle category, not an allocated car or remaining
 fleet. Airport references remain distinct from a passenger's exact curb or
@@ -18,6 +18,7 @@ from .planning_window import planning_horizon_end
 from .pricing import AplQuoteFreshness, app_receipt_deadline, aware_timestamp, exact_amount
 from .providers.bucharest_cab import SOURCE, SOURCE_URL, SOURCE_AIRPORTS, PRICE_SCRIPT_URL
 from .weather import passenger_arrival_pending
+from .postflight_connection import DIRECTION as POSTFLIGHT_DIRECTION, KEY as POSTFLIGHT_KEY, valid_postflight_connection
 
 
 ZONE = ZoneInfo("Europe/Bucharest")
@@ -175,12 +176,16 @@ def _valid_price(option, route):
 
 
 def valid_airport_cab_resource(world, resource, group, *, now=None):
-    """Independently validate native fare, initial scope and source route facts."""
+    """Independently validate native fare, declared connection and source facts."""
     try:
         now = now or datetime.now(timezone.utc)
+        postflight = resource.provenance.get("direction") == POSTFLIGHT_DIRECTION or POSTFLIGHT_KEY in resource.provenance
+        context_ok = (valid_postflight_connection(world, resource, group, now=now) if postflight else
+            group.origin == "OTP" and resource.provenance.get(CONTEXT_KEY) == airport_cab_context(world, group)
+            and resource.provenance.get("direction") == "initial_airport_to_airport")
         if (world.mode != "live" or world.currency != "EUR" or resource.source != SOURCE
                 or resource.kind != "bus" or resource.transport_mode != "private_transfer"
-                or resource.origin != "OTP" or resource.destination != "CRA" or group.origin != "OTP"
+                or resource.origin != "OTP" or resource.destination != "CRA" or not context_ok
                 or passenger_arrival_pending(world, group)
                 or group.status == "confirmed" or resource.booking_status != "unbooked" or resource.status != "quoted"
                 or group.adult_count != group.size or group.accessible or resource.accessible
@@ -190,8 +195,6 @@ def valid_airport_cab_resource(world, resource, group, *, now=None):
                 or resource.price_evidence is not None or resource.quote_total_cost is None
                 or resource.external_offer_id is not None or resource.vehicle_id is not None
                 or resource.initial_position_assumption is not None or resource.airport_arrival_assumption is not None
-                or resource.provenance.get(CONTEXT_KEY) != airport_cab_context(world, group)
-                or resource.provenance.get("direction") != "initial_airport_to_airport"
                 or resource.provenance.get("estimated_arrival") is not True
                 or resource.provenance.get("supplier_booked") is not False):
             return False

@@ -16,6 +16,8 @@ from pydantic import Field, field_validator
 from .airport_catalog import lookup_airport
 from .airport_cab_evidence import airport_cab_timing, valid_airport_cab_resource
 from .initial_position import initial_position_fingerprint
+from .postflight_connection import (DIRECTION as POSTFLIGHT_DIRECTION, KEY as POSTFLIGHT_KEY,
+    build_postflight_connection, derive_postflight_pickup, incoming_deadline, incoming_fingerprint, incoming_projection, postflight_group)
 from .inventory_lifecycle import archived_location, ensure_inventory_capacity, resource_history, validate_location_identity
 from .live_travel import retire_travel_quotes
 from .models import Airport, Mutation, Resource
@@ -70,8 +72,21 @@ def cab_group(world, group_id):
     return group
 
 
-def cab_context(world, request, provider, *, now):
-    group = cab_group(world, request.group_id)
+def cab_context(world, request, provider, *, now, incoming_flight=None, after_flight_transfer=None):
+    if (incoming_flight is None) != (after_flight_transfer is None):
+        raise DomainError(422, "A planned pickup requires both exact incoming flight evidence and explicit connection inputs")
+    connection = None
+    if incoming_flight is None:
+        group = cab_group(world, request.group_id)
+    else:
+        from .after_flight_inputs import AfterFlightTransferInput
+        supplied = AfterFlightTransferInput.model_validate(after_flight_transfer)
+        group = postflight_group(world, request.group_id)
+        cab_destination(world)
+        connection = build_postflight_connection(world, group, incoming_flight, supplied, now=now)
+        if (request.destination_airport != supplied.destination_airport or request.suitcases != supplied.suitcases
+                or request.handbags != supplied.handbags or request.pickup_at != derive_postflight_pickup(incoming_flight, supplied)):
+            raise DomainError(422, "The source request differs from the exact planned pickup or declared luggage")
     try:
         query = AirportCabQuoteRequest(origin_airport="OTP", destination_airport=request.destination_airport,
             pickup_at=request.pickup_at, passengers=group.size, suitcases=request.suitcases, handbags=request.handbags)
@@ -84,7 +99,8 @@ def cab_context(world, request, provider, *, now):
             or departure >= min(group.deadline, planning_horizon_end(world))):
         raise DomainError(422, "Pickup must follow the group's reported readiness and precede its deadline within the planning window")
     return {"scenario_id": world.scenario_id, "epoch": world.epoch, "group_id": group.id,
-        "group_fingerprint": initial_position_fingerprint(world, group), "ready_at": group.ready_at}, query
+        "group_fingerprint": initial_position_fingerprint(world, group), "ready_at": group.ready_at,
+        **({POSTFLIGHT_KEY: connection} if connection is not None else {})}, query
 
 
 def cab_destination(world):
@@ -109,10 +125,12 @@ def cab_destination(world):
 def build_airport_cab_resource(world, context, response, option_id, *, now):
     """Compile only the server-held quote, preserving source and group scope."""
     group = next((item for item in world.groups if item.id == context["group_id"]), None)
+    connection = context.get(POSTFLIGHT_KEY)
     if group is None or context != {"scenario_id": world.scenario_id, "epoch": world.epoch,
-            "group_id": group.id, "group_fingerprint": initial_position_fingerprint(world, group), "ready_at": group.ready_at}:
+            "group_id": group.id, "group_fingerprint": initial_position_fingerprint(world, group), "ready_at": group.ready_at,
+            **({POSTFLIGHT_KEY: connection} if connection is not None else {})}:
         raise DomainError(409, "The group's planning context changed; retrieve a current quote")
-    cab_group(world, group.id)
+    (postflight_group if connection is not None else cab_group)(world, group.id)
     if aware_timestamp(response["usable_until"]) <= now:
         raise DomainError(409, "The application's source receipt expired; retrieve a new quote")
     quote = response.get("transfer")
@@ -129,7 +147,8 @@ def build_airport_cab_resource(world, context, response, option_id, *, now):
         eligible_group_ids=[group.id], source=SOURCE, status="quoted", requires_revalidation=True,
         capacity_scope="private_vehicle_quote", quote_freshness=AplQuoteFreshness(basis="app_receipt", received_at=quote["received_at"], max_age_seconds=120),
         provenance={"airport_cab_quote": copy.deepcopy(quote), "airport_cab_option_id": option_id,
-            "airport_cab_context": copy.deepcopy(context), "direction": "initial_airport_to_airport",
+            "airport_cab_context": copy.deepcopy(context), "direction": POSTFLIGHT_DIRECTION if connection is not None else "initial_airport_to_airport",
+            **({POSTFLIGHT_KEY: copy.deepcopy(connection)} if connection is not None else {}),
             "estimated_arrival": True, "supplier_booked": False, "quoted_at": None,
             "quote_id": response["quote_id"], "quote_sequence": response["quote_sequence"]})
     destination = cab_destination(world)
@@ -226,8 +245,10 @@ class AirportCabPlanning:
             conn.execute("DELETE FROM airport_cab_cache WHERE expires<=?", (self.now().timestamp(),))
             conn.execute("UPDATE airport_cab_receipts SET status='unknown' WHERE status='dispatched' AND lease_until<=?", (self.now().timestamp(),))
 
-    def _reserve(self, request):
-        fingerprint = Store.fingerprint(request.model_dump(mode="json"))
+    def _reserve(self, request, *, incoming_flight=None, after_flight_transfer=None):
+        fingerprint = Store.fingerprint({**request.model_dump(mode="json"),
+            **({"incoming_flight": incoming_fingerprint(incoming_flight), "after_flight_transfer": after_flight_transfer.model_dump(mode="json")}
+                if incoming_flight is not None and after_flight_transfer is not None else {})})
         with self.store.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             world = self.store._load(conn)
@@ -243,7 +264,8 @@ class AirportCabPlanning:
                     saved = json.loads(cached[0])
                     if saved["context"]["epoch"] != world.epoch:
                         raise DomainError(409, "This source search belongs to an earlier operational clock; no request was repeated")
-                    current, _ = cab_context(world, request, self.provider, now=self.now())
+                    current, _ = cab_context(world, request, self.provider, now=self.now(),
+                incoming_flight=incoming_flight, after_flight_transfer=after_flight_transfer)
                     if current != saved["context"]:
                         raise DomainError(409, "The group's context changed after this search; no source request was repeated")
                     return {"response": {**saved["response"], "replayed": True}, "failure": saved.get("failure")}
@@ -254,7 +276,8 @@ class AirportCabPlanning:
                 raise DomainError(409, "This source receipt expired; an explicit new search requires a new key")
             if request.expected_version != world.version:
                 raise DomainError(409, "The operation changed before the source search; refresh it")
-            context, query = cab_context(world, request, self.provider, now=self.now())
+            context, query = cab_context(world, request, self.provider, now=self.now(),
+                incoming_flight=incoming_flight, after_flight_transfer=after_flight_transfer)
             if conn.execute("SELECT 1 FROM airport_cab_receipts WHERE status='dispatched' AND lease_until>? LIMIT 1", (self.now().timestamp(),)).fetchone():
                 raise DomainError(409, "An airport vehicle quote search is already running")
             identity = "ACQ-" + secrets.token_hex(12).upper()
@@ -262,18 +285,19 @@ class AirportCabPlanning:
                 (identity, request.idempotency_key, fingerprint, world.scenario_id, "dispatched", self.now().timestamp() + 120))
             return {"quote_id": identity, "context": context, "query": query, "sequence": row.lastrowid, "world": world}
 
-    def _dispatch(self, identity, context, request):
+    def _dispatch(self, identity, context, request, *, incoming_flight=None, after_flight_transfer=None):
         with self.store.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             world = self.store._load(conn)
-            current, _ = cab_context(world, request, self.provider, now=self.now())
+            current, _ = cab_context(world, request, self.provider, now=self.now(),
+                incoming_flight=incoming_flight, after_flight_transfer=after_flight_transfer)
             if current != context:
                 raise DomainError(409, "Passenger context changed before a source request; no further request was sent")
             updated = conn.execute("UPDATE airport_cab_receipts SET http_requests=http_requests+1 WHERE id=? AND status='dispatched' AND http_requests<2 AND lease_until>?", (identity, self.now().timestamp()))
             if updated.rowcount != 1:
                 raise DomainError(409, "The source request allowance or lease was exhausted")
 
-    def _finish(self, identity, context, response, failure=None, *, unknown=False):
+    def _finish(self, identity, context, response, failure=None, *, unknown=False, incoming_flight=None):
         with self.store.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             # Assess against the current operation in the receipt transaction;
@@ -284,7 +308,11 @@ class AirportCabPlanning:
                 for option in response["transfer"]["options"]:
                     reasons = []
                     try:
-                        build_airport_cab_resource(world, context, response, option["id"], now=self.now())
+                        projected = world
+                        if incoming_flight is not None:
+                            group = postflight_group(world, context["group_id"])
+                            projected = incoming_projection(world, group, incoming_flight, now=self.now())
+                        build_airport_cab_resource(projected, context, response, option["id"], now=self.now())
                     except DomainError as exc:
                         reasons.append({"code": "option_not_usable", "message": str(exc)})
                     response["options"].append({"option_id": option["id"], "importable": not reasons, "blockers": reasons})
@@ -295,8 +323,17 @@ class AirportCabPlanning:
             conn.execute("DELETE FROM airport_cab_cache WHERE id IN (SELECT id FROM airport_cab_cache ORDER BY expires DESC LIMIT -1 OFFSET 64)")
             conn.execute("UPDATE airport_cab_receipts SET status=? WHERE id=?", ("unknown" if unknown else "done", identity))
 
-    async def quote(self, request, *, request_runner=None, propagate_errors=False):
-        reserved = await asyncio.to_thread(self._reserve, request)
+    async def quote(self, request, *, request_runner=None, propagate_errors=False, incoming_flight=None, after_flight_transfer=None):
+        # Private trusted orchestration inputs: the public manual route supplies
+        # neither field. Freeze snapshots before the first await/HTTP phase.
+        if (incoming_flight is None) != (after_flight_transfer is None):
+            raise DomainError(422, "Both incoming evidence and explicit connection inputs are required")
+        if incoming_flight is not None:
+            from .after_flight_inputs import AfterFlightTransferInput
+            incoming_flight = Resource.model_validate(incoming_flight.model_dump(mode="json"))
+            after_flight_transfer = AfterFlightTransferInput.model_validate(after_flight_transfer).model_copy(deep=True)
+        private = {"incoming_flight": incoming_flight, "after_flight_transfer": after_flight_transfer}
+        reserved = await asyncio.to_thread(self._reserve, request, **private)
         if "response" in reserved:
             failure = reserved.get("failure")
             if propagate_errors and failure:
@@ -309,10 +346,12 @@ class AirportCabPlanning:
         response = {"quote_id": identity, "quote_sequence": reserved["sequence"], "group_id": context["group_id"], "source_version": world.version,
             "created_at": now.isoformat(), "usable_until": (now + timedelta(seconds=120)).isoformat(),
             "state": "blocked", "transfer": None, "options": [], "blockers": [], "replayed": False}
+        if incoming_flight is not None:
+            response["usable_until"] = min(aware_timestamp(response["usable_until"]), incoming_deadline(incoming_flight)).isoformat()
         failure, source_error = None, None
         try:
             try:
-                arguments = {"before_dispatch": lambda: asyncio.to_thread(self._dispatch, identity, context, request)}
+                arguments = {"before_dispatch": lambda: asyncio.to_thread(self._dispatch, identity, context, request, **private)}
                 if request_runner is not None:
                     arguments["request_runner"] = request_runner
                 quote = await self.provider.quote(reserved["query"], **arguments)
@@ -325,8 +364,8 @@ class AirportCabPlanning:
                 source_error = exc
                 failure = {"kind": "domain" if isinstance(exc, DomainError) else "provider", "message": str(exc),
                     "status": getattr(exc, "status", 502), "code": getattr(exc, "code", "context_changed")}
-            unknown = propagate_errors and failure is not None and failure["code"] in ("timeout", "connection", "http_500", "http_502", "http_503", "http_504")
-            saving = asyncio.create_task(asyncio.to_thread(self._finish, identity, context, response, failure, unknown=unknown))
+            unknown = propagate_errors and failure is not None and (failure["code"] in ("timeout", "connection") or str(failure["code"]).startswith("http_5"))
+            saving = asyncio.create_task(asyncio.to_thread(self._finish, identity, context, response, failure, unknown=unknown, incoming_flight=incoming_flight))
             try:
                 await asyncio.shield(saving)
             except asyncio.CancelledError:
@@ -353,7 +392,8 @@ class AirportCabPlanning:
                 return {"applied": False, "resource_ids": appended["resource_ids"], "explanation": "This immutable source option is already imported."}
             audit(world, "airport_vehicle_quote_imported", "Imported one group-scoped airport vehicle quote for planning; no vehicle reserved.", appended["resource_ids"][0],
                 {"group_id": context["group_id"], "quote_id": quote_id, "source": SOURCE})
-            return {"applied": True, "resource_ids": appended["resource_ids"], "explanation": "Airport transfer added for initial-journey planning. Driving arrival is estimated; no vehicle or complete journey is booked."}
+            scope = "its exact planned incoming-flight connection" if POSTFLIGHT_KEY in context else "initial-journey planning"
+            return {"applied": True, "resource_ids": appended["resource_ids"], "explanation": f"Airport transfer added for {scope}. Driving arrival is estimated; no vehicle or complete journey is booked."}
         return self.store.mutate("airport-cab-import:" + request.idempotency_key, {"quote_id": quote_id, **request.model_dump(mode="json")}, request.expected_version, apply)
 
 

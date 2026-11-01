@@ -9,12 +9,14 @@ import sqlite3
 import time
 from typing import Literal
 
-from pydantic import Field, field_validator, model_serializer
+from pydantic import Field, field_validator, model_serializer, model_validator
 
 from .airport_catalog import lookup_airport
 from .airport_constraints import case_airport_operation_blocked
 from .airport_cab_recovery import AIRPORT_TRANSFER_CONTEXT, AirportCabRecoveryInput, source_airport_transfers, validate_airport_transfer_job, validate_airport_transfer_selection
 from .airport_cab_profile import AirportCabProfiles
+from .after_flight_inputs import AfterFlightTransferInput
+from .after_flight_recovery import run_after_flight_recovery, validate_after_flight_job
 from .hotel_location import coordinate_timezone, property_zone
 from .hotel_recovery import HotelRecoveryInputs, _rates, _restore_rates, run_hotel_recovery, validate_hotel_job
 from .live_data import identifier
@@ -35,6 +37,17 @@ class RecoveryJobRequest(Mutation):
     instructions: str = Field(default="",max_length=2000)
     hotel_recovery: HotelRecoveryInputs | None = None
     airport_transfers: list[AirportCabRecoveryInput] = Field(default_factory=list, max_length=12)
+    after_flight_transfer: AfterFlightTransferInput | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def exact_after_flight_scope(cls, value):
+        if isinstance(value, dict) and value.get("after_flight_transfer") is not None:
+            transfer = value["after_flight_transfer"]
+            identity = transfer.group_id if isinstance(transfer, AfterFlightTransferInput) else transfer.get("group_id") if isinstance(transfer, dict) else None
+            if not isinstance(identity, str) or value.get("group_ids") != [identity]:
+                raise ValueError("After-flight recovery requires the exact single passenger group identifier without normalization, duplicates or substitutions")
+        return value
 
     @model_serializer(mode="wrap")
     def compatible_payload(self, handler):
@@ -43,6 +56,8 @@ class RecoveryJobRequest(Mutation):
             result.pop("hotel_recovery",None)
         if not self.airport_transfers:
             result.pop("airport_transfers",None)
+        if self.after_flight_transfer is None:
+            result.pop("after_flight_transfer",None)
         return result
 
     @field_validator("group_ids")
@@ -265,6 +280,7 @@ class RecoveryJobs:
         digest=scope_fingerprint(world,incident_id,request.group_ids)
         validate_hotel_job(world,request)
         validate_airport_transfer_job(world,request,self.airport_cab)
+        validate_after_flight_job(world,request,self.airport_cab)
         return self.ledger.create(incident_id,request,digest,world.scenario_id,on_created=on_created)
 
     def start_in_transaction(self,conn,world,incident_id,request,*,supersede_active=False):
@@ -274,6 +290,7 @@ class RecoveryJobs:
         digest=scope_fingerprint(world,incident_id,request.group_ids)
         validate_hotel_job(world,request)
         validate_airport_transfer_job(world,request,self.airport_cab)
+        validate_after_flight_job(world,request,self.airport_cab)
         return self.ledger.create_in_transaction(conn,world,incident_id,request,digest,world.scenario_id,supersede_active=supersede_active)
 
     def get(self,job_id):
@@ -335,7 +352,7 @@ class RecoveryJobs:
             raise
         except (TimeoutError,ProviderError) as exc:
             code=getattr(exc,"code","timeout")
-            unknown=code in ("timeout","connection","http_500","http_502","http_503","http_504")
+            unknown=code in ("timeout","connection") or str(code).startswith("http_5")
             message=str(exc) if isinstance(exc,ProviderError) else "Provider deadline reached; upstream outcome and charges are unconfirmed."
             await asyncio.to_thread(self.ledger.outcome,job["id"],owner,step,"unknown" if unknown else "failed",message)
             if not optional_reference:
@@ -467,6 +484,9 @@ class RecoveryJobs:
             return
         if job["_request"].get("hotel_recovery") is not None:
             await run_hotel_recovery(self,job,owner,world,started)
+            return
+        if job["_request"].get("after_flight_transfer") is not None:
+            await run_after_flight_recovery(self,job,owner,world,started)
             return
         validate_airport_transfer_job(world,RecoveryJobRequest.model_validate({key:value for key,value in job["_request"].items() if key!="incident_id"}),self.airport_cab)
         source_counts={}

@@ -15,6 +15,7 @@ adds inventory, holds rooms, reserves seats or modifies the recovery scenario.
 | Hotel room offers | Nuitee / LiteAPI, preferred by automatic selection when configured for live use | A validated offer per hotel for all requested rooms and adults, preferring complete mandatory costs. Supplier booking amount and additional mandatory fees remain separately visible; no prebooking or payment is performed. |
 | Private-transfer planning | APL, exact LiteAPI property metadata, dated Google Routes and ECB | Manual initial UK airport-point → hotel or hotel → UK airport leg. Return binds an exact group-scoped onward flight and operator buffer. GBP is the supplier price; EUR and driving arrival are estimates. No vehicle booking or complete itinerary is implied. |
 | Romanian airport transfer | Bucharest.CAB consumer quotation, OTP → CRA | Native EUR cash/no-extras vehicle-category fare for an explicit pickup and adult party. Initial airport-level leg only; source driving duration is an estimate without departure-time traffic. Fleet stock and supplier expiry remain unknown. |
+| Planned incoming flight plus OTP → CRA transfer | Real incoming flight offer and a separate Bucharest.CAB quote for that exact flight | Explicit processing/pickup window; source arrival is scheduled, not observed. The vehicle is unreserved and road arrival estimated. No terminal or protected connection is established. |
 
 ## Romanian airport vehicle quotes
 
@@ -157,6 +158,33 @@ Each section reports its source, retrieval time and whether a cached response
 was used. Retrieval time is not the date of the last edit to an OSM place. An
 empty successful response differs from an unavailable provider. Source failures
 do not erase successful results from the other sections.
+
+### Planned incoming flight before the transfer
+
+The separate typed `after_flight_transfer` flow sources a flight from the group's
+reported airport to OTP, then asks Bucharest.CAB for a pickup bound to that exact
+flight offer. It requires one adult-only group of 1–7 ending at CRA, flight and
+ground modes, explicit pickup-window boundaries, processing minutes and both bag
+counts. It cannot reuse initial-transfer or hotel inputs. The operator's original
+passenger location is retained throughout sourcing and planning.
+
+Responses selects one dated search and, after real flight offers return, at most
+two exact incoming resources for vehicle quotation. One complete variant needs
+six calls; two need eight. The selected allowance bounds the shortlist. Pickup is
+the later of window start and the source arrival plus declared processing rounded
+up to a minute. No pickup is advanced or delayed just to satisfy returned source
+lead time. Two equal pickup instants still have separately counted source receipts.
+Decisions only sees complete independently validated flight/vehicle journeys.
+
+The connection records its exact incoming resource fingerprint and source arrival.
+Its usable window ends at the earliest applicable flight freshness/expiry, CAB
+receipt window and source advance cutoff. An expired or unavailable incoming
+resource cannot leave the vehicle labeled current. The final transaction replaces
+only explicit superseded revisions, preserves their historical evidence, imports
+only the chosen pair and checks capacity once for that pair. Source errors and
+unknown outcomes do not cause automatic retries. Terminal access, baggage delivery,
+fleet stock, protected connection and booking remain unverified. This integration
+currently has offline coverage; no new live supplier or spoken acceptance is claimed.
 
 ## Configuration
 
@@ -344,8 +372,8 @@ See the [verification report](verification/report.md) for the bounded evidence.
 
 ## Romanian ground-transport coverage gap
 
-The bounded [Bucharest.CAB initial OTP → CRA flow](#romanian-airport-vehicle-quotes)
-is now separate from this remaining network-coverage gap. It does not establish
+The bounded [Bucharest.CAB OTP → CRA flows](#romanian-airport-vehicle-quotes), initial
+or bound to a planned incoming flight, are separate from this remaining network-coverage gap. They do not establish
 reverse-direction service, CRA/SBZ-wide coverage, coach stock or rail connections.
 
 Further read-only consumer research on 1 November found two useful, **not yet

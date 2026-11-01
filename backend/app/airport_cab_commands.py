@@ -14,6 +14,33 @@ class AirportTransferSetupRequired(ValueError):
         self.code = code
 
 
+def _after_flight_transfer_requested(value):
+    """Recognize a physical sequence, not merely flight/source vocabulary.
+
+    Called only after group labels are removed; operational callers also remove
+    their independently grounded report spans. This guard authorizes nothing.
+    Even a conditional/negated future connection must not become a different
+    ordinary recovery or an initial pickup through an interpretation omission.
+    """
+    transfer = r"\b(?:transfers?|transfer(?:ul|ului|uri|urile|urilor)|transport(?:ul|ului)?|taxi(?:ul)?|cab|masin(?:a|ii)|bucharest[.\s-]*cab)\b"
+    flight = (r"\b(?:flights?|planes?|aircraft|zbor(?:ul|ului|uri|urile|urilor)?|avion(?:ul|ului)?)\b"
+        r"(?!\s+(?:search(?:es)?|quer(?:y|ies)|providers?|suppliers?|sources?|prices?|pricing|status|number|details|results?|availability|cautar\w*|furnizor\w*|surs\w*|pret\w*|rezultat\w*)\b)")
+    modifiers = r"(?:(?:the|a|an|our|their|next|new|future|incoming|un|unui|urmator\w*|nou\w*|viitor\w*|ce)\s+){0,4}"
+    landing = r"\b(?:landing|lands?|ateriz\w*)\b"
+    arrival_of_flight = rf"\b(?:arrival|sosir\w*)\b\s+(?:(?:of|the|a|an|unui|un)\s+){{0,3}}{flight}"
+    target = rf"(?:{flight}|{landing}|{arrival_of_flight}|(?:we|they)\s+land\b)"
+    after = rf"\b(?:after|following|once|when|dupa|cand)\s+{modifiers}{target}"
+    gap = r"[^.;!?\n]{0,140}"
+    if re.search(rf"{transfer}{gap}{after}|{after}{gap}{transfer}", value):
+        return True
+    # An explicitly ordered route can be expressed without the word 'after'.
+    # Requiring a travel/arrival phrase excludes 'change flight provider, then…'.
+    inbound = rf"(?:{flight}\s+(?:(?:will\s+)?(?:arriv(?:e|es|ing)|land(?:s|ing)?)\s+)?(?:to|into|at|via|towards|spre|catre|la|in)\b|\b(?:fly|flying|land(?:s|ing)?|zboara|zburam|zburati|ateriz\w*)\s+(?:to|into|at|in|spre|catre|la)\b)"
+    sequence = r"(?:\b(?:then|afterwards|subsequently|apoi|ulterior)\b|\bfollowed\s+by\b|\burmat\w*\s+de\b|\bdupa\s+aceea\b|\b(?:and\s+)?from\s+there\b|\b(?:si\s+)?de\s+acolo\b)"
+    value = re.sub(r"bucharest[.\s-]*cab", "bucharest cab", value)
+    return bool(re.search(rf"{inbound}{gap}[.,;]?\s*{sequence}{gap}{transfer}", value))
+
+
 def resolve_saved_airport_transfers(jobs, world, case, group_ids, modes, text, allowance, *, conn=None):
     """Only the current recovery clause can request exact saved inputs.
 
@@ -29,6 +56,12 @@ def resolve_saved_airport_transfers(jobs, world, case, group_ids, modes, text, a
         for label in (group.name, group.id):
             if label:
                 value = re.sub(r"(?<!\w)" + re.escape(normalized(label)) + r"(?!\w)", " ", value)
+    if _after_flight_transfer_requested(value):
+        raise AirportTransferSetupRequired(
+            "Un transfer după un zbor viitor necesită formularul «Flight to OTP + transfer to CRA»: "
+            "grupul exact, intervalul de preluare, minutele de procesare și bagajele explicite. "
+            "Reutilizarea vocală a acestui flux nu este încă disponibilă. Nu am substituit un transfer inițial salvat "
+            "și nu am presupus aterizarea sau pornit altă căutare.")
     saved = re.search(r"\b(?:saved|stored|salvat\w*|memorat\w*)\b", value)
     transfer_pattern = r"\b(?:transfers?|transfer(?:ul|ului|uri|urile|urilor)|transport(?:ul|ului)?|bucharest[.\s-]*cab)\b"
     transfer = re.search(transfer_pattern, value)

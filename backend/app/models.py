@@ -102,6 +102,14 @@ class Leg(Model):
     price_evidence: AplPriceEvidence | None = None
     initial_position_assumption: InitialPositionAssumption | None = None
     airport_arrival_assumption: AirportArrivalAssumption | None = None
+    postflight_connection: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def omit_absent_postflight_connection(self, handler):
+        result = handler(self)
+        if self.postflight_connection is None:
+            result.pop("postflight_connection", None)
+        return result
 
 
 class Itinerary(Model):

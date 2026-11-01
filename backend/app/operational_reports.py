@@ -12,6 +12,8 @@ from pydantic import Field, ValidationError, field_validator, model_serializer
 
 from .hotel_recovery import HotelRecoveryInputs, validate_hotel_job
 from .airport_cab_recovery import AirportCabRecoveryInput, validate_airport_transfer_job
+from .after_flight_inputs import AfterFlightTransferInput
+from .after_flight_recovery import validate_after_flight_job
 from .live_data import _known_airport_code, _new_airports, aware, relative_minute
 from .live_service import _find, _invalidate_pending, _live
 from .models import Model, Mutation, World
@@ -43,12 +45,15 @@ class ArrivalRecoveryOptions(Model):
     max_provider_calls: int = Field(default=8, ge=3, le=26, strict=True)
     hotel_recovery: HotelRecoveryInputs | None = None
     airport_transfers: list[AirportCabRecoveryInput] = Field(default_factory=list, max_length=12)
+    after_flight_transfer: AfterFlightTransferInput | None = None
 
     @model_serializer(mode="wrap")
     def compatible_payload(self, handler):
         result = handler(self)
         if not self.airport_transfers:
             result.pop("airport_transfers", None)
+        if self.after_flight_transfer is None:
+            result.pop("after_flight_transfer", None)
         return result
 
 
@@ -150,6 +155,7 @@ def apply_arrival_report(world: World, incident_id: str, request: ArrivalReportI
     for group in groups:
         entry = {key: copy.deepcopy(value) for key, value in report.items() if key not in ("group_ids", "affected_group_ids", "affected_offer_ids")}
         entry.update(group_id=group.id, previous_origin=group.origin, previous_ready_at=group.ready_at,
+            scenario_id=world.scenario_id, epoch=world.epoch, original_flight_id=group.original_flight_id,
             affected_offer_ids=sorted(offer.id for offer in affected if offer.group_id == group.id))
         group.provenance = {**group.provenance, "arrival_reports": [*histories[group.id], entry]}
         group.origin, group.ready_at = request.airport_code, ready
@@ -238,6 +244,13 @@ class OperationalReports:
                 if exc.status != 422:
                     raise
                 blocked("airport_transfer_setup_required", exc.message + " Pickup and luggage were not inferred or reused.")
+                return
+            try:
+                validate_after_flight_job(current, job_request, getattr(self.jobs,"airport_cab",None))
+            except DomainError as exc:
+                if exc.status != 422:
+                    raise
+                blocked("airport_transfer_setup_required", exc.message + " No flight arrival, pickup window or luggage was inferred.")
                 return
             if not self.jobs.ai or not self.jobs.ai.configured:
                 blocked("ai_not_configured", "The real recovery AI is unavailable; no scripted plan or provider call was substituted.")

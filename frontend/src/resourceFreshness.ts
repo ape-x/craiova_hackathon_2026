@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Resource, World } from './types';
+import { sourceInstant } from './sourceInstant';
+export { sourceInstant } from './sourceInstant';
+import { postflightConnectionEvidence } from './postflightConnection';
 
 export interface ResourceFreshness {
   state: 'current' | 'stale' | 'unknown';
@@ -10,30 +13,124 @@ export interface ResourceFreshness {
   receivedAt: number | null;
   routeReceivedAt: number | null;
   cutoff: number | null;
+  incomingResourceId?: string;
+  incomingQuotedAt?: number;
+  incomingValidUntil?: number | null;
 }
 
-export function sourceInstant(value: unknown): number | null {
-  if (typeof value !== 'string') return null;
-  const match =
-    /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2})(\.\d{1,6})?)?(Z|[+-]\d{2}:?\d{2})$/.exec(
-      value,
-    );
-  if (!match) return null;
-  const calendar = `${match[1]}T${match[2]}:${match[3] ?? '00'}`;
-  const wall = Date.parse(`${calendar}${match[4] ?? ''}Z`);
-  const instant = Date.parse(value);
-  return Number.isFinite(wall) &&
-    Number.isFinite(instant) &&
-    new Date(wall).toISOString().slice(0, 19) === calendar
-    ? instant
+function object(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
     : null;
 }
 
+// Cross-check public timing/source fields. The server verifies the immutable fingerprint
+// and complete planning eligibility; this presentation check cannot replace that validation.
+function incomingConnectionTiming(resource: Resource, now: number, world?: World) {
+  const proof = postflightConnectionEvidence(resource.provenance?.postflight_connection);
+  const epoch = sourceInstant(world?.epoch);
+  if (
+    !proof ||
+    !world ||
+    world.mode !== 'live' ||
+    epoch === null ||
+    resource.provenance?.direction !== 'after_flight_airport_to_airport'
+  )
+    return null;
+  const matches = world.resources.filter((item) => item.id === proof.incoming_resource_id);
+  if (matches.length !== 1) return null;
+  const incoming = matches[0],
+    quote = incoming.provenance;
+  const departure = sourceInstant(quote?.departure_at),
+    arrival = sourceInstant(quote?.arrival_at);
+  const quotedAt = sourceInstant(quote?.quoted_at);
+  const validUntil = sourceInstant(incoming.valid_until),
+    sourceExpiry = sourceInstant(quote?.expires_at);
+  const cab = object(resource.provenance?.airport_cab_quote),
+    query = object(cab?.request);
+  const pickup = sourceInstant(proof.derived_pickup_at);
+  const groupId = resource.eligible_group_ids?.[0];
+  if (
+    incoming.kind !== 'flight' ||
+    !incoming.available ||
+    incoming.status !== 'quoted' ||
+    !incoming.source ||
+    incoming.source === 'synthetic' ||
+    incoming.source !== quote?.provider ||
+    quote?.mode !== 'live' ||
+    quote?.currency !== 'EUR' ||
+    incoming.capacity_scope !== 'quoted_request' ||
+    incoming.booking_status !== 'unbooked' ||
+    !incoming.requires_revalidation ||
+    !groupId ||
+    resource.eligible_group_ids?.length !== 1 ||
+    incoming.eligible_group_ids?.length !== 1 ||
+    incoming.eligible_group_ids[0] !== groupId ||
+    !Number.isInteger(incoming.capacity) ||
+    incoming.capacity < 1 ||
+    incoming.capacity > 7 ||
+    incoming.capacity !== resource.capacity ||
+    quote?.passengers !== incoming.capacity ||
+    incoming.origin === 'OTP' ||
+    resource.origin !== 'OTP' ||
+    resource.destination !== 'CRA' ||
+    incoming.destination !== resource.origin ||
+    quote?.origin !== incoming.origin ||
+    quote?.destination !== incoming.destination ||
+    !incoming.external_offer_id ||
+    incoming.external_offer_id !== quote?.provider_offer_id ||
+    departure === null ||
+    arrival === null ||
+    arrival <= departure ||
+    arrival !== sourceInstant(proof.source_arrival_at) ||
+    incoming.departure !== Math.floor((departure - epoch) / 60_000) ||
+    incoming.arrival !== Math.ceil((arrival - epoch) / 60_000) ||
+    pickup === null ||
+    pickup !== sourceInstant(query?.pickup_at) ||
+    resource.departure !== Math.ceil((pickup - epoch) / 60_000) ||
+    quotedAt === null ||
+    quotedAt > now ||
+    (incoming.valid_until != null && validUntil === null) ||
+    (quote?.expires_at != null && sourceExpiry === null) ||
+    validUntil !== sourceExpiry
+  )
+    return null;
+  // A newer current-world observation for the same supplier offer supersedes this binding,
+  // even if a delayed world update has not marked its old record unavailable yet.
+  if (
+    world.resources.some(
+      (item) =>
+        item.id !== incoming.id &&
+        item.kind === 'flight' &&
+        item.source === incoming.source &&
+        item.external_offer_id === incoming.external_offer_id &&
+        item.eligible_group_ids?.length === 1 &&
+        item.eligible_group_ids[0] === groupId &&
+        (sourceInstant(item.provenance?.quoted_at) ?? -Infinity) > quotedAt,
+    )
+  )
+    return null;
+  return {
+    resourceId: incoming.id,
+    quotedAt,
+    validUntil,
+    cutoff: Math.min(quotedAt + 120_000, validUntil ?? Infinity),
+  };
+}
+
 // Presentation mirrors live-resource and return-route receipt checks; eligibility remains server-side.
-export function resourceFreshness(resource: Resource, now: number): ResourceFreshness {
+export function resourceFreshness(
+  resource: Resource,
+  now: number,
+  world?: World,
+): ResourceFreshness {
   const quotedAt = sourceInstant(resource.provenance?.quoted_at);
   const apl = resource.source === 'Airport Pickups London';
   const cab = resource.source === 'Bucharest.CAB';
+  const postflight =
+    cab &&
+    (resource.provenance?.direction === 'after_flight_airport_to_airport' ||
+      Object.hasOwn(resource.provenance ?? {}, 'postflight_connection'));
   const receiptSource = apl || cab;
   const receipt = receiptSource ? resource.quote_freshness : null;
   const receivedAt = sourceInstant(receipt?.received_at);
@@ -117,10 +214,6 @@ export function resourceFreshness(resource: Resource, now: number): ResourceFres
       };
     let advanceCutoff: number | null = null;
     if (cab) {
-      const object = (value: unknown): Record<string, unknown> | null =>
-        value !== null && typeof value === 'object' && !Array.isArray(value)
-          ? (value as Record<string, unknown>)
-          : null;
       const quote = object(resource.provenance?.airport_cab_quote);
       const query = object(quote?.request),
         policy = object(quote?.policy);
@@ -145,13 +238,25 @@ export function resourceFreshness(resource: Resource, now: number): ResourceFres
         };
       advanceCutoff = pickup - required * 3_600_000;
     }
+    const incoming = postflight ? incomingConnectionTiming(resource, now, world) : null;
+    if (postflight && !incoming)
+      return {
+        ...unknown,
+        label: 'Connection freshness unknown',
+        detail:
+          'The current bound incoming flight is missing, unavailable or inconsistent with this transfer. Revalidate the connection before a new plan.',
+      };
     const cutoff = returning
       ? Math.min(receivedAt + 120_000, routeReceivedAt! + 120_000)
-      : Math.min(receivedAt + 120_000, advanceCutoff ?? Infinity);
+      : Math.min(receivedAt + 120_000, advanceCutoff ?? Infinity, incoming?.cutoff ?? Infinity);
+    const current = now <= cutoff && (incoming?.validUntil == null || now < incoming.validUntil);
     return {
-      state: now <= cutoff ? 'current' : 'stale',
-      label:
-        now <= cutoff
+      state: current ? 'current' : 'stale',
+      label: postflight
+        ? current
+          ? 'Within connection freshness'
+          : 'Connection quote stale'
+        : current
           ? 'Within freshness window'
           : advanceCutoff !== null && now > advanceCutoff
             ? 'Advance-notice window ended'
@@ -161,11 +266,20 @@ export function resourceFreshness(resource: Resource, now: number): ResourceFres
       receivedAt,
       routeReceivedAt,
       cutoff,
-      detail: cab
-        ? 'The application limits planning to the earlier of 120 seconds after receipt and the supplier’s conservative advance-notice cutoff. Supplier quote time and expiry are unknown; this is not a vehicle hold.'
-        : returning
-          ? 'The app applies a 120-second window to both the APL response and Google Routes prediction receipts. The earlier cutoff limits return planning; revalidate both sources for a new plan. Supplier quote time and expiry are unknown; this is not a supplier hold.'
-          : 'The app applies a 120-second planning freshness window from receipt. Supplier quote time and expiry are unknown; this is not a supplier hold.',
+      ...(incoming
+        ? {
+            incomingResourceId: incoming.resourceId,
+            incomingQuotedAt: incoming.quotedAt,
+            incomingValidUntil: incoming.validUntil,
+          }
+        : {}),
+      detail: postflight
+        ? 'Connection planning uses the earliest of the CAB receipt window (120 seconds), source advance-notice limit, incoming flight’s 120-second quote window and any incoming supplier validity deadline. CAB supplier expiry and fleet availability remain unknown; this is not a vehicle hold. Source revisions and eligibility still require backend revalidation.'
+        : cab
+          ? 'The application limits planning to the earlier of 120 seconds after receipt and the supplier’s conservative advance-notice cutoff. Supplier quote time and expiry are unknown; this is not a vehicle hold.'
+          : returning
+            ? 'The app applies a 120-second window to both the APL response and Google Routes prediction receipts. The earlier cutoff limits return planning; revalidate both sources for a new plan. Supplier quote time and expiry are unknown; this is not a supplier hold.'
+            : 'The app applies a 120-second planning freshness window from receipt. Supplier quote time and expiry are unknown; this is not a supplier hold.',
     };
   }
   if (!resource.requires_revalidation || quotedAt === null) return unknown;

@@ -16,6 +16,7 @@ from .airport_constraints import flight_global_operations_allowed, resource_bloc
 from .weather import departure_allowed, landing_allowed, passenger_arrival_pending
 from .initial_position import valid_initial_position
 from .airport_arrival import valid_airport_arrival
+from .postflight_connection import DIRECTION as POSTFLIGHT_DIRECTION, KEY as POSTFLIGHT_KEY
 from .stay_requirements import StayRequirementError, itinerary_stay_errors, read_stay_requirement
 from .pricing import APL_SOURCE, app_receipt_deadline, aware_timestamp, cost_summary, matching_cost_summary, valid_apl_resource_price
 from .airport_cab_evidence import (
@@ -124,8 +125,10 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
             return False
         cab_evidence = any(key in r.provenance for key in (AIRPORT_CAB_CONTEXT, AIRPORT_CAB_QUOTE, AIRPORT_CAB_OPTION))
         if r.source == AIRPORT_CAB_SOURCE or cab_evidence:
-            if (used_ids or current != g.origin
-                    or not valid_airport_cab_resource(world, r, g, now=datetime.now(timezone.utc))):
+            postflight = r.provenance.get("direction") == POSTFLIGHT_DIRECTION or POSTFLIGHT_KEY in r.provenance
+            connection = r.provenance.get(POSTFLIGHT_KEY, {})
+            path_ok = (isinstance(connection, dict) and connection.get("incoming_resource_id") in used_ids and current == "OTP") if postflight else not used_ids and current == g.origin
+            if not path_ok or not valid_airport_cab_resource(world, r, g, now=datetime.now(timezone.utc)):
                 return False
         elif r.source == APL_SOURCE or r.price_evidence is not None or r.quote_freshness is not None:
             if world.currency != "EUR" or not valid_apl_resource_price(r, g, require_current=g.status != "confirmed"):
@@ -173,6 +176,14 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
 
 def connection_minutes(previous: Resource | None, resource: Resource) -> int | None:
     """A declared airport allowance replaces the generic connection default."""
+    if resource.provenance.get("direction") == POSTFLIGHT_DIRECTION or POSTFLIGHT_KEY in resource.provenance:
+        connection = resource.provenance.get(POSTFLIGHT_KEY)
+        if (not isinstance(connection, dict) or previous is None or previous.kind != "flight"
+                or previous.id != connection.get("incoming_resource_id") or previous.destination != "OTP"
+                or type(connection.get("airport_processing_minutes")) is not int
+                or not 1 <= connection["airport_processing_minutes"] <= 720):
+            return None
+        return connection["airport_processing_minutes"]
     assumption = previous.airport_arrival_assumption if previous is not None else None
     if assumption is not None:
         if resource.kind != "flight" or resource.id != assumption.onward_resource_id or resource.origin != assumption.airport_id:
@@ -219,7 +230,8 @@ def itinerary_options(world: World, group: PassengerGroup, limit=64) -> list[Iti
             leg = Leg(resource_id=r.id,kind=r.kind,origin=r.origin,destination=r.destination,departure=r.departure,arrival=r.arrival,cost=price,
                 transport_mode=r.transport_mode, price_evidence=r.price_evidence.model_copy(deep=True) if r.price_evidence else None,
                 initial_position_assumption=r.initial_position_assumption.model_copy(deep=True) if r.initial_position_assumption else None,
-                airport_arrival_assumption=r.airport_arrival_assumption.model_copy(deep=True) if r.airport_arrival_assumption else None)
+                airport_arrival_assumption=r.airport_arrival_assumption.model_copy(deep=True) if r.airport_arrival_assumption else None,
+                postflight_connection=r.provenance.get(POSTFLIGHT_KEY))
             visit(r.destination,r.arrival,legs+[leg],seen if r.kind=="hotel" else seen|{r.destination},cost+price)
     visit(group.origin,ready,[],{group.origin},0)
     return options
@@ -275,7 +287,7 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
             expected_price = resource_cost(r,g)
             if (leg.origin,leg.destination,leg.departure,leg.arrival,leg.kind)!=(r.origin,r.destination,r.departure,r.arrival,r.kind) or not math.isfinite(leg.cost) or abs(leg.cost-expected_price)>0.005:
                 errors.append(f"{g.id}: tampered leg {r.id}")
-            if leg.price_evidence != r.price_evidence or leg.transport_mode != r.transport_mode or leg.initial_position_assumption != r.initial_position_assumption or leg.airport_arrival_assumption != r.airport_arrival_assumption:
+            if leg.price_evidence != r.price_evidence or leg.transport_mode != r.transport_mode or leg.initial_position_assumption != r.initial_position_assumption or leg.airport_arrival_assumption != r.airport_arrival_assumption or leg.postflight_connection != r.provenance.get(POSTFLIGHT_KEY):
                 errors.append(f"{g.id}: missing or changed source/price evidence for {r.id}")
             if r.price_evidence is not None and leg.cost != expected_price:
                 errors.append(f"{g.id}: inconsistent EUR estimate for {r.id}")
