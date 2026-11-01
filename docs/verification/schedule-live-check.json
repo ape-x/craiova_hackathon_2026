@@ -144,5 +144,14 @@
   "browser_console_errors": 0,
   "microphone_tested": false,
   "offline_targeted_tests_passed": 135,
-  "offline_full_backend_tests_passed": 3244
+  "offline_full_backend_tests_passed": 3244,
+  "deployment": {
+    "fix_commit": "58a99e3",
+    "url": "http://localhost:8081",
+    "ready": true,
+    "scenario_version_before": 14,
+    "scenario_version_after": 14,
+    "scene_preserved": true,
+    "arrival_only_contract_verified_in_deployed_image": true
+  }
 }

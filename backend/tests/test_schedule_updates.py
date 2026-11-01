@@ -222,4 +222,3 @@ def test_reset_then_new_airborne_arrival_patch_commits_atomically(tmp_path):
     assert result["applied"] and world.version == 2
     assert len(world.resources) == 1 and world.groups == []
     assert (resource(world, "NEW-INBOUND").departure, resource(world, "NEW-INBOUND").arrival) == (550, 810)
-
