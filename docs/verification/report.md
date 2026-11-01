@@ -4,7 +4,52 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `bfcd836` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `f599139` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+
+### AI-selected incoming flight and airport transfer — 1 November 2026
+
+Release `f599139` adds the explicit flight → OTP → Bucharest.CAB → CRA request.
+Responses selects one dated flight search and then actual incoming offer IDs;
+the source quotes at most two exact pickups, and Decisions selects only a complete
+validated pair. One variant uses six calls, two use eight. Passenger location and
+readiness are retained. The new typed forms show the declared window, processing,
+luggage and actual allowance; a future flight is never an observed arrival report.
+
+The complete suite passed **2,618 backend tests and 764 frontend tests across
+49 files**, TypeScript/production build, formatting and diff checks. Offline
+coverage includes both call budgets, exact IDs, equal-pickup separate receipts,
+known rejection followed by the other shortlisted candidate, source expiry and
+revision changes, cancellation, HTTP 507/native timeout unknown receipts, wrong
+model choices, atomic report handoff/replay and final rollback. Repeat planning
+at inventory capacity replaces only superseded selected-group revisions and
+retains their history. The original group location, out-of-scope resources and
+call limits are independently checked. No initial-transfer profile is created
+for this different workflow.
+
+Frontend tests verify explicit inputs, new-airport arrival previews without fake
+coordinates, historical connection proof, non-minute operation epochs and combined
+flight/vehicle freshness. A bound flight's 120-second source window and any earlier
+strict supplier expiry limit the vehicle badge as well; missing or changed source
+evidence cannot leave it labeled current. Explicit future flight-to-transfer
+voice/text requests require typed setup until separate saved-profile reuse exists.
+
+Both images were built from the exact committed archive, labeled `f599139`, and
+installed over the existing Compose services after a verified private backup.
+GitHub checks **158** (codex branch) and **159** (main) both passed. Browser QA
+loaded `/assets/index-B4QCy0mO.js` with zero console errors, reviewed the new fields
+and confirmed that the existing OTP-destination group cannot authorize the CRA
+workflow. The unsent selections were restored and the case dialog closed.
+The entire operational world, excluding its advancing clock, and every existing
+job receipt remained identical: world 52, two groups, 25 resources, no active jobs,
+and no supplier-confirmed resources or offers. FR24 remains paused at 81 requests
+and 3,215 reserved credits; CAB remains two receipts/four HTTP requests, with 27
+recovery steps and no saved initial-transfer profiles.
+
+This is offline source/AI integration plus deployed browser/health evidence.
+No live flight-plus-CAB attempt or additional paid voice probe was run. Real
+end-to-end acceptance, after-flight voice-profile reuse, terminal access and
+physical journey completion remain open. The earlier consumed voice allowance
+was not reused. [Machine-readable evidence](after-flight-transfer-release.json).
 
 ### Combined airport restriction and passenger arrival — 1 November 2026
 
