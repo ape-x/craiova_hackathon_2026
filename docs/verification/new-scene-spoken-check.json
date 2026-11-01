@@ -581,5 +581,23 @@
     "full_requests_delegated": true,
     "spoken_count_destination_cost_match_committed_plan": true,
     "invited_further_constraint_without_mutation": true
+  },
+  "deployment": {
+    "url": "http://localhost:8081",
+    "ready_status": 200,
+    "mode": "simulation",
+    "scene_preserved": true,
+    "version": 18,
+    "ai_configured": true,
+    "voice_configured": true,
+    "exact_provider_files_verified": true,
+    "release_commit": "a9a67e0",
+    "ui_checks": {
+      "new_scenario_dialog_visible": true,
+      "proactive_guidance_visible": true,
+      "start_voice_enabled": true,
+      "write_instead_focuses_existing_draft": true,
+      "no_microphone_started_in_shared_simulation": true
+    }
   }
 }
