@@ -613,6 +613,7 @@ export interface RecoveryJobResponse {
   replayed?: boolean;
 }
 export interface AppConfig {
+  login_method?: 'password' | 'token' | null;
   ai_configured?: boolean;
   voice_configured?: boolean;
   fr24_configured?: boolean;

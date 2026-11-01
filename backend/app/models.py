@@ -389,4 +389,16 @@ class ConstraintRequest(Model):
 
 
 class LoginRequest(Model):
-    token: str = Field(min_length=1, max_length=512)
+    username: str | None = Field(default=None, min_length=1, max_length=128)
+    password: str | None = Field(default=None, min_length=1, max_length=1024, repr=False)
+    # Compatibility for existing token-only local deployments.
+    token: str | None = Field(default=None, min_length=1, max_length=512, repr=False)
+
+    @model_validator(mode="after")
+    def credentials(self):
+        if self.token is not None:
+            if self.username is not None or self.password is not None:
+                raise ValueError("Provide one login method")
+        elif self.username is None or self.password is None:
+            raise ValueError("Username and password are required")
+        return self

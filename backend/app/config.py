@@ -3,6 +3,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from .passwords import valid_password_hash
 
 
 class Settings(BaseSettings):
@@ -12,7 +13,9 @@ class Settings(BaseSettings):
     environment: Literal["development","test","production"] = "development"
     operation_mode: Literal["live", "simulation"] = "live"
     database_path: str = "data/recovery.sqlite3"
-    operator_token: str = ""
+    operator_token: str = Field(default="", repr=False)
+    operator_username: str = Field(default="", max_length=128)
+    operator_password_hash: SecretStr = Field(default=SecretStr(""), repr=False)
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000"
     public_base_url: str = "http://localhost:5173"
     allowed_hosts: str = "localhost,127.0.0.1,testserver"
@@ -60,14 +63,31 @@ class Settings(BaseSettings):
         return self.environment == "production"
 
     @property
+    def password_auth(self):
+        return bool(self.operator_username and self.operator_password_hash.get_secret_value())
+
+    @property
+    def auth_required(self):
+        return self.password_auth or bool(self.operator_token)
+
+    @property
     def origins(self):
         return list(dict.fromkeys([s.strip().rstrip("/") for s in self.cors_origins.split(",") if s.strip()] + [self.public_base_url.rstrip("/")]))
 
     @model_validator(mode="after")
     def secure_production(self):
+        password_hash = self.operator_password_hash.get_secret_value()
+        if bool(self.operator_username) != bool(password_hash):
+            raise ValueError("Set both OPERATOR_USERNAME and OPERATOR_PASSWORD_HASH")
+        if self.operator_username and (self.operator_username != self.operator_username.strip() or any(c in self.operator_username for c in "\r\n")):
+            raise ValueError("OPERATOR_USERNAME must not have surrounding whitespace or line breaks")
+        if password_hash and not valid_password_hash(password_hash):
+            raise ValueError("Invalid OPERATOR_PASSWORD_HASH; use backend/scripts/configure_operator.py")
         if self.production:
-            if len(self.operator_token.strip()) < 32:
-                raise ValueError("Production requires OPERATOR_TOKEN of at least 32 characters")
+            if not self.password_auth:
+                raise ValueError("Production requires OPERATOR_USERNAME and OPERATOR_PASSWORD_HASH")
+            if self.operator_token and len(self.operator_token.strip()) < 32:
+                raise ValueError("Optional OPERATOR_TOKEN must have at least 32 characters in production")
             public=urlsplit(self.public_base_url)
             if public.scheme!="https" or not public.hostname or public.username or public.password or public.query or public.fragment:
                 raise ValueError("Production requires a valid HTTPS PUBLIC_BASE_URL without credentials, query or fragment")

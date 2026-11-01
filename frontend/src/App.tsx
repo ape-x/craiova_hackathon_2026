@@ -49,7 +49,7 @@ import { locationKindLabel } from './locationNodes';
 import { geographicContext } from './resourceLabels';
 import { WeatherNetworkOverlay } from './WeatherStatus';
 import { Brand, Dot, Modal, Tag } from './ui';
-import ThemeToggle from './ThemeToggle';
+import Login from './Login';
 import { LiveVoiceClient } from './liveVoice';
 import VoiceRequestReviewDialog from './VoiceRequestReviewDialog';
 import CommandDraft from './CommandDraft';
@@ -93,63 +93,6 @@ function LoadingPage() {
       <Brand />
       <span className="loading-line" />
       <p>Connecting to the operations network</p>
-    </main>
-  );
-}
-function Login({ onSuccess }: { onSuccess: () => void }) {
-  const [token, setToken] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  return (
-    <main className="login-page">
-      <div className="page-theme-toggle">
-        <ThemeToggle />
-      </div>
-      <Brand />
-      <form
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setBusy(true);
-          setError('');
-          try {
-            await api.login(token);
-            setToken('');
-            onSuccess();
-          } catch (cause) {
-            setError(cause instanceof Error ? cause.message : 'Login failed');
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <Tag tone="cyan">OPERATOR ACCESS</Tag>
-        <h1>
-          Your operations.
-          <br />
-          One clear picture.
-        </h1>
-        <p>Enter the operator credential configured for this deployment.</p>
-        <label className="field">
-          Operator access token
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            required
-          />
-        </label>
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
-        <button className="primary-button" disabled={busy}>
-          {busy ? 'Connecting…' : 'Enter operations'}
-          <ArrowRight size={16} />
-        </button>
-      </form>
-      <small>Airport Recovery Live · Operations workspace</small>
     </main>
   );
 }
@@ -639,7 +582,7 @@ function Operations() {
     const timer = setTimeout(() => setNotice(null), 6000);
     return () => clearTimeout(timer);
   }, [notice]);
-  if (authRequired) return <Login onSuccess={reconnect} />;
+  if (authRequired) return <Login method={config.login_method} onSuccess={reconnect} />;
   if (!world)
     return error ? (
       <main className="error-page">
@@ -1574,8 +1517,12 @@ function SettingsDialog({
           {config.auth_required && (
             <button
               className="secondary-button"
-              onClick={() => {
-                void onLogout();
+              onClick={async () => {
+                try {
+                  await onLogout();
+                } catch (cause) {
+                  setError(cause instanceof Error ? cause.message : 'Sign out failed');
+                }
               }}
             >
               <LogOut size={15} />

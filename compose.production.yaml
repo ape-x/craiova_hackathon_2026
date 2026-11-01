@@ -11,7 +11,9 @@ services:
       PUBLIC_BASE_URL: https://${APP_DOMAIN:?Set APP_DOMAIN}
       ALLOWED_HOSTS: ${APP_DOMAIN},127.0.0.1,localhost,api
       CORS_ORIGINS: https://${APP_DOMAIN}
-      OPERATOR_TOKEN: ${OPERATOR_TOKEN:?Set a random OPERATOR_TOKEN of at least 32 characters}
+      OPERATOR_USERNAME: ${OPERATOR_USERNAME:?Configure the operator username}
+      OPERATOR_PASSWORD_HASH: ${OPERATOR_PASSWORD_HASH:?Run backend/scripts/configure_operator.py}
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       FR24_API_KEY: ${FR24_API_KEY:-}
       FR24_ENVIRONMENT: ${FR24_ENVIRONMENT:-live}

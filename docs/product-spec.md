@@ -24,6 +24,8 @@ Aria automată actuală cuprinde căutarea zborurilor pentru grupuri explicit le
 
 ## 2. Fluxul operatorului
 
+Accesul operatorului folosește un cont cu utilizator și parolă configurat pe server. Parola este stocată numai ca hash cu sare; sesiunea expiră și poate fi revocată prin deconectare. Endpointurile operaționale, inclusiv fluxul de actualizări, verifică sesiunea pe server. Producția cere autentificare configurată. Linkurile pasagerilor rămân autorizate separat pentru grupul lor.
+
 1. **Identifică zborul.** În **Start recovery**, introduce numărul și data UTC a primei observări. Flightradar24 poate întoarce mai multe curse; operatorul selectează exact cursa. O căutare fără rezultat nu înseamnă anulare.
 2. **Înregistrează incidentul.** Alege perturbarea zborului sau indisponibilitatea destinației și descrie condiția raportată. Aceasta nu modifică afirmațiile furnizorului despre zbor.
 3. **Leagă grupurile afectate.** Datele provin dintr-un manifest sau din ipoteze explicite. Grupurile trebuie să indice același zbor original. Un caz fără grupuri rămâne în starea „necesită date despre pasageri”.

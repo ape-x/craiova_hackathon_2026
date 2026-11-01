@@ -24,7 +24,7 @@ test -f .env.production || cp .env.production.example .env.production
 chmod 600 .env.production
 ```
 
-3. Edit `APP_DOMAIN` to the real hostname, without a scheme or path. Set a random `OPERATOR_TOKEN` of at least 32 characters. Add authorized provider keys privately. The public URL, allowed hosts and CORS origin derive from this hostname. Restrict the browser Maps key to the intended HTTPS referrers and required Maps JavaScript API; confirm API enablement and billing in the owning account. Blank provider keys leave the corresponding live functions unavailable; they do not populate supply or substitute AI. Configure account budgets and alerts as appropriate; application timeouts and request limits are not an automatic account spending cap.
+3. Edit `APP_DOMAIN` to the real hostname, without a scheme or path. Run `python3 backend/scripts/configure_operator.py --env-file .env.production --username operator --generate` and save the generated password privately. The script stores only the salted password hash and username. An optional API `OPERATOR_TOKEN` must contain at least 32 random characters. Add authorized provider keys privately. The public URL, allowed hosts and CORS origin derive from this hostname. Restrict the browser Maps key to the intended HTTPS referrers and required Maps JavaScript API; confirm API enablement and billing in the owning account. Blank provider keys leave the corresponding live functions unavailable; they do not populate supply or substitute AI. Configure account budgets and alerts as appropriate; application timeouts and request limits are not an automatic account spending cap.
 4. Validate and start:
 
 ```sh

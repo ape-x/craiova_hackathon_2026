@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
+from app.passwords import hash_password
 
 
 @pytest.fixture
@@ -57,7 +58,7 @@ def test_auth_cookie_origin_and_token_scoped_passenger(tmp_path):
 def test_production_cannot_start_with_unsafe_configuration(tmp_path):
     with pytest.raises(ValueError):
         Settings(environment="production",operator_token="short",_env_file=None)
-    safe={"environment":"production","operator_token":"x"*40,"public_base_url":"https://recovery.example.com","cors_origins":"https://recovery.example.com","allowed_hosts":"recovery.example.com,127.0.0.1","_env_file":None}
+    safe={"environment":"production","operator_username":"operator","operator_password_hash":hash_password("test-only-password"),"operator_token":"x"*40,"public_base_url":"https://recovery.example.com","cors_origins":"https://recovery.example.com","allowed_hosts":"recovery.example.com,127.0.0.1","_env_file":None}
     assert Settings(**safe).production
     for override in ({"public_base_url":"https://"},{"public_base_url":"https://user:secret@recovery.example.com"},{"cors_origins":"http://recovery.example.com"},{"allowed_hosts":"localhost"}):
         with pytest.raises(ValueError) as error:
