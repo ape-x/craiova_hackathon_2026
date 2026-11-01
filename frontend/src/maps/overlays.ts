@@ -6,6 +6,7 @@ export { resourcePoint } from './placement';
 import type { Camera, GeoPoint } from './contracts';
 import { groundCamera, groundPath, reportedAirportDropoff } from './groundPaths';
 import { transferReview } from '../resourceLabels';
+import { networkCamera } from './networkCamera';
 
 export const COLORS = {
   observed: '#58ddeb',
@@ -423,20 +424,9 @@ export function cameraFor(world: World, mode: SceneMode, selectedId: string | nu
       altitudeMode: 'RELATIVE_TO_GROUND',
     };
   if (mode === 'region') {
-    const regional = world.airports.filter(
-      (a) => isAirportNode(a) && (a.diversion_eligible || a.id === 'CRA'),
-    );
-    const points = regional.length ? regional.map(pointOf) : [fallback];
-    return {
-      center: {
-        lat: points.reduce((sum, p) => sum + p.lat, 0) / points.length,
-        lng: points.reduce((sum, p) => sum + p.lng, 0) / points.length,
-        altitude: 0,
-      },
-      range: 330000,
-      tilt: 25,
-      heading: 0,
-    };
+    // Origins, destinations and closed airports still belong in the overview;
+    // diversion eligibility must not remove them from the geographic bounds.
+    return networkCamera(world.airports.filter(isAirportNode).map(pointOf), fallback);
   }
   const group = world.groups.find((g) => g.id === selectedId);
   return {

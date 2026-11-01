@@ -302,14 +302,16 @@ describe('geographic source separation', () => {
     expect(world.resources[0].available).toBe(true);
   });
 
-  it('focuses selected observed aircraft and fits regional eligible airports', () => {
+  it('focuses observed aircraft and includes ineligible airports in the regional overview', () => {
     expect(cameraFor(world, 'airport', 'aircraft-a').center).toEqual({
       lat: 44.4,
       lng: 24,
       altitude: 3048,
     });
     const region = cameraFor(world, 'region', null);
-    expect(region.center.lat).toBeLessThan(46);
-    expect(region.range).toBe(330000);
+    // LTN is not diversion eligible, but is a network endpoint and must fit.
+    expect(region.center.lat).toBeGreaterThan(47);
+    expect(region.center.lng).toBeLessThan(14);
+    expect(region.range).toBeGreaterThan(3_000_000);
   });
 });

@@ -74,6 +74,14 @@ export default function ResourceRail({
         .toLowerCase()
         .includes(search),
     );
+  const listedAirports = world.airports.filter(
+    (airport) =>
+      world.mode === 'live' ||
+      !world.resources.length ||
+      world.resources.some(
+        (resource) => resource.origin === airport.id || resource.destination === airport.id,
+      ),
+  );
   const groups = world.groups.filter((item) =>
     `${item.id} ${item.name} ${item.destination}`.toLowerCase().includes(search),
   );
@@ -97,19 +105,27 @@ export default function ResourceRail({
         </button>
       </div>
       {world.mode === 'live' && onRecoveryCase && (
-        <RecoveryCases world={world} onOpen={onRecoveryCase} />
+        <details
+          className="rail-section rail-cases"
+          key={world.scenario_id}
+          open={!world.incidents?.length}
+        >
+          <summary>
+            <span>Recovery cases</span>
+            <span className="rail-section-count">{world.incidents?.length ?? 0}</span>
+            <ChevronRight size={14} aria-hidden="true" />
+          </summary>
+          <RecoveryCases world={world} onOpen={onRecoveryCase} />
+        </details>
       )}
-      <div className="airports-list">
-        {world.airports
-          .filter(
-            (airport) =>
-              world.mode === 'live' ||
-              !world.resources.length ||
-              world.resources.some(
-                (resource) => resource.origin === airport.id || resource.destination === airport.id,
-              ),
-          )
-          .map((airport) => (
+      <details className="rail-section rail-locations" open={listedAirports.length <= 3}>
+        <summary>
+          <span>Locations</span>
+          <span className="rail-section-count">{listedAirports.length}</span>
+          <ChevronRight size={14} aria-hidden="true" />
+        </summary>
+        <div className="airports-list">
+          {listedAirports.map((airport) => (
             <button
               key={airport.id}
               title={`${locationKindLabel(airport)} · ${airport.code} · ${airport.name}`}
@@ -161,7 +177,8 @@ export default function ResourceRail({
               )}
             </button>
           ))}
-      </div>
+        </div>
+      </details>
       {world.mode === 'live' && (
         <button className="real-data-launch" onClick={onLiveData}>
           <Users size={16} aria-hidden="true" />

@@ -1,0 +1,438 @@
+/* Keep the operations workspace usable on laptop and presentation screens. */
+.operations-app .resource-rail {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  padding-bottom: 12px;
+}
+
+.operations-app .resource-rail > * {
+  flex-shrink: 0;
+}
+
+.operations-app .resource-rail :is(.recovery-cases, .airports-list, .rail-scroll) {
+  flex: 0 0 auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.operations-app .rail-section {
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 8px;
+}
+
+.rail-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--muted);
+  border-radius: 8px;
+}
+
+.rail-section > summary:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rail-section-count {
+  margin-left: auto;
+  min-width: 22px;
+  padding: 2px 6px;
+  text-align: center;
+  font: 10px var(--mono);
+  border-radius: 5px;
+  background: var(--surface);
+}
+
+.rail-section[open] > summary > svg {
+  transform: rotate(90deg);
+}
+
+.operations-app .resource-rail .recovery-cases {
+  padding: 6px 10px 10px;
+  margin: 0;
+  border: 0;
+}
+
+.operations-app .case-rail-row {
+  padding: 9px 0;
+}
+
+.operations-app .case-rail-row strong {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.operations-app .case-rail-row span {
+  gap: 3px;
+}
+
+.operations-app .resource-rail .airports-list {
+  padding: 0 0 8px;
+}
+
+.operations-app .airport-row {
+  gap: 7px;
+  padding: 9px 8px;
+}
+
+.operations-app .airport-row > span:not(.tag) {
+  min-width: 0;
+  flex: 1;
+}
+
+.operations-app .airport-row > .tag {
+  flex: 0 0 auto;
+  max-width: none;
+  font-size: 8px;
+  padding: 3px 5px;
+}
+
+.operations-app .resource-rail .real-data-launch {
+  margin: 0 0 8px;
+  padding: 10px;
+  min-height: 38px;
+  font-size: 11px;
+  border-radius: 9px;
+}
+
+.operations-app .resource-tabs {
+  padding: 6px 0;
+}
+
+.operations-app .resource-tabs button {
+  min-height: 44px;
+  gap: 5px;
+  font-size: 10px;
+}
+
+.operations-app .rail-search {
+  margin-bottom: 10px;
+}
+
+.operations-app .rail-secondary {
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.operations-app .map-workspace {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  container: workspace / inline-size;
+}
+
+.operations-app .workspace-summary {
+  min-height: 96px;
+  flex-shrink: 0;
+  padding-block: 16px;
+}
+
+.operations-app .demo-notice {
+  padding: 10px 14px;
+  gap: 10px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.operations-app .scene-wrap {
+  min-height: 280px;
+  flex-shrink: 0;
+}
+
+.operations-app .geographic-view:has(.geographic-toggle) {
+  min-height: 440px;
+}
+
+.operations-app .scene-wrap:has(.is-transfer-review) {
+  min-height: 400px;
+}
+
+.operations-app .geographic-view .map-topbar {
+  right: 76px;
+}
+
+/* Reserve Google's right-hand camera controls and bottom attribution area. */
+.operations-app .geographic-view .map-action {
+  right: 76px;
+  bottom: 36px;
+  max-width: calc(100% - 108px);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.operations-app .geographic-map-source {
+  left: auto;
+  right: 76px;
+  top: 16px;
+  min-height: 36px;
+  max-width: calc(100% - 344px);
+  padding: 8px 10px;
+  flex-wrap: wrap;
+  gap: 5px 7px;
+  box-shadow: 0 2px 8px #00000018;
+}
+
+.operations-app .geographic-model-controls {
+  top: 64px;
+  left: 16px;
+  max-width: calc(100% - 92px);
+  flex-wrap: wrap;
+}
+
+.operations-app .geographic-map-recenter {
+  top: 74px;
+  right: 16px;
+}
+
+.operations-app .geographic-map-legend {
+  bottom: 92px;
+  left: 16px;
+  padding: 8px 10px;
+  max-width: min(350px, calc(100% - 108px));
+  box-shadow: none;
+  max-height: calc(100% - 240px);
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+.operations-app .geographic-map-legend small {
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.operations-app .geographic-view .weather-network {
+  left: auto;
+  right: 76px;
+  top: 72px;
+  width: 220px;
+  max-width: calc(100% - 108px);
+}
+
+.operations-app .decision-summary > div:nth-child(2) {
+  min-width: 0;
+}
+
+.operations-app .decision-summary h3 {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.operations-app .decision-summary .tag {
+  flex-shrink: 0;
+}
+
+.operations-app .decision-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 16px 0;
+}
+
+.operations-app .decision-metrics > div,
+.operations-app .decision-metrics > div:first-child {
+  min-width: 0;
+  padding: 10px 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  gap: 6px;
+}
+
+.operations-app .decision-metrics strong {
+  font-size: clamp(16px, 1.2vw, 20px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.operations-app .decision-metrics > div > span {
+  line-height: 1.4;
+}
+
+.operations-app .timeline {
+  padding-block: 10px 12px;
+}
+
+.operations-app .timeline-top > .section-label {
+  font-size: 12px;
+}
+
+.operations-app .timeline-top .section-label .muted,
+.operations-app .timeline-now,
+.operations-app .timeline-empty {
+  font-size: 10px;
+}
+
+.operations-app .timeline-labels {
+  font-size: 10px;
+}
+
+.operations-app .timeline-ticks {
+  height: 24px;
+}
+
+.operations-app .timeline-ticks > span {
+  font-size: 9px;
+}
+
+.operations-app .schedule-bar {
+  height: 18px;
+  font-size: 9px;
+  line-height: 16px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.operations-app .timeline-empty {
+  top: 6px;
+}
+
+.operations-app .time-cursor {
+  top: 21px;
+}
+
+.operations-app .voice-console {
+  min-height: 80px;
+  padding-block: 10px;
+  flex-shrink: 0;
+}
+
+@container workspace (min-width: 801px) {
+  .operations-app .scene-wrap:has(.geographic-toggle) .geographic-map-source {
+    right: 206px;
+    max-width: calc(100% - 474px);
+  }
+}
+
+@container workspace (max-width: 800px) {
+  .operations-app .timeline-ticks > span:nth-child(even) {
+    display: none;
+  }
+
+  .operations-app .geographic-map-source {
+    top: 62px;
+    left: 16px;
+    right: auto;
+    max-width: calc(100% - 92px);
+    min-height: 30px;
+  }
+
+  .operations-app .geographic-model-controls {
+    top: 104px;
+  }
+
+  .operations-app .geographic-view .weather-network {
+    top: 156px;
+    right: 16px;
+  }
+
+  .operations-app .geographic-map-source b {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 1350px) and (min-width: 1101px) {
+  .operations-app .workspace-summary {
+    min-height: 106px;
+    gap: 8px;
+    padding-block: 12px;
+  }
+
+  .operations-app .decision-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .operations-app .decision-metrics > div:nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (max-height: 780px) and (min-width: 761px) {
+  .operations-app .app-header {
+    min-height: 60px;
+    height: 60px;
+  }
+
+  .operations-app .workspace-summary {
+    min-height: 82px;
+    padding-block: 10px;
+  }
+
+  .operations-app .workspace-title h1 {
+    font-size: 25px;
+  }
+
+  .operations-app .scene-wrap {
+    min-height: 280px;
+  }
+
+  .operations-app .demo-notice {
+    margin-top: 8px;
+    padding: 8px 12px;
+  }
+
+  .operations-app .inspector-heading {
+    min-height: 48px;
+  }
+
+  .operations-app .entity-heading {
+    padding-block: 16px;
+  }
+}
+
+@media (max-width: 760px) {
+  .operations-app .voice-console {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .operations-app .workspace-summary {
+    min-height: 112px;
+    padding: 12px 4px;
+  }
+
+  .operations-app .timeline-top {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .operations-app .timeline-top > div {
+    margin-left: auto;
+  }
+
+  .operations-app .geographic-view .map-action {
+    right: 64px;
+    bottom: 36px;
+    max-width: calc(100% - 80px);
+  }
+
+  .operations-app .map-action .secondary-button {
+    font-size: 0;
+    gap: 0;
+    padding: 10px;
+    min-width: 36px;
+  }
+
+  .operations-app .timeline-ticks > span:nth-child(3),
+  .operations-app .timeline-ticks > span:nth-child(7) {
+    display: none;
+  }
+
+  .operations-app .map-action .primary-button span {
+    display: none;
+  }
+
+  .operations-app .geographic-map-source b {
+    display: none;
+  }
+}
