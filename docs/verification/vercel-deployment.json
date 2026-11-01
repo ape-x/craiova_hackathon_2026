@@ -1,0 +1,73 @@
+{
+  "date": "2026-11-01",
+  "app_revision": "3b7156adf327718f181b18d24d03edcbd68a8d49",
+  "public_url": "https://craiova-hackathon-2026.vercel.app",
+  "vercel_project": "craiova-hackathon-2026",
+  "vercel_deployment_id": "dpl_8P3V8gyoRKfm9KRwo9NvaTh33Luq",
+  "vercel_target": "production",
+  "vercel_state": "READY",
+  "backend_url": "https://airport-recovery.34.141.2.165.nip.io",
+  "google_project": "hale-tracer-286910",
+  "vm": "airport-recovery",
+  "zone": "europe-west3-a",
+  "machine_type": "e2-small",
+  "persistent_data_disk_gb": 20,
+  "source_archive_sha256": "c0dc60b904b1f7dab37ea454de92997f7ec4e2a0a45f0aa706a9403b6ac1dd07",
+  "snapshot_sha256": "b157373fbe6e4964675e8d4d76d861e25398d993fbc4998ea9e5f54c91b8f467",
+  "verification": {
+    "base": "https://craiova-hackathon-2026.vercel.app",
+    "ready": 200,
+    "unauthenticated_world": 401,
+    "login": 200,
+    "secure_httponly_cookie": true,
+    "world_version": 52,
+    "groups": 2,
+    "resources": 25,
+    "groups_and_resources_match_snapshot": true,
+    "fr24_requests": 84,
+    "fr24_credits": 3260,
+    "traffic_running": false,
+    "restricted_browser_key": true,
+    "server_key_not_exposed": true,
+    "sse": true
+  },
+  "offline_checks": {
+    "backend_passed": 3249,
+    "frontend_passed": 999,
+    "frontend_files": 58,
+    "infrastructure_tests_passed": 19,
+    "infrastructure_subtests_passed": 34,
+    "typescript": true,
+    "production_build": true,
+    "format": true
+  },
+  "browser": {
+    "operator_login": true,
+    "connected": true,
+    "google_3d_rendered": true,
+    "console_errors": 0
+  },
+  "security": {
+    "https": true,
+    "operator_authentication_required": true,
+    "separate_restricted_maps_keys": true,
+    "backend_secrets_not_uploaded_to_vercel": true,
+    "api_port_8000_not_public": true,
+    "temporary_operator_ssh_rule_removed": true,
+    "content_security_policy_preserved": true,
+    "permissions_policy_preserved": true
+  },
+  "cutover": {
+    "original_local_api_stopped": true,
+    "snapshot_integrity_verified": true,
+    "all_18_durable_tables_preserved": true,
+    "no_new_operation_seeded": true
+  },
+  "limitations": [
+    "FR24 request budget remains exhausted at 84 of 84; it was not increased.",
+    "Existing supplier quotes are expired and were not refreshed during deployment.",
+    "No new paid voice/model/flight/hotel/transport acceptance run was performed.",
+    "The backend uses an IP-derived nip.io hostname; DNS availability remains an external dependency.",
+    "The GitHub repository is not linked for automatic Vercel deploys; static assets were built from the exact reviewed commit and uploaded directly."
+  ]
+}

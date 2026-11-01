@@ -1,13 +1,47 @@
 # Vercel frontend and Google Cloud backend
 
+## Deployed 1 November 2026
+
+The application is live at **https://craiova-hackathon-2026.vercel.app**. Both
+frontend assets and backend code come from reviewed commit `3b7156a`; the
+uncommitted workspace changes were excluded. Vercel deployment
+`dpl_8P3V8gyoRKfm9KRwo9NvaTh33Luq` is production and READY. The persistent API
+runs on `airport-recovery` in `europe-west3-a`, behind HTTPS at
+`https://airport-recovery.34.141.2.165.nip.io`. The previous local API is stopped.
+
+The public-domain check passed authentication, secure HttpOnly session cookies,
+SSE and exact preservation of the two groups and 25 resources. Chrome showed
+Connected and rendered Google geographic 3D with zero captured console errors.
+Separate Maps keys are restricted to the public frontend referrer and the VM's
+IP/required APIs. Provider credentials remain on the backend.
+
+FR24 remains paused with **84 of 84 requests consumed** and 3,260 credits
+reserved. No allowance was increased and no old quote was refreshed. Existing
+quotes remain visibly expired. No new voice/model/flight/hotel/transport
+acceptance run was made for this deployment. See the
+[sanitized deployment evidence](verification/vercel-deployment.json).
+
+The GitHub integration could not access the private repository. The reviewed
+frontend was therefore built in an isolated archive and its static assets were
+uploaded directly. For another deployment, build the chosen reviewed frontend,
+copy [`deploy/vercel.json`](../deploy/vercel.json) into the resulting static root,
+exclude source maps, and upload that root to this existing Vercel project. It uses
+the Other preset, project root, an empty install/build command and output `.`.
+The first rewrite forwards `/api/*`; the second handles SPA navigation. Verify
+backend readiness and operator authentication before promoting a new release.
+
+The sections below describe provisioning and maintenance. They are not a request
+to create another VM or restore the initial snapshot again.
+
 This deployment keeps the existing single FastAPI process, its recovery worker,
 voice watchdogs and transactional SQLite database together. Vercel serves the
 frontend and forwards `/api/*` to the backend over HTTPS. It does not run a second
 copy of the API or initialize a new operation.
 
-The scripts below are prepared infrastructure, not evidence that cloud resources
-or a deployment already exist. Running `provision.sh --apply` creates billed
-resources in the explicitly authorized project `hale-tracer-286910`:
+The scripts below reproduce the infrastructure. The running deployment is
+recorded above; do not provision another copy for routine updates. Running
+`provision.sh --apply` creates billed resources in the explicitly authorized
+project `hale-tracer-286910`:
 
 | Resource | Configuration |
 | --- | --- |
@@ -135,7 +169,7 @@ only the live main SQLite file while ignoring its WAL.
 On the VM, restore with the exact printed checksum:
 
 ```sh
-sudo python3 "/opt/airport-recovery/releases/$REVISION/deploy/google-cloud/restore.py" \
+sudo env PYTHONDONTWRITEBYTECODE=1 python3 "/opt/airport-recovery/releases/$REVISION/deploy/google-cloud/restore.py" \
   ~/recovery.sqlite3 ACTUAL_SHA256_FROM_THE_FINAL_SNAPSHOT
 ```
 
@@ -146,6 +180,8 @@ paused traffic and no active jobs. It retains the file byte-for-byte, including
 usage, unknown outcomes, idempotency keys and saved profiles; it installs it with
 UID/GID 10001 and mode 0600. Existing target databases or WAL sidecars are never
 overwritten. Missing usage counters are an error, not permission to reset them.
+Disabling bytecode writes keeps the installed source manifest unchanged when
+the restore helper imports its local persistence guard.
 The uploaded snapshot and source archive remain private migration artifacts;
 remove staged home-directory copies once the verified backups are retained.
 
