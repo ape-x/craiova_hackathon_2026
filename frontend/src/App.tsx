@@ -3,6 +3,7 @@ import {
   ArrowDownToLine,
   ArrowRight,
   Check,
+  FileText,
   Globe2,
   Loader2,
   LogOut,
@@ -38,6 +39,15 @@ import { WeatherNetworkOverlay } from './WeatherStatus';
 import { Brand, Dot, Modal, Tag } from './ui';
 import ThemeToggle from './ThemeToggle';
 import { LiveVoiceClient } from './liveVoice';
+import VoiceRequestReviewDialog from './VoiceRequestReviewDialog';
+import CommandDraft from './CommandDraft';
+import {
+  beginVoiceRequestReview,
+  observeVoiceRequestOutcome,
+  settleVoiceRequestReview,
+  voiceReviewDraftText,
+} from './voiceRequestReview';
+import type { VoiceRequestReview, VoiceReviewOutcome } from './voiceRequestReview';
 import { voiceStartupScope } from './voiceScope';
 import {
   commandContext,
@@ -141,7 +151,15 @@ function Operations() {
   const [showLog, setShowLog] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [modal, setModal] = useState<
-    'scenario' | 'settings' | 'search' | 'help' | 'reset' | 'live-data' | 'recovery-case' | null
+    | 'scenario'
+    | 'settings'
+    | 'search'
+    | 'help'
+    | 'reset'
+    | 'live-data'
+    | 'recovery-case'
+    | 'voice-review'
+    | null
   >(null);
   const [recoveryCaseId, setRecoveryCaseId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -154,6 +172,11 @@ function Operations() {
     retry?: () => Promise<unknown>;
   } | null>(null);
   const [command, setCommand] = useState('');
+  const commandDraft = useRef(command);
+  const updateCommandDraft = useCallback((text: string) => {
+    commandDraft.current = text;
+    setCommand(text);
+  }, []);
   const [lastCommand, setLastCommand] = useState('');
   const [commandReply, setCommandReply] = useState<{ scenarioId: string; text: string } | null>(
     null,
@@ -161,6 +184,25 @@ function Operations() {
   const lastReply =
     commandReply?.scenarioId === world?.scenario_id ? (commandReply?.text ?? '') : '';
   const [voiceState, setVoiceState] = useState<string>('idle');
+  const voiceStateRef = useRef(voiceState);
+  const [voiceReview, setVoiceReview] = useState<VoiceRequestReview | null>(null);
+  const latestVoiceReview = useRef<VoiceRequestReview | null>(null);
+  const voiceReviewSequence = useRef(0);
+  const recordVoiceOutcome = useCallback(
+    (attempt: VoiceRequestReview, outcome: VoiceReviewOutcome) => {
+      const next = settleVoiceRequestReview(
+        latestVoiceReview.current,
+        attempt,
+        worldRef.current?.scenario_id,
+        outcome,
+      );
+      if (next !== latestVoiceReview.current) {
+        latestVoiceReview.current = next;
+        setVoiceReview(next);
+      }
+    },
+    [worldRef],
+  );
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(false);
@@ -173,7 +215,7 @@ function Operations() {
     scenarioId: '',
     exchanges: [],
   });
-  const commandInput = useRef<HTMLInputElement>(null);
+  const commandInput = useRef<HTMLTextAreaElement>(null);
   const [mobilePanel, setMobilePanel] = useState<'map' | 'resources' | 'inspector'>('map');
   const [plannerMode, setPlannerMode] = useState<'ai' | 'solver' | null>(null);
   const closeModal = useCallback(() => setModal(null), []);
@@ -212,7 +254,11 @@ function Operations() {
     [receive, worldRef],
   );
   const execute = useCallback(
-    async (label: string, action: () => Promise<MutationResult>) => {
+    async (
+      label: string,
+      action: () => Promise<MutationResult>,
+      onOutcome?: (outcome: VoiceReviewOutcome) => void,
+    ) => {
       if (running.current) throw new Error('An operation is already in progress.');
       running.current = true;
       setBusy(true);
@@ -220,7 +266,7 @@ function Operations() {
       setNotice(null);
       const started = performance.now();
       try {
-        const result = applyResult(await action());
+        const result = applyResult(await observeVoiceRequestOutcome(action, onOutcome));
         setNotice({
           persistent: keepCommandReplyVisible(result),
           text:
@@ -237,7 +283,7 @@ function Operations() {
           error: true,
           retry:
             cause instanceof TransportError
-              ? () => execute(label, () => cause.retry<MutationResult>())
+              ? () => execute(label, () => cause.retry<MutationResult>(), onOutcome)
               : undefined,
         });
         throw cause;
@@ -263,10 +309,15 @@ function Operations() {
     }
   }, [chosenMode, execute, worldRef]);
   const submitCommand = useCallback(
-    async (text: string, delegationId?: string, voiceContext = '') => {
+    async (
+      text: string,
+      delegationId?: string,
+      voiceContext = '',
+      onOutcome?: (outcome: VoiceReviewOutcome) => void,
+    ) => {
       if (!text.trim() || !worldRef.current) return null;
       setLastCommand(text);
-      setCommand('');
+      if (!delegationId) updateCommandDraft('');
       const previousWorld = worldRef.current;
       const scenarioId = previousWorld.scenario_id;
       if (commandHistory.current.scenarioId !== scenarioId)
@@ -278,15 +329,18 @@ function Operations() {
       );
       let result: MutationResult;
       try {
-        result = await execute('Interpreting request and evaluating plans', () =>
-          delegationId
-            ? request<MutationResult>('/commands', {
-                text,
-                context,
-                expected_version: previousWorld.version,
-                idempotency_key: `voice-${delegationId}`.slice(0, 120),
-              })
-            : api.command(previousWorld, text, context),
+        result = await execute(
+          'Interpreting request and evaluating plans',
+          () =>
+            delegationId
+              ? request<MutationResult>('/commands', {
+                  text,
+                  context,
+                  expected_version: previousWorld.version,
+                  idempotency_key: `voice-${delegationId}`.slice(0, 120),
+                })
+              : api.command(previousWorld, text, context),
+          onOutcome,
         );
       } catch (cause) {
         if (worldRef.current?.scenario_id === scenarioId)
@@ -312,13 +366,14 @@ function Operations() {
       if (commandNeedsRegionalView(previousWorld, result)) setMode('region');
       return result;
     },
-    [execute, worldRef],
+    [execute, updateCommandDraft, worldRef],
   );
   const toggleVoice = async () => {
     if (voiceState === 'closing') return;
     if (voice.current) {
       await voice.current.stop();
       voice.current = null;
+      voiceStateRef.current = 'idle';
       setVoiceState('idle');
       return;
     }
@@ -340,6 +395,7 @@ function Operations() {
         modal === 'recovery-case',
       ),
       onState: (state, message) => {
+        voiceStateRef.current = state;
         setVoiceState(state);
         if (state === 'idle' || state === 'error') voice.current = null;
         if (message)
@@ -354,10 +410,42 @@ function Operations() {
       },
       onAudioLevel: (level) => waveform.current?.style.setProperty('--audio-level', String(level)),
       onPlaybackBlocked: () => setAudioBlocked(true),
-      onDelegation: async ({ text, delegationId, context }) => {
-        const result = await submitCommand(text, delegationId, context);
-        if (!result) return 'Nu am aplicat nicio modificare.';
-        return result;
+      onDelegation: async (delegation) => {
+        const scenarioId = worldRef.current?.scenario_id;
+        if (!scenarioId) return 'Nu am aplicat nicio modificare.';
+        const attempt = beginVoiceRequestReview(
+          delegation,
+          scenarioId,
+          ++voiceReviewSequence.current,
+        );
+        latestVoiceReview.current = attempt;
+        setVoiceReview(attempt);
+        const observe = (outcome: VoiceReviewOutcome) => recordVoiceOutcome(attempt, outcome);
+        try {
+          const result = await submitCommand(
+            attempt.text,
+            attempt.delegationId,
+            delegation.context,
+            observe,
+          );
+          if (!result) {
+            observe({
+              kind: 'failure',
+              cause: new Error('No backend result was recorded for this request.'),
+            });
+            return 'Nu am aplicat nicio modificare.';
+          }
+          return result;
+        } catch (cause) {
+          // execute reports dispatched outcomes and its existing same-key retry.
+          // A local rejection before execute must also leave an honest record.
+          if (
+            latestVoiceReview.current?.sequence === attempt.sequence &&
+            latestVoiceReview.current.status === 'pending'
+          )
+            observe({ kind: 'failure', cause });
+          throw cause;
+        }
       },
     });
     voice.current = client;
@@ -370,11 +458,13 @@ function Operations() {
       });
       client.dispose();
       voice.current = null;
+      voiceStateRef.current = 'error';
       setVoiceState('error');
     }
   };
   useEffect(
     () => () => {
+      latestVoiceReview.current = null;
       voice.current?.dispose();
     },
     [],
@@ -382,6 +472,13 @@ function Operations() {
   useEffect(() => {
     if (authRequired) voice.current?.dispose();
   }, [authRequired]);
+  useEffect(() => {
+    if (latestVoiceReview.current?.scenarioId !== world?.scenario_id) {
+      latestVoiceReview.current = null;
+      setVoiceReview(null);
+      setModal((current) => (current === 'voice-review' ? null : current));
+    }
+  }, [world?.scenario_id]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (modal || (event.target instanceof Element && event.target.closest('[role="dialog"]')))
@@ -434,6 +531,7 @@ function Operations() {
   const geographic = live || mapStyle === 'geographic';
   const lastDecision = world.decisions.at(-1);
   const isVoiceActive = !['idle', 'closed', 'error', 'disconnected'].includes(voiceState);
+  const currentVoiceReview = voiceReview?.scenarioId === world.scenario_id ? voiceReview : null;
   return (
     <div
       className={`operations-app panel-${mobilePanel} ${sidebarOpen ? '' : 'sidebar-collapsed'}`}
@@ -740,7 +838,7 @@ function Operations() {
               ? 'Describe a recovery planning request in Romanian or English'
               : 'Describe a scenario in Romanian or English'}
           </label>
-          <input
+          <CommandDraft
             id="scenario-command"
             aria-describedby={lastReply ? 'command-reply' : undefined}
             ref={commandInput}
@@ -754,7 +852,7 @@ function Operations() {
                   : 'What changed? Describe a scenario…'
             }
             value={command}
-            onChange={(event) => setCommand(event.target.value)}
+            onChange={(event) => updateCommandDraft(event.target.value)}
             maxLength={4000}
             disabled={busy}
           />
@@ -788,6 +886,18 @@ function Operations() {
           </button>
         </form>
         <div className="console-meta">
+          {currentVoiceReview && (
+            <button
+              type="button"
+              className="voice-review-trigger"
+              aria-label="Review voice request"
+              title="Review voice request"
+              onClick={() => setModal('voice-review')}
+            >
+              <FileText size={16} aria-hidden="true" />
+              <span>Review voice request</span>
+            </button>
+          )}
           {isVoiceActive && (
             <button
               className="icon-button"
@@ -856,6 +966,32 @@ function Operations() {
       )}
       {modal === 'live-data' && (
         <LiveDataDialog world={world} onClose={closeModal} onApplied={applyResult} />
+      )}
+      {modal === 'voice-review' && currentVoiceReview && (
+        <VoiceRequestReviewDialog
+          review={currentVoiceReview}
+          context={{
+            scenarioId: world.scenario_id,
+            draft: command,
+            voiceActive: isVoiceActive || Boolean(voice.current),
+            busy,
+          }}
+          onClose={closeModal}
+          onCopyToDraft={() => {
+            const text = voiceReviewDraftText(latestVoiceReview.current, currentVoiceReview, {
+              scenarioId: worldRef.current?.scenario_id,
+              draft: commandDraft.current,
+              voiceActive:
+                Boolean(voice.current) ||
+                !['idle', 'closed', 'error', 'disconnected'].includes(voiceStateRef.current),
+              busy: running.current,
+            });
+            if (text === null) return;
+            updateCommandDraft(text);
+            closeModal();
+            requestAnimationFrame(() => commandInput.current?.focus());
+          }}
+        />
       )}
       {modal === 'recovery-case' && live && (
         <RecoveryCaseDialog

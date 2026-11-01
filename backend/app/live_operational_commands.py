@@ -10,7 +10,7 @@ import re
 
 from pydantic import ValidationError
 
-from .airport_catalog import lookup_airport, match_airports
+from .airport_catalog import lookup_airport
 from .hotel_recovery import HotelRecoveryInputs, REQUIRED_CALLS, validate_hotel_job
 from .hotel_recovery_profile import HotelRecoveryProfileError, read_hotel_recovery_profile
 from .live_commands import (
@@ -126,13 +126,14 @@ def _groups(world, case, text, ids, all_linked):
 
 
 def _airport(text, code, quote):
-    reference, _ = _fragment(text, quote)
-    exact = lookup_airport(reference)
-    matches = [exact] if exact else match_airports(reference, limit=50)
+    from .airport_mentions import literal_airport_ids
+
+    reference, start = _fragment(text, quote)
+    matches = literal_airport_ids(reference)
     target = lookup_airport(code or "")
-    if len(matches) != 1 or not target or matches[0]["id"] != target["id"]:
+    if len(matches) != 1 or not target or matches != {target["id"]}:
         raise Clarification("Numește un aeroport fără ambiguitate, preferabil codul IATA; orașul singur nu selectează un aeroport.")
-    other_airports = {item["id"] for item in match_airports(text, limit=50)}
+    other_airports = literal_airport_ids(text, reference_span=(start, start + len(reference)))
     if other_airports - {target["id"]}:
         raise Clarification("Declarația conține mai multe aeroporturi. Raportează separat grupurile aflate în locuri diferite.")
     return target["id"]

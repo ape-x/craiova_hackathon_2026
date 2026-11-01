@@ -797,7 +797,7 @@
   border-color: var(--line-strong);
   box-shadow: 0 0 0 3px var(--hover);
 }
-.command-form input {
+.command-form :is(input, textarea) {
   padding: 0;
   border: none;
   background: none;
@@ -805,8 +805,14 @@
   outline: none;
   font-size: 13px;
 }
-.command-form input:focus-visible {
+.command-form :is(input, textarea):focus-visible {
   outline: none;
+}
+.command-form textarea {
+  display: block;
+  min-height: 20px;
+  max-height: 130px;
+  resize: vertical;
 }
 .command-subtitle {
   display: -webkit-box;
@@ -1188,7 +1194,7 @@
     padding: 12px 46px 11px 13px;
     border-radius: 14px;
   }
-  .command-form input {
+  .command-form :is(input, textarea) {
     font-size: 12px;
   }
   .command-subtitle {

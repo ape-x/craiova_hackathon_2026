@@ -9,12 +9,14 @@ import json
 
 from pydantic import Field, field_validator, model_validator
 
+from .airport_catalog import lookup_airport
 from .hotel_recovery_profile import HotelRecoveryProfileError, read_hotel_recovery_profile
 from .models import Model, World
 from .store import DomainError
 
 
 MAX_CONTEXT_GROUPS = 8
+MAX_CONTEXT_AIRPORTS = 2 * MAX_CONTEXT_GROUPS + 1
 MAX_REFERENCE_BYTES = 6000
 
 
@@ -40,6 +42,40 @@ def _label(value: str, limit: int) -> str:
     # Labels are data, not instructions. Bound them without changing any ID or
     # using a truncated value to resolve a case or execute a command.
     return " ".join(value.split())[:limit]
+
+
+def _airport_vocabulary(world: World, groups, incident) -> dict:
+    """Catalog names for selected endpoint codes, never observed locations.
+
+    Airport node labels and coordinates may be operator-supplied. Resolve only
+    an unambiguous airport node's code against the local catalog; a hotel or an
+    unresolved endpoint ID must not turn into an airport by matching its text.
+    """
+    nodes = {}
+    ambiguous = set()
+    for node in world.airports:
+        previous = nodes.get(node.id)
+        if previous is not None and (previous.kind, previous.code) != (node.kind, node.code):
+            ambiguous.add(node.id)
+        nodes[node.id] = node
+    codes = []
+    for group in groups:
+        for endpoint in (group.origin, group.destination):
+            node = nodes.get(endpoint)
+            if node is not None and node.kind == "airport" and endpoint not in ambiguous:
+                codes.append(node.code)
+    if incident is not None and incident.unavailable_airport_code:
+        codes.append(incident.unavailable_airport_code)
+    entries = []
+    seen = set()
+    for code in codes:
+        airport = lookup_airport(code)
+        if airport is None or not airport["iata"] or airport["iata"] in seen:
+            continue
+        seen.add(airport["iata"])
+        entries.append({"iata": airport["iata"], "name": airport["name"]})
+    # At most two endpoints per displayed group and one explicit case airport.
+    return {"source": "local_airport_catalog", "entries": entries[:MAX_CONTEXT_AIRPORTS]}
 
 
 def build_voice_context(world: World, scope: VoiceScope) -> str:
@@ -77,6 +113,7 @@ def build_voice_context(world: World, scope: VoiceScope) -> str:
         },
         "groups": [],
         "other_groups_omitted": omitted,
+        "airport_vocabulary": _airport_vocabulary(world, groups, incident),
     }
     for item in groups:
         try:
