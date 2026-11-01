@@ -810,6 +810,7 @@
 }
 .command-form textarea {
   display: block;
+  field-sizing: content;
   min-height: 20px;
   max-height: 130px;
   resize: vertical;
