@@ -66,6 +66,8 @@ def _airport_vocabulary(world: World, groups, incident) -> dict:
                 codes.append(node.code)
     if incident is not None and incident.unavailable_airport_code:
         codes.append(incident.unavailable_airport_code)
+    if incident is not None:
+        codes.extend(item.airport_code for item in incident.airport_restrictions)
     entries = []
     seen = set()
     for code in codes:
@@ -74,7 +76,8 @@ def _airport_vocabulary(world: World, groups, incident) -> dict:
             continue
         seen.add(airport["iata"])
         entries.append({"iata": airport["iata"], "name": airport["name"]})
-    # At most two endpoints per displayed group and one explicit case airport.
+    # Keep the same byte/count bound: current case-restriction names fill only
+    # unused slots after the selected passenger endpoints and legacy case code.
     return {"source": "local_airport_catalog", "entries": entries[:MAX_CONTEXT_AIRPORTS]}
 
 

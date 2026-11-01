@@ -22,7 +22,7 @@ async def test_omitted_unsupported_constraint_blocks_recovery_and_preserves_worl
     before = store.read()
     req = request(store, claim + ". Recover RO321 for G1 with maximum 4 calls")
     result = await service.command(req)
-    assert result["applied"] is False and "nu este implementată" in result["explanation"]
+    assert result["applied"] is False and "nu este reprezentată complet" in result["explanation"]
     assert result["command_interpretation_calls"] == 1
     assert "recovery_job" not in result
     assert_no_report(store, before, jobs)
@@ -43,7 +43,7 @@ async def test_kept_arrival_with_dropped_airport_change_does_not_apply_partial_c
     before = store.read()
     result = await service.command(request(store,
         f"For RO321: {report['report_reference']}. {additional}. Recover RO321 for G1 with maximum 4 calls"))
-    assert result["applied"] is False and "nu este implementată" in result["explanation"]
+    assert result["applied"] is False and "nu este reprezentată complet" in result["explanation"]
     assert_no_report(store, before, jobs)
 
 

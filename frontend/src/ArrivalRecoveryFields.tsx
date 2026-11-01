@@ -5,13 +5,15 @@ import type { ArrivalRecoveryForm } from './arrivalRecoveryData';
 export function ArrivalRecoveryFields({
   value,
   onChange,
+  legend = 'Optional recalculation from the reported arrival',
 }: {
   value: ArrivalRecoveryForm;
   onChange: (value: ArrivalRecoveryForm) => void;
+  legend?: string;
 }) {
   return (
     <fieldset className="arrival-recovery-options">
-      <legend>Optional recalculation from the reported arrival</legend>
+      <legend>{legend}</legend>
       <div className="case-form-grid">
         <label className="field">
           Recovery objective

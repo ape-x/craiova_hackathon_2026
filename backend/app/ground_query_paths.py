@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from .airport_catalog import lookup_airport
+from .airport_constraints import airport_operation_search_allowed, case_airport_operation_blocked
 from .solver import connection_minutes, fixed_offers, resource_cost, resource_feasible, units
 
 
@@ -52,7 +53,6 @@ def ground_paths(world, group, occupied):
     preserves all intermediate pickup and arrival constraints.
     """
     nodes = {node.id: node for node in world.airports}
-    blocked = {case.unavailable_airport_code for case in world.incidents if case.id == group.incident_id}
     forward, reverse = defaultdict(list), defaultdict(list)
     for resource in world.resources:
         if resource.kind not in ("bus", "hotel") or resource.capacity - occupied[resource.id] < units(resource, group):
@@ -69,10 +69,12 @@ def ground_paths(world, group, occupied):
     for entries in reverse.values():
         entries.sort(key=lambda item: (-item.departure, resource_cost(item, group), item.id))
 
-    def airport(location):
+    def airport(location, backwards):
         node = nodes.get(location)
+        operation = "arrivals" if backwards else "departures"
         return bool(node and node.kind == "airport" and lookup_airport(node.code)
-            and node.code not in blocked and node.operational_status != "closed")
+            and airport_operation_search_allowed(node, operation)
+            and not case_airport_operation_blocked(world, group, node.code, operation))
 
     ready = max(world.sim_time, group.ready_at)
     budget = cents(group.budget)
@@ -93,7 +95,7 @@ def ground_paths(world, group, occupied):
             # bound itinerary remains available to the solver itself.
             if legs and not backwards and legs[-1].airport_arrival_assumption is not None:
                 continue
-            if airport(location):
+            if airport(location, backwards):
                 paths.append(GroundPath(location, minute, cost, frozenset(item.id for item in legs), locations, has_hotel))
             if len(legs) >= MAX_GROUND_LEGS:
                 continue

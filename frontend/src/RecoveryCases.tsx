@@ -2,6 +2,8 @@ import { ArrowUpRight, Plus } from 'lucide-react';
 import { incidentKindLabel, utcTimestamp } from './recoveryCase';
 import type { FlightSelection, RecoveryIncident, World } from './types';
 import { Tag } from './ui';
+import { CaseAirportRestrictions } from './AirportRestrictionPanel';
+import { activeCaseRestrictions } from './airportRestrictionData';
 import './recoveryCase.css';
 
 export function FlightFacts({ flight }: { flight: FlightSelection }) {
@@ -69,15 +71,18 @@ export function CaseSummary({ incident, world }: { incident: RecoveryIncident; w
         </Tag>
       </div>
       <p>
-        <strong>{incidentKindLabel(incident.kind)}</strong>
-        {incident.unavailable_airport_code ? ` · ${incident.unavailable_airport_code}` : ''}
+        <strong>Original incident · {incidentKindLabel(incident.kind)}</strong>
+        {(incident.original_unavailable_airport_code ?? incident.unavailable_airport_code)
+          ? ` · ${incident.original_unavailable_airport_code ?? incident.unavailable_airport_code}`
+          : ''}
       </p>
       <p>{incident.description}</p>
       <p className="field-hint">
-        Operator-reported constraint · {utcTimestamp(incident.created_at)}.{' '}
+        Operator-reported constraint at case creation · {utcTimestamp(incident.created_at)}.{' '}
         {incident.group_ids.length} linked groups · {people} passengers. A case does not establish
         available seats, rooms or bookings.
       </p>
+      <CaseAirportRestrictions incident={incident} />
       {incident.flight ? (
         <details className="case-flight-context">
           <summary>Flight context · Flightradar24</summary>
@@ -116,8 +121,13 @@ export default function RecoveryCases({
             <span>
               <strong>{incident.requested_flight_number}</strong>
               <small>
-                {incidentKindLabel(incident.kind)}
-                {incident.unavailable_airport_code ? ` · ${incident.unavailable_airport_code}` : ''}
+                Original: {incidentKindLabel(incident.kind)}
+                {(incident.original_unavailable_airport_code ?? incident.unavailable_airport_code)
+                  ? ` · ${incident.original_unavailable_airport_code ?? incident.unavailable_airport_code}`
+                  : ''}
+              </small>
+              <small>
+                {activeCaseRestrictions(incident).length} active airport directions restricted
               </small>
               <small>
                 {incident.status === 'needs_passenger_data'

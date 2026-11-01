@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from app.airport_catalog import lookup_airport
 from app.main import VoiceRequest, create_app
-from app.models import Airport
+from app.models import Airport, CaseAirportRestriction
 from app.providers import ProviderError, VoiceProvider
 from app.providers.voice import REFERENCE_POLICY
 from app.store import DomainError
@@ -19,6 +19,22 @@ from test_providers import FakeVoiceSocket, settings
 
 
 SDP = "v=0\r\no=offer"
+
+
+def test_current_case_restrictions_add_only_catalog_vocabulary_within_existing_bound(command_setup):
+    _, store, _, _, _ = command_setup
+    world = store.read()
+    world.incidents[0].airport_restrictions = [CaseAirportRestriction(
+        airport_code="LHR", operation=operation, report_id="opr_voice_vocabulary",
+        received_at="2026-11-01T09:00:00Z", description="PRIVATE operator constraint")
+        for operation in ("arrivals", "departures")]
+    before = world.model_dump(mode="json")
+    context = build_voice_context(world, VoiceScope(group_id="G1"))
+    entries = json.loads(context)["airport_vocabulary"]["entries"]
+    assert [entry["iata"] for entry in entries] == ["CRA", "OTP", "LHR"]
+    assert len(entries) <= MAX_CONTEXT_AIRPORTS and len(context.encode()) <= MAX_REFERENCE_BYTES
+    assert "PRIVATE" not in context and "arrivals" not in context and "departures" not in context
+    assert world.model_dump(mode="json") == before
 
 
 def test_group_selection_resolves_its_actual_case_without_private_source_data(hotel_command_setup):

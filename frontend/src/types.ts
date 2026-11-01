@@ -301,6 +301,31 @@ export interface FlightLookup {
   matches: FlightSelection[];
   message: string | null;
 }
+export type AirportOperation = 'arrivals' | 'departures';
+export interface CaseAirportRestriction {
+  airport_code: string;
+  operation: AirportOperation;
+  source: 'operator_report';
+  report_id: string;
+  received_at: string;
+  description: string;
+  inherited_from_legacy?: boolean;
+}
+export interface AirportRestrictionConflict {
+  group_id: string;
+  offer_id: string | null;
+  resource_ids: string[];
+}
+export interface AirportRestrictionHistory {
+  id: string;
+  type: 'airport_restriction';
+  source: 'operator_report';
+  received_at: string;
+  airport_code: string;
+  operations: AirportOperation[];
+  action: 'restrict' | 'clear';
+  description: string;
+}
 export interface RecoveryIncident {
   id: string;
   created_at: string;
@@ -311,6 +336,9 @@ export interface RecoveryIncident {
   date_utc: string;
   flight_ref: { lookup_id: string; selection_id: string };
   unavailable_airport_code: string | null;
+  airport_restrictions?: CaseAirportRestriction[];
+  original_unavailable_airport_code?: string | null;
+  airport_restriction_reports?: AirportRestrictionHistory[];
   group_ids: string[];
   status: 'needs_passenger_data' | 'open';
   flight: FlightSelection | null;
@@ -488,6 +516,16 @@ export type OperationalReportReceipt = {
       };
     }
   | { type: 'resource_unavailability'; resource_id: string; previous_available: boolean }
+  | {
+      type: 'airport_restriction';
+      incident_id: string;
+      airport_code: string;
+      operations: AirportOperation[];
+      action: 'restrict' | 'clear';
+      recovery_group_ids?: string[];
+      manual_review_required?: boolean;
+      confirmed_conflicts?: AirportRestrictionConflict[];
+    }
 );
 export interface RecoveryBlockedReceipt {
   code:
@@ -514,4 +552,6 @@ export interface MutationResult {
   recovery_provider_call_limit?: number;
   report?: OperationalReportReceipt;
   recovery_blocked?: RecoveryBlockedReceipt;
+  manual_review_required?: boolean;
+  confirmed_conflicts?: AirportRestrictionConflict[];
 }

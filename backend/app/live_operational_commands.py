@@ -21,7 +21,7 @@ from .operational_reports import (
     ArrivalReportInput, ResourceUnavailabilityInput, apply_arrival_report,
     apply_resource_unavailability,
 )
-from .providers.ai import LiveArrivalReport, LiveRecoveryIntent, LiveResourceUnavailability
+from .providers.ai import LiveAirportRestrictionReport, LiveArrivalReport, LiveRecoveryIntent, LiveResourceUnavailability
 from .recovery_jobs import RecoveryJobRequest
 from .store import DomainError, Store
 
@@ -302,6 +302,9 @@ def _job_request(world, request, case, groups, intent, total, report):
 
 
 def _unsupported_airport_change(text, *, allow_diversion_background=False):
+    from .live_airport_reports import has_airport_restriction_claim
+    if has_airport_restriction_claim(text):
+        return True
     value = normalized(text)
     if re.search(r"\b(?:(?:cannot|can not|can't|can’t|unable to|not able to)\s+(?:safely\s+)?land|nu\s+(?:mai\s+)?(?:poate|pot)\s+(?:sa\s+)?ateriz\w*)\b", value):
         return True
@@ -338,11 +341,18 @@ def _unsupported_airport_change(text, *, allow_diversion_background=False):
 
 def route_operational_report(commands, request, world, interpreted):
     raw = interpreted.get("operational_report")  # older durable records omit it
-    # Airport restrictions and aircraft movements have no live report contract.
-    # An omitted clause must not become recovery using unchanged airport facts,
-    # even when the model retained a separate, otherwise valid arrival report.
-    if _unsupported_airport_change(request.text, allow_diversion_background=isinstance(raw, dict) and raw.get("type") == "arrival_report"):
-        return commands._reply(request, world, "Cererea conține un posibil raport operațional despre închiderea aeroportului, imposibilitatea aterizării sau devierea avionului. Actualizarea acestei restricții aeroportuare nu este implementată în acest flux. Nu am înregistrat schimbarea, dedus poziția ori pregătirea pasagerilor sau pornit recuperarea pe condițiile vechi. Raportul explicit de poziție/pregătire poate fi trimis separat. Interpretarea a folosit 1 apel.")
+    # Only the explicitly retained airport assertion can change case conditions.
+    # A dropped second assertion must not queue recovery on partly changed facts.
+    guard_text = request.text
+    airport_report = isinstance(raw, dict) and raw.get("type") == "airport_restriction"
+    if airport_report:
+        try:
+            quote, start = _fragment(request.text, raw.get("report_reference"))
+            guard_text = request.text[:start] + " " * len(quote) + request.text[start + len(quote):]
+        except Clarification:
+            return commands._reply(request, world, "Referința restricției nu apare exact în cererea curentă. Nu am modificat cazul sau pornit căutarea. Interpretarea a folosit 1 apel.")
+    if _unsupported_airport_change(guard_text, allow_diversion_background=isinstance(raw, dict) and raw.get("type") == "arrival_report"):
+        return commands._reply(request, world, "Situația aeroportului sau avionului nu este reprezentată complet de un raport explicit valid. Numește cazul, aeroportul și restricția pentru aterizări/decolări sau eliminarea ei. Devierea și poziția/pregătirea pasagerilor sunt acțiuni distincte. Nu am aplicat schimbări sau pornit recuperarea pe condițiile vechi. Interpretarea a folosit 1 apel.")
     if raw is None:
         # A dropped report must not become a global event/plan for other groups.
         if (interpreted.get("events") or interpreted.get("strategies") or interpreted.get("recovery")) and re.search(
@@ -352,15 +362,25 @@ def route_operational_report(commands, request, world, interpreted):
     try:
         if not isinstance(raw, dict):
             raise ValueError("report object required")
-        model = LiveArrivalReport if raw.get("type") == "arrival_report" else LiveResourceUnavailability
+        model = {"arrival_report": LiveArrivalReport, "resource_unavailability": LiveResourceUnavailability,
+                 "airport_restriction": LiveAirportRestrictionReport}.get(raw.get("type"))
+        if model is None:
+            raise ValueError("unknown report type")
         report = model.model_validate(raw, strict=True)
         if interpreted.get("events") or interpreted.get("strategies"):
             raise Clarification("Nu combin raportul cu evenimente sau planuri globale. Separă celelalte modificări; nimic nu a fost aplicat.")
-        claim = _claim(request.text, report.report_reference, report.type)
+        claim = (_fragment(request.text, report.report_reference)[0] if airport_report
+                 else _claim(request.text, report.report_reference, report.type))
         if _recovery_requested(claim):
             raise Clarification("Raportul și cererea de căutare trebuie identificate separat; nu omit servicii sau condiții ascunse în citatul raportului.")
         case, groups, readiness_basis = None, [], None
-        if isinstance(report, LiveArrivalReport):
+        if isinstance(report, LiveAirportRestrictionReport):
+            from .live_airport_reports import ground_airport_restriction, _CLOSED, _OPEN, _LIFT, _RESTRICT, _INABILITY
+            if (any(re.search(pattern, normalized(guard_text)) for pattern in (_CLOSED, _OPEN, _LIFT, _RESTRICT, _INABILITY))
+                    or re.search(r"\b(?:ready|readiness|arrived|sosit|ajuns|pregatit\w*|gata|broken|defect\w*|stricat\w*)\b", normalized(guard_text))):
+                raise Clarification("Cererea mai conține o schimbare în afara raportului selectat. Trimite separat fiecare restricție sau raport de poziție/serviciu; nu aplic doar o parte.")
+            case, typed = ground_airport_restriction(world, request, report)
+        elif isinstance(report, LiveArrivalReport):
             case = _case(world, request.text, report.incident_id)
             groups = _groups(world, case, request.text, report.group_ids, report.all_linked_groups)
             # The assertion itself, not just a different request clause, binds scope.
@@ -386,7 +406,7 @@ def route_operational_report(commands, request, world, interpreted):
                 raise Clarification("Căutarea trebuie cerută explicit în comanda curentă, pentru cazul și grupurile numite.")
             selected_case = _case(world, request.text, recovery.incident_id)
             selected_groups = _groups(world, selected_case, request.text, recovery.group_ids, recovery.all_linked_groups)
-            if case is not None and (case.id != selected_case.id or groups != selected_groups):
+            if case is not None and (case.id != selected_case.id or (isinstance(report, LiveArrivalReport) and groups != selected_groups)):
                 raise Clarification("Raportul de poziție și recuperarea trebuie să numească exact același caz și aceleași grupuri; nu reduc sau extind selecția.")
             case, groups = selected_case, selected_groups
             total = _total_limit(request.text, recovery)
@@ -399,8 +419,12 @@ def route_operational_report(commands, request, world, interpreted):
     def apply(current):
         if current.scenario_id != world.scenario_id:
             raise DomainError(409, "Operation changed while interpreting this report")
-        result = (apply_arrival_report(current, case.id, typed, readiness_basis=readiness_basis) if isinstance(report, LiveArrivalReport)
-                  else apply_resource_unavailability(current, resource.id, typed))
+        if isinstance(report, LiveAirportRestrictionReport):
+            from .airport_restrictions import apply_airport_restriction_report
+            result = apply_airport_restriction_report(current, case.id, typed, recovery_group_ids=groups if recovery else None)
+        else:
+            result = (apply_arrival_report(current, case.id, typed, readiness_basis=readiness_basis) if isinstance(report, LiveArrivalReport)
+                      else apply_resource_unavailability(current, resource.id, typed))
         result.update(mode="ai", command_interpretation_calls=1)
         if case is not None:
             result["incident_id"] = case.id
@@ -413,6 +437,16 @@ def route_operational_report(commands, request, world, interpreted):
         if recovery is None:
             return
         current = commands.store._load(conn)
+        if isinstance(report, LiveAirportRestrictionReport):
+            from .airport_restrictions import enqueue_airport_restriction_recovery
+            job_request, failure = None, None
+            try:
+                job_request = _job_request(current, request, case, groups, recovery, total, report)
+            except RecoveryBlocked as exc:
+                failure = {"code": exc.code, "explanation": exc.explanation}
+            enqueue_airport_restriction_recovery(conn, commands.store, commands.jobs, response, typed,
+                job_request=job_request, recovery_blocked=failure, interpretation_calls=1, total_call_limit=total)
+            return
         try:
             job_request = _job_request(current, request, case, groups, recovery, total, report)
             try:

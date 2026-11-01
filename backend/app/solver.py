@@ -12,6 +12,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from .models import Allocation, Itinerary, Leg, PassengerGroup, Plan, Resource, Strategy, World
 from .airport_catalog import lookup_airport
+from .airport_constraints import flight_global_operations_allowed, resource_blocked_by_case
 from .weather import departure_allowed, landing_allowed, passenger_arrival_pending
 from .initial_position import valid_initial_position
 from .airport_arrival import valid_airport_arrival
@@ -107,20 +108,7 @@ def project_diversion(world: World, airport: str | None) -> tuple[World, list[di
 
 
 def resource_blocked_by_incident(world: World, resource: Resource, group: PassengerGroup) -> bool:
-    if world.mode!="live" or resource.kind!="flight" or not group.incident_id:
-        return False
-    incident=next((item for item in world.incidents if item.id==group.incident_id),None)
-    if not incident or not incident.unavailable_airport_code:
-        return False
-    points={resource.origin,resource.destination}
-    segments=resource.provenance.get("segments",[])
-    if isinstance(segments,list):
-        for segment in segments:
-            if isinstance(segment,dict):
-                points.update(value for value in (segment.get("origin"),segment.get("destination")) if isinstance(value,str))
-    if incident.unavailable_airport_code in points:
-        return True
-    return any((lookup_airport(point) or {}).get("code")==incident.unavailable_airport_code for point in points if len(point)==4)
+    return resource_blocked_by_case(world,resource,group)
 
 
 def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str, minute: int, used_ids: set[str]) -> bool:
@@ -159,9 +147,13 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
     if r.arrival <= r.departure or r.arrival > g.deadline or (g.accessible and not r.accessible):
         return False
     if r.kind == "flight":
-        airports = {a.id:a for a in world.airports}
-        if not departure_allowed(airports[r.origin]) or not landing_allowed(airports[r.destination]):
-            return False
+        if world.mode == "live":
+            if not flight_global_operations_allowed(world,r):
+                return False
+        else:
+            airports = {a.id:a for a in world.airports}
+            if not departure_allowed(airports[r.origin]) or not landing_allowed(airports[r.destination]):
+                return False
     if r.capacity < units(r,g):
         return False
     return True

@@ -77,6 +77,13 @@ export function voiceCommandAcknowledgement(result: MutationResult): string {
     parts.push(
       `Raport ${recorded}: serviciul ${report.resource_id} indisponibil pentru planificare.`,
     );
+  } else if (report?.type === 'airport_restriction') {
+    const operations = report.operations
+      .map((operation) => (operation === 'arrivals' ? 'aterizări' : 'decolări'))
+      .join(' și ');
+    parts.push(
+      `Raport ${recorded}: restricția cazului pentru ${report.airport_code}, ${operations}, ${report.action === 'restrict' ? 'aplicată' : 'eliminată'}.`,
+    );
   }
 
   if (job && blocked) {
@@ -155,11 +162,13 @@ export function voiceCommandAcknowledgement(result: MutationResult): string {
     parts.push('Vezi progresul curent în panoul cazului.');
   }
   const qualification =
-    report?.type === 'arrival_report'
-      ? 'Date raportate, nu confirmare de aterizare, autorizare aeroportuară, itinerar sau rezervare.'
-      : report
-        ? 'Nu este anulare la furnizor, itinerar confirmat sau rezervare.'
-        : 'Nu confirmă un itinerar sau o rezervare.';
+    report?.type === 'airport_restriction'
+      ? `${result.manual_review_required || report.manual_review_required ? 'Rezervări confirmate în conflict; intervenție necesară. ' : ''}Condiție a cazului; nu confirmă permisiunea de zbor, sosirea pasagerilor sau rezervarea.`
+      : report?.type === 'arrival_report'
+        ? 'Date raportate, nu confirmare de aterizare, autorizare aeroportuară, itinerar sau rezervare.'
+        : report
+          ? 'Nu este anulare la furnizor, itinerar confirmat sau rezervare.'
+          : 'Nu confirmă un itinerar sau o rezervare.';
   const available = 480 - new TextEncoder().encode(qualification).byteLength - 1;
   return `${boundedContext(parts.join(' '), available)} ${qualification}`;
 }

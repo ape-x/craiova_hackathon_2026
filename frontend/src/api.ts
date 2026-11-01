@@ -13,6 +13,7 @@ import type {
 } from './types';
 import type { PlanningTransferInput, PlanningTransferQuote } from './planningTransferData';
 import type { ArrivalReportInput } from './operationalReports';
+import type { AirportRestrictionInput } from './airportRestrictionData';
 
 export class ApiError extends Error {
   constructor(
@@ -152,6 +153,12 @@ export const api = {
     }),
   reportArrival: (world: World, incidentId: string, input: ArrivalReportInput) =>
     request<MutationResult>(`/incidents/${encodeURIComponent(incidentId)}/arrival-report`, {
+      ...input,
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
+  reportAirportRestriction: (world: World, incidentId: string, input: AirportRestrictionInput) =>
+    request<MutationResult>(`/incidents/${encodeURIComponent(incidentId)}/airport-restrictions`, {
       ...input,
       expected_version: world.version,
       idempotency_key: key(),

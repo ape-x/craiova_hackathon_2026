@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 from pydantic import Field, field_validator, model_validator
 
 from .airport_catalog import lookup_airport
+from .airport_constraints import flight_global_operations_allowed
 from .hotel_location import coordinate_timezone
 from .initial_position import InitialPositionAssumption, initial_position_fingerprint
 from .airport_arrival import AirportArrivalAssumption, onward_flight_fingerprint, valid_airport_arrival
@@ -156,7 +157,8 @@ def transfer_context(world, request, *, now):
                 or flight.provenance.get("provider") != flight.source or flight.provenance.get("origin") != flight.origin
                 or flight.provenance.get("destination") != flight.destination or flight.eligible_group_ids != [group.id]
                 or flight.booking_status != "unbooked" or not flight.available or not live_resource_current(flight)
-                or flight.capacity < group.size or flight.arrival > group.deadline or resource_blocked_by_incident(world, flight, group)):
+                or flight.capacity < group.size or flight.arrival > group.deadline or resource_blocked_by_incident(world, flight, group)
+                or not flight_global_operations_allowed(world, flight)):
             raise DomainError(409, "The onward flight must be a current, available sourced quote for this exact group and its incident constraints")
         try:
             actual_departure = aware_timestamp(flight.provenance["departure_at"])

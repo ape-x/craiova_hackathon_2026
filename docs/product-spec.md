@@ -2,7 +2,7 @@
 
 ## Recuperare asistată a pasagerilor, cu date și cotații reale
 
-**Versiune:** 2.2 — 1 noiembrie 2026. Acest document descrie produsul live actual. Conceptul inițial a fost pregătit pentru secțiunea AUTOPILOT a [Craiova Hackathon](https://www.craiovahackathon.ro/); imaginile de concept rămân repere vizuale.
+**Versiune:** 2.3 — 1 noiembrie 2026. Acest document descrie produsul live actual. Conceptul inițial a fost pregătit pentru secțiunea AUTOPILOT a [Craiova Hackathon](https://www.craiovahackathon.ro/); imaginile de concept rămân repere vizuale.
 
 **Implementare:** FastAPI + React/TypeScript, disponibilă într-o singură instanță locală la `http://localhost:8080`. [README](../README.md) descrie operarea; [raportul de verificare](verification/report.md) separă probele reale, testele offline și verificările rămase.
 
@@ -25,6 +25,10 @@ Aria automată actuală cuprinde căutarea zborurilor pentru grupuri explicit le
 5. **Verifică rezultatul.** Urmărește etapele reale, furnizorii, cotațiile și motivele excluderii alternativelor. O propunere validă poate coexista cu alte cotații respinse. Numărul pasagerilor fără soluție este separat de istoricul căutărilor nereușite.
 6. **Completează serviciile lipsă.** Hotelurile necesită date și ocupare explicite, costuri obligatorii cunoscute și conexiuni fizice independente. Un serviciu introdus de operator necesită dovezi, capacitate, preț, orar și valabilitate.
 7. **Primește preferința pasagerului.** Acceptarea sau refuzul actualizează aceeași stare operațională. Acceptarea nu confirmă o rezervare la furnizor. Confirmarea externă este o acțiune distinctă, documentată pentru fiecare segment.
+
+Condițiile aeroportului pot fi actualizate în cazul existent, din **Airport restrictions** sau printr-o comandă explicită: „Pentru RO321, OTP nu mai permite aterizarea. Recalculează pentru G1, maximum patru apeluri.” Raportul numește aeroportul, aterizările/decolările sau ambele și restricționarea/eliminarea restricției. Poate fi înregistrat singur sau împreună cu recuperarea grupurilor selectate. Interdicția se aplică acelui caz, inclusiv escalelor zborurilor; nu mută pasagerii și nu schimbă observația FR24. Legăturile rutiere pot continua să ajungă în zona aeroportului.
+
+Eliminarea unei restricții raportate de operator nu anulează restricțiile meteo sau externe. Un caz vechi cu aeroport indisponibil păstrează ambele direcții până la o actualizare explicită; migrarea și ultimele zece rapoarte sunt vizibile, iar auditul este persistent. Doar propunerile încă neconfirmate și dependente sunt invalidate. Rezervările confirmate rămân intacte, cu conflicte afișate pentru intervenție; căutarea nu consumă apeluri suplimentare când un asemenea conflict cunoscut o blochează. Sunt acceptate restricții curente până la eliminarea explicită; intervalele viitoare, istorice sau condiționale necesită clarificare și nu devin automat o închidere imediată.
 
 Contextul FR24 are retenție limitată. Reîmprospătarea unui caz trebuie să păstreze aceeași cursă; nu selectăm automat un alt zbor. Înregistrarea unui caz nou nu resetează operațiunea existentă.
 
@@ -162,7 +166,7 @@ Limita comenzii include apelul de interpretare: implicit opt apeluri în total, 
 
 După un plan hotelier complet reușit, profilul exact se salvează pentru grup și caz. O comandă text/vocală explicită poate refolosi configurația cu toate cele trei moduri și cel puțin **11 apeluri totale**, incluzând interpretarea; limita implicită rămâne opt. Fără profil salvat se completează formularul. Reutilizarea reverifică identitatea, constrângerile și orele exacte înainte de noi căutări; nu mută datele și nu transformă cotațiile vechi în disponibilitate curentă. O rulare eșuată, anulată sau cu rezultat necunoscut nu înlocuiește profilul. Implementarea acestei căi nu constituie încă dovada unei recuperări complete prin voce în browser.
 
-Contextul vocal include acum codurile și denumirile canonice ale aeroporturilor din selecție, într-un vocabular limitat și rezolvat din catalogul local. Acestea ajută la referințe; nu stabilesc poziția pasagerilor, disponibilitatea aeroportului sau permisiunea de aterizare și nu autorizează corectarea transcrierii. Verificarea rapoartelor recunoaște denumirile complete fără a considera orașul din același nume un al doilea aeroport. Orașele ambigue, numele comune mai multor aeroporturi și mențiunile separate rămân motive de clarificare; „Le Havre” nu este înlocuit cu Heathrow.
+Contextul vocal include acum codurile și denumirile canonice ale aeroporturilor din selecție și ale restricțiilor active ale cazului, într-un vocabular limitat și rezolvat din catalogul local. Acestea ajută la referințe; nu stabilesc poziția pasagerilor, disponibilitatea aeroportului sau permisiunea de aterizare și nu autorizează corectarea transcrierii. Verificarea rapoartelor recunoaște denumirile complete fără a considera orașul din același nume un al doilea aeroport. Orașele ambigue, numele comune mai multor aeroporturi și mențiunile separate rămân motive de clarificare; „Le Havre” nu este înlocuit cu Heathrow.
 
 **Review voice request** păstrează în pagina curentă textul exact al ultimei delegări vocale și rezultatul confirmat de backend. După o respingere sau un răspuns explicit fără aplicare, operatorul poate închide sesiunea vocală și copia textul în câmpul obișnuit, dacă acesta este gol. Copierea nu trimite nimic; modificarea și trimiterea ulterioară sunt explicite. Pentru un rezultat necunoscut rămâne disponibilă numai recuperarea aceleiași cereri prin notificarea existentă. Rezultatele întârziate nu înlocuiesc revizia unei alte delegări sau operațiuni. Aceste controale nu constituie o verificare nouă a recunoașterii vocale.
 

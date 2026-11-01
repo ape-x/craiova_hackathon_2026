@@ -11,6 +11,7 @@ import time
 from pydantic import Field, field_validator, model_validator
 
 from .airport_catalog import lookup_airport
+from .airport_constraints import airport_operation_search_allowed, case_airport_operation_blocked, canonical_airport_code, flight_global_operations_allowed
 from .hotel_location import coordinate_timezone, property_location, property_zone
 from .hotel_recovery_profile import PROFILE_KEY, build_hotel_recovery_profile
 from .live_service import HotelQuoteImport, LiveOperations, _hotel_budget_total
@@ -118,9 +119,14 @@ def validate_hotel_job(world, request):
         if (not uk or meters_between({"latitude":airport["lat"],"longitude":airport["lon"]},point.model_dump()) > 10_000
                 or len(terminal_ids(point.label)) > 1):
             raise DomainError(422, "Declare one point within 10 km of each supported UK airport; this is an app geographic screen, not terminal verification")
-    blocked = {item.unavailable_airport_code for item in world.incidents if item.id == group.incident_id}
-    if onward["code"] in blocked or destination.code in blocked or onward["code"] == destination.code:
+    if (case_airport_operation_blocked(world,group,onward["code"],"departures")
+            or case_airport_operation_blocked(world,group,destination.code,"arrivals")
+            or onward["code"] == destination.code):
         raise DomainError(422, "The requested onward flight route conflicts with the incident or has identical endpoints")
+    for code,operation in ((onward["code"],"departures"),(destination.code,"arrivals")):
+        if any(node.kind=="airport" and canonical_airport_code(node.code)==code
+                and not airport_operation_search_allowed(node,operation) for node in world.airports):
+            raise DomainError(422, "The onward flight conflicts with current airport availability or weather")
     epoch = aware_timestamp(world.epoch)
     pickup = (inputs.pickup_at-epoch).total_seconds()/60
     checkout = (inputs.checkout_at-epoch).total_seconds()/60
@@ -266,7 +272,7 @@ async def run_hotel_recovery(jobs, job, owner, world, started):
             # and processing. Check the exact source instant before choosing the
             # shared return context; an inclusive provider lower bound is not enough.
             actual_departure=aware_timestamp(resource.provenance["departure_at"])
-            if resource_blocked_by_incident(trial,resource,group) or actual_departure<earliest+timedelta(minutes=1) or resource.arrival>group.deadline:
+            if resource_blocked_by_incident(trial,resource,group) or not flight_global_operations_allowed(trial,resource) or actual_departure<earliest+timedelta(minutes=1) or resource.arrival>group.deadline:
                 continue
             projected=trial
             imported.append((quote,resource.id))

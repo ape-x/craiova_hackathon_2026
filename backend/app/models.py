@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_serializer, model_validator
 from .scenario_schema import STRUCTURED_PAYLOADS, WeatherDefinition
 from .pricing import AplPriceEvidence, AplQuoteFreshness, CostEvidence
 from .initial_position import InitialPositionAssumption
@@ -224,6 +224,40 @@ class IncidentFlightReference(Model):
     selection_id: str
 
 
+AirportOperation = Literal["arrivals", "departures"]
+MAX_CASE_AIRPORT_RESTRICTIONS = 64
+
+
+class CaseAirportRestriction(Model):
+    airport_code: str = Field(min_length=3, max_length=4)
+    operation: AirportOperation
+    source: Literal["operator_report"] = "operator_report"
+    report_id: str = Field(min_length=1, max_length=128)
+    received_at: str = Field(min_length=1, max_length=64)
+    description: str = Field(min_length=1, max_length=2000)
+    inherited_from_legacy: bool = False
+
+    @field_validator("airport_code")
+    @classmethod
+    def canonical_airport(cls, value):
+        from .airport_catalog import lookup_airport
+        airport = lookup_airport(value)
+        if airport is None or airport["code"] != value:
+            raise ValueError("Active restrictions require a canonical airport code")
+        return value
+
+
+class CaseAirportRestrictionReport(Model):
+    id: str = Field(min_length=1, max_length=128)
+    type: Literal["airport_restriction"] = "airport_restriction"
+    source: Literal["operator_report"] = "operator_report"
+    received_at: str = Field(min_length=1, max_length=64)
+    airport_code: str = Field(min_length=3, max_length=4)
+    operations: list[AirportOperation] = Field(min_length=1, max_length=2)
+    action: Literal["restrict", "clear"]
+    description: str = Field(min_length=1, max_length=2000)
+
+
 class RecoveryIncident(Model):
     id: str
     created_at: str
@@ -234,11 +268,32 @@ class RecoveryIncident(Model):
     date_utc: str
     flight_ref: IncidentFlightReference
     unavailable_airport_code: str | None = None
+    original_unavailable_airport_code: str | None = None
+    airport_restrictions: list[CaseAirportRestriction] = Field(default_factory=list, max_length=MAX_CASE_AIRPORT_RESTRICTIONS)
+    airport_restriction_reports: list[CaseAirportRestrictionReport] = Field(default_factory=list, max_length=10)
     group_ids: list[str] = Field(default_factory=list)
     status: Literal["needs_passenger_data", "open"] = "needs_passenger_data"
     # Hydrated from a bounded cache; never stored in operational snapshots.
     flight: FlightSelection | None = None
     flight_context_state: Literal["available", "expired"] = "expired"
+
+    @field_validator("airport_restrictions")
+    @classmethod
+    def unique_airport_operations(cls, entries):
+        identities = {(entry.airport_code, entry.operation) for entry in entries}
+        if len(identities) != len(entries):
+            raise ValueError("Each case airport operation may have only one active restriction")
+        return entries
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_payload(self, handler):
+        result = handler(self)
+        # Existing jobs/receipts compare durable scope fingerprints. Introducing
+        # unused restriction fields must not change their original payloads.
+        for field in ("airport_restrictions", "airport_restriction_reports", "original_unavailable_airport_code"):
+            if not result.get(field):
+                result.pop(field, None)
+        return result
 
 
 class World(Model):

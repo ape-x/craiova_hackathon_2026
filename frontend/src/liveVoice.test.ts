@@ -38,6 +38,43 @@ function queuedJob(overrides: Partial<RecoveryJob> = {}): RecoveryJob {
 }
 
 describe('bounded voice acknowledgements from authoritative receipts', () => {
+  it.each(['restrict', 'clear'] as const)(
+    'acknowledges a case restriction %s without announcing an airport opening or passenger movement',
+    (action) => {
+      const content = voiceCommandAcknowledgement(
+        reportReceipt({
+          manual_review_required: true,
+          report: {
+            id: 'opr_airport',
+            source: 'operator_report',
+            type: 'airport_restriction',
+            received_at: '2026-11-01T09:00:00Z',
+            description: 'Operator statement.',
+            incident_id: 'CASE1',
+            airport_code: 'OTP',
+            operations: ['arrivals'],
+            action,
+            recovery_group_ids: [],
+            affected_group_ids: [],
+            affected_offer_ids: [],
+            manual_review_required: true,
+            confirmed_conflicts: [{ group_id: 'G1', offer_id: 'O1', resource_ids: ['F1'] }],
+          },
+        }),
+      );
+      expect(content).toContain(
+        `OTP, aterizări, ${action === 'restrict' ? 'aplicată' : 'eliminată'}`,
+      );
+      expect(content).toContain('Nu am pornit o căutare.');
+      expect(content).toContain('Rezervări confirmate în conflict; intervenție necesară.');
+      expect(content).toContain(
+        'nu confirmă permisiunea de zbor, sosirea pasagerilor sau rezervarea',
+      );
+      expect(content).not.toMatch(/decolări|aeroportul este deschis|pasagerii au sosit/);
+      expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+    },
+  );
+
   it('separates the recorded arrival/readiness from clearance, journey completion and a search', () => {
     const content = voiceCommandAcknowledgement(
       reportReceipt({

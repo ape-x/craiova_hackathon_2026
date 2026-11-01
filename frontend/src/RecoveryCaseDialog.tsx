@@ -25,6 +25,7 @@ import { passengerSourceLabel } from './liveData';
 import './recoveryCase.css';
 import RecoveryJobPanel from './RecoveryJobPanel';
 import { ArrivalReportPanel } from './OperationalReportForms';
+import { AirportRestrictionPanel } from './AirportRestrictionPanel';
 
 type ActionKind = 'create' | 'bind' | 'refresh';
 export default function RecoveryCaseDialog({
@@ -59,6 +60,7 @@ export default function RecoveryCaseDialog({
   const [busy, setBusy] = useState(false);
   const [jobSubmissionPending, setJobSubmissionPending] = useState(false);
   const [arrivalReportPending, setArrivalReportPending] = useState(false);
+  const [restrictionPending, setRestrictionPending] = useState(false);
   const [arrivalRefresh, setArrivalRefresh] = useState(0);
   const [arrivalJob, setArrivalJob] = useState<RecoveryJob | null>(null);
   const [uncertain, setUncertain] = useState<{ error: TransportError; kind: ActionKind } | null>(
@@ -71,7 +73,12 @@ export default function RecoveryCaseDialog({
   const generation = useRef(0);
   const mounted = useRef(true);
   const running = useRef(false);
-  const locked = busy || Boolean(uncertain) || jobSubmissionPending || arrivalReportPending;
+  const locked =
+    busy ||
+    Boolean(uncertain) ||
+    jobSubmissionPending ||
+    arrivalReportPending ||
+    restrictionPending;
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
   const close = useCallback(() => {
@@ -315,7 +322,7 @@ export default function RecoveryCaseDialog({
               key={`arrival:${incident.id}`}
               world={world}
               incident={incident}
-              disabled={busy || Boolean(uncertain) || jobSubmissionPending}
+              disabled={busy || Boolean(uncertain) || jobSubmissionPending || restrictionPending}
               onApplied={(result) => {
                 setArrivalJob(
                   result.recovery_job?.incident_id === incident.id ? result.recovery_job : null,
@@ -326,11 +333,26 @@ export default function RecoveryCaseDialog({
               onRefresh={onRefresh}
               onMutationPending={setArrivalReportPending}
             />
+            <AirportRestrictionPanel
+              key={`restriction:${incident.id}`}
+              world={world}
+              incident={incident}
+              disabled={busy || Boolean(uncertain) || jobSubmissionPending || arrivalReportPending}
+              onApplied={(result) => {
+                setArrivalJob(
+                  result.recovery_job?.incident_id === incident.id ? result.recovery_job : null,
+                );
+                setArrivalRefresh((value) => value + 1);
+                onApplied(result);
+              }}
+              onRefresh={onRefresh}
+              onMutationPending={setRestrictionPending}
+            />
             <RecoveryJobPanel
               key={incident.id}
               world={world}
               incident={incident}
-              disabled={busy || Boolean(uncertain) || arrivalReportPending}
+              disabled={busy || Boolean(uncertain) || arrivalReportPending || restrictionPending}
               onRefresh={onRefresh}
               onMutationPending={setJobSubmissionPending}
               refreshSignal={arrivalRefresh}

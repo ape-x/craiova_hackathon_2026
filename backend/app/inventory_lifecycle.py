@@ -143,6 +143,9 @@ def validate_location_identity(world, node):
 
 def _resource_locations(resource):
     ids = {resource.origin, resource.destination}
+    if resource.kind == "flight":
+        from .airport_constraints import flight_airport_operations
+        ids.update(code for code, _ in flight_airport_operations(resource).operations)
     initial = resource.initial_position_assumption
     if initial:
         ids.update((initial.point_id, initial.airport_context_id))
@@ -189,6 +192,11 @@ def protected_inventory(world, *, removing_resource_ids=(), keep_resource_ids=()
     for incident in world.incidents:
         if incident.unavailable_airport_code:
             locations.add(incident.unavailable_airport_code)
+            from .airport_constraints import canonical_airport_code
+            canonical = canonical_airport_code(incident.unavailable_airport_code)
+            if canonical:
+                locations.add(canonical)
+        locations.update(entry.airport_code for entry in incident.airport_restrictions)
         if incident.flight:
             for key in ("origin", "intended_destination", "actual_destination"):
                 airport = getattr(incident.flight, key)

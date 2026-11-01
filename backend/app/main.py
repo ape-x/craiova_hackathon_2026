@@ -37,6 +37,7 @@ from .service import RecoveryService
 from .store import DomainError, Store, utcnow
 from .voice_context import VoiceScope, build_voice_context
 from .operational_reports import ArrivalReportInput, OperationalReports, ResourceUnavailabilityInput
+from .airport_restrictions import AirportRestrictionReportInput, AirportRestrictions
 from .inventory_history import create_inventory_history_router
 
 
@@ -106,6 +107,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     service.live_commands=LiveCommands(store,jobs)
     ground_planning=GroundPlanning(store,ground_transfers,real_data.provider)
     operational_reports=OperationalReports(store,jobs)
+    airport_restrictions=AirportRestrictions(store,jobs)
     login_attempts=defaultdict(deque)
     # Reserve worst-case credit cost in the persistent shared request ledger;
     # restarting or adding a worker cannot replenish the paid provider budget.
@@ -160,6 +162,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     app.state.coach_fares=coach_fares
     app.state.ground_planning=ground_planning
     app.state.operational_reports=operational_reports
+    app.state.airport_restrictions=airport_restrictions
     app.add_middleware(CORSMiddleware,allow_origins=settings.origins,allow_credentials=True,allow_methods=["GET","POST","DELETE"],allow_headers=["Content-Type","Authorization","Last-Event-ID"])
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[h.strip() for h in settings.allowed_hosts.split(",")])
     app.add_middleware(BodySizeLimit,max_bytes=settings.max_request_bytes)
@@ -331,6 +334,10 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     @app.post("/api/incidents/{incident_id}/arrival-report",dependencies=[Depends(operator)])
     def incident_arrival_report(incident_id: str,body: ArrivalReportInput):
         return operational_reports.arrival(incident_id,body)
+
+    @app.post("/api/incidents/{incident_id}/airport-restrictions",dependencies=[Depends(operator)])
+    def incident_airport_restriction(incident_id: str,body: AirportRestrictionReportInput):
+        return airport_restrictions.report(incident_id,body)
 
     @app.post("/api/incidents/{incident_id}/refresh-flight",dependencies=[Depends(operator)])
     def incident_refresh(incident_id: str,body: FlightContextSelection):

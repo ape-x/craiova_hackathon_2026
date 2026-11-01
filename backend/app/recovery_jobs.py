@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import Field, field_validator, model_serializer
 
 from .airport_catalog import lookup_airport
+from .airport_constraints import case_airport_operation_blocked
 from .hotel_location import coordinate_timezone, property_zone
 from .hotel_recovery import HotelRecoveryInputs, _rates, _restore_rates, run_hotel_recovery, validate_hotel_job
 from .live_data import identifier
@@ -75,6 +76,39 @@ def scope_fingerprint(world,incident_id,group_ids):
 
 def gap(code,message,group_ids):
     return {"code":code,"message":message,"group_ids":list(group_ids)}
+
+
+def fixed_confirmed_airport_conflicts(world):
+    """Find fixed confirmed flight legs rejected by a current linked case rule.
+
+    Scoped candidate validation retains every confirmed offer, including those
+    in another case. Only those fixed offers are checked here: an orphan booking
+    record or a historical declined proposal is not proof of a fixed conflict.
+    Current source segments and retained itinerary endpoints are facts already
+    recorded in the world; missing source segments are never reconstructed.
+    """
+    if world.mode != "live":
+        return []
+    groups = {group.id: group for group in world.groups}
+    resources = {resource.id: resource for resource in world.resources}
+    conflicts = []
+    for offer in world.offers:
+        group = groups.get(offer.group_id)
+        if offer.status != "confirmed" or group is None:
+            continue
+        blocked = set()
+        for leg in offer.itinerary.legs:
+            if leg.kind != "flight":
+                continue
+            resource = resources.get(leg.resource_id)
+            if ((resource is not None and resource.kind == "flight" and resource_blocked_by_incident(world, resource, group))
+                    or case_airport_operation_blocked(world, group, leg.origin, "departures")
+                    or case_airport_operation_blocked(world, group, leg.destination, "arrivals")):
+                blocked.add(leg.resource_id)
+        if blocked:
+            conflicts.append({"incident_id": group.incident_id, "group_id": group.id,
+                "offer_id": offer.id, "resource_ids": sorted(blocked)})
+    return conflicts
 
 
 def journey_waits(world,plan):
@@ -393,6 +427,14 @@ class RecoveryJobs:
         if world.scenario_id!=job["_scenario_id"] or scope_fingerprint(world,job["incident_id"],job["group_ids"])!=job["_scope_hash"]:
             raise DomainError(409,"Selected passengers or incident constraints changed. No new provider request was issued; review and start a new job explicitly.")
         if await self._cancelled(job,owner):
+            return
+        conflicts = await asyncio.to_thread(fixed_confirmed_airport_conflicts, world)
+        if conflicts:
+            await self._update(job, owner, status="blocked", stage="finished",
+                message="Fixed confirmed travel conflicts with case airport restrictions. Manual review is required before recovery; no provider request was issued and no booking was changed.",
+                gaps=[gap("confirmed_airport_restriction_conflict",
+                    "Confirmed flight itineraries retained by every recovery candidate cannot pass the current airport restrictions of their linked cases. Review those confirmed journeys before starting another recovery; out-of-scope bookings were not cancelled or replaced.",
+                    sorted({item["group_id"] for item in conflicts}))])
             return
         groups=[item for item in world.groups if item.id in job["group_ids"]]
         gaps=[]

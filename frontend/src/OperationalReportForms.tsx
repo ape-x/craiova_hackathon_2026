@@ -28,7 +28,7 @@ type MutationProps = {
   onRefresh: () => Promise<unknown>;
 };
 
-function useReportMutation(
+export function useReportMutation(
   { onApplied, onRefresh }: MutationProps,
   onPending?: (pending: boolean) => void,
 ) {
@@ -94,7 +94,7 @@ function useReportMutation(
   return { locked, busy, uncertain, error, success, result, run, setError, allowClose };
 }
 
-function ReportFeedback({ mutation }: { mutation: ReturnType<typeof useReportMutation> }) {
+export function ReportFeedback({ mutation }: { mutation: ReturnType<typeof useReportMutation> }) {
   return (
     <>
       {mutation.error && (
@@ -107,7 +107,9 @@ function ReportFeedback({ mutation }: { mutation: ReturnType<typeof useReportMut
           {mutation.success}
         </p>
       )}
-      {mutation.result && <ArrivalRecoveryReceipt result={mutation.result} />}
+      {mutation.result?.report?.type === 'arrival_report' && (
+        <ArrivalRecoveryReceipt result={mutation.result} />
+      )}
       {mutation.uncertain && (
         <button
           type="button"
