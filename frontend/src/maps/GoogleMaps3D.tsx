@@ -106,7 +106,7 @@ export function GeographicLegend({
   );
 }
 
-/** Mount only after the operator explicitly chooses the geographic view. */
+/** Default geography in live mode; an explicit geographic option in simulation. */
 export default function GoogleMaps3D({
   world,
   mode,

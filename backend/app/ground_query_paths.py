@@ -3,13 +3,13 @@
 This module only reads dated resources. It never creates transport or requests
 a quote; a later solver still validates the complete priced itinerary.
 """
-from collections import Counter, defaultdict, deque
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from decimal import Decimal
 
 from .airport_catalog import lookup_airport
 from .airport_constraints import airport_operation_search_allowed, case_airport_operation_blocked
-from .solver import connection_minutes, fixed_offers, resource_cost, resource_feasible, units
+from .solver import connection_minutes, fixed_itinerary_usage, fixed_offers, resource_cost, resource_feasible, units
 
 
 MAX_GROUND_LEGS = 5  # The live solver allows six legs, including the flight.
@@ -36,13 +36,8 @@ def cents(value):
 
 
 def fixed_capacity(world, group_ids):
-    """Match the solver's reservations that this recovery cannot replace."""
-    identities = {offer.id for offer in fixed_offers(world, set(group_ids))}
-    occupied = Counter()
-    for item in world.reservations:
-        if item.offer_id in identities and item.status in ("held", "proposed", "accepted", "confirmed"):
-            occupied[item.resource_id] += item.quantity
-    return occupied
+    """Match the solver's retained allocations without counting mirrored rows."""
+    return fixed_itinerary_usage(world, fixed_offers(world, set(group_ids)))
 
 
 def ground_paths(world, group, occupied):

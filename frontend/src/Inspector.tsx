@@ -45,6 +45,7 @@ import { AirportArrivalDetails, SupplierMeetingInstructions } from './TransferEv
 import { AirportCabFareDetails, isAirportCab } from './airportCabPresentation';
 import PostflightConnectionDetails from './PostflightConnectionDetails';
 import { groupRecoveryEntry, type GroupRecoveryIntent } from './groupRecoveryEntry';
+import { resolveRecoveryItinerary, type RecoveryItineraryIntent } from './recoveryItineraryReview';
 import {
   costPresentation,
   EstimatedCostNote,
@@ -898,6 +899,9 @@ export default function Inspector({
   onClose,
   onReplan,
   onGroupRecovery,
+  itineraryReview,
+  onReturnToRecoveryCase,
+  reviewReturnDisabled = false,
   onScenario,
   onApplied,
   onRefresh,
@@ -911,6 +915,9 @@ export default function Inspector({
   onClose: () => void;
   onReplan: () => void;
   onGroupRecovery?: (intent: GroupRecoveryIntent) => void;
+  itineraryReview?: RecoveryItineraryIntent;
+  onReturnToRecoveryCase?: () => void;
+  reviewReturnDisabled?: boolean;
   onScenario: () => void;
   onApplied?: (result: MutationResult) => void;
   onRefresh?: () => Promise<unknown>;
@@ -931,7 +938,17 @@ export default function Inspector({
     (item) => String(item.id ?? item.fr24_id) === selectedId,
   );
   const provenance = observation ? observationInfo(observation) : undefined;
-  const offer = group ? activeOffer(world, group.id) : undefined;
+  const exactReview =
+    itineraryReview && selectedId === itineraryReview.groupId
+      ? resolveRecoveryItinerary(world, itineraryReview, now)
+      : null;
+  const offer = exactReview
+    ? exactReview.kind === 'ready'
+      ? exactReview.offer
+      : undefined
+    : group
+      ? activeOffer(world, group.id)
+      : undefined;
   const resourceImpact = resource ? deriveResourceImpact(world, resource) : null;
   const dependentGroups = resource
     ? world.groups.filter((item) =>
@@ -976,7 +993,7 @@ export default function Inspector({
               ? 'Recovery plan'
               : 'Overview';
   return (
-    <aside className="inspector" aria-label="Operations inspector">
+    <aside className="inspector" aria-label="Operations inspector" tabIndex={-1}>
       <div className="inspector-heading">
         <h2>{title}</h2>
         {selectedId && (
@@ -986,6 +1003,27 @@ export default function Inspector({
         )}
       </div>
       <div className="inspector-scroll">
+        {itineraryReview && onReturnToRecoveryCase && (
+          <section className="inspector-section" aria-label="Recorded itinerary review">
+            <p className="field-hint">Recovery result · {itineraryReview.offerId}</p>
+            {exactReview?.kind === 'unavailable' && (
+              <p className="case-source-warning" role="status">
+                {exactReview.reason}
+              </p>
+            )}
+            <button
+              type="button"
+              className="secondary-button full"
+              disabled={reviewReturnDisabled}
+              onClick={() => {
+                if (!reviewReturnDisabled) onReturnToRecoveryCase();
+              }}
+            >
+              Return to recovery case
+            </button>
+            <p className="field-hint">Your unsent search selection and inputs are retained.</p>
+          </section>
+        )}
         {!showLog && group ? (
           <>
             <div className="entity-heading">
@@ -1073,7 +1111,7 @@ export default function Inspector({
                 )}
               </div>
             )}
-            {world.mode === 'live' && (
+            {world.mode === 'live' && !itineraryReview && (
               <GroupRecoveryAction
                 world={world}
                 groupId={group.id}
@@ -1081,7 +1119,7 @@ export default function Inspector({
                 onGroupRecovery={onGroupRecovery}
               />
             )}
-            <ShareOffer group={group} config={config} />
+            {exactReview?.kind !== 'unavailable' && <ShareOffer group={group} config={config} />}
           </>
         ) : null}
         {!showLog && resource ? (

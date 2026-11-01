@@ -37,6 +37,13 @@ import RecoveryCases from './RecoveryCases';
 import { groupRecoveryEntry, type GroupRecoveryIntent } from './groupRecoveryEntry';
 import { currentGroupRecoveryIntent } from './recoveryNavigation';
 import { resolveRecoveryDataContext, type RecoveryDataContext } from './recoveryDataContext';
+import {
+  prepareRecoveryItineraryNavigation,
+  preservesItineraryReviewOnClose,
+  recoveryItineraryMapSelection,
+  type RecoveryItineraryIntent,
+} from './recoveryItineraryReview';
+import { useFreshnessClock } from './resourceFreshness';
 import { locationKindLabel } from './locationNodes';
 import { geographicContext } from './resourceLabels';
 import { WeatherNetworkOverlay } from './WeatherStatus';
@@ -170,6 +177,8 @@ function Operations() {
   const [recoveryCaseId, setRecoveryCaseId] = useState<string | null>(null);
   const [recoverySelection, setRecoverySelection] = useState<RecoveryDataContext>();
   const [recoveryDataContext, setRecoveryDataContext] = useState<RecoveryDataContext>();
+  const [itineraryReview, setItineraryReview] = useState<RecoveryItineraryIntent>();
+  const itineraryReviewClock = useFreshnessClock(Boolean(itineraryReview && recoveryDataContext));
   const [recoverySetup, setRecoverySetup] = useState<GroupRecoveryIntent | null>(null);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
@@ -229,10 +238,14 @@ function Operations() {
   const [plannerMode, setPlannerMode] = useState<'ai' | 'solver' | null>(null);
   const closeModal = useCallback(() => {
     setModal(null);
-    setRecoveryDataContext(undefined);
-  }, []);
+    if (!itineraryReview || !preservesItineraryReviewOnClose(modal)) {
+      setRecoveryDataContext(undefined);
+      setItineraryReview(undefined);
+    }
+  }, [itineraryReview, modal]);
   const openRecoveryCase = useCallback(
     (id: string | null) => {
+      setItineraryReview(undefined);
       setRecoveryCaseId(id);
       setRecoverySelection(
         id && worldRef.current
@@ -257,6 +270,7 @@ function Operations() {
         return;
       }
       setRecoveryDataContext(undefined);
+      setItineraryReview(undefined);
       if (intent.kind === 'setup') {
         setRecoverySetup(intent);
         setModal('recovery-picker');
@@ -279,8 +293,25 @@ function Operations() {
     setShowLog(false);
     setMobilePanel('inspector');
   }, []);
+  function returnToRecoveryCase() {
+    const current = worldRef.current;
+    const context = current && resolveRecoveryDataContext(current, recoveryDataContext);
+    if (!recoveryDataContext || context?.kind !== 'ready') {
+      setNotice({
+        text: 'The original case context changed. Reopen the intended case from the workspace.',
+        error: true,
+      });
+      return;
+    }
+    setRecoveryCaseId(recoveryDataContext.incidentId);
+    setRecoverySelection(structuredClone(recoveryDataContext));
+    setRecoverySetup(null);
+    setItineraryReview(undefined);
+    setModal('recovery-case');
+  }
   const showScenario = useCallback(() => {
     setRecoveryDataContext(undefined);
+    setItineraryReview(undefined);
     setModal(worldRef.current?.mode === 'live' ? 'live-data' : 'scenario');
   }, [worldRef]);
   const applyResult = useCallback(
@@ -310,6 +341,7 @@ function Operations() {
             : { scenarioId: result.world.scenario_id, incidentId: recoveryCase, groupIds: [] },
         );
         setRecoveryDataContext(undefined);
+        setItineraryReview(undefined);
         setRecoverySetup(null);
         setModal('recovery-case');
       }
@@ -598,7 +630,11 @@ function Operations() {
       <LoadingPage />
     );
   const live = world.mode === 'live';
-  const mapContext = geographicContext(world, selectedId);
+  const pinnedItinerary = recoveryDataContext ? itineraryReview : undefined;
+  const mapContext = geographicContext(
+    world,
+    recoveryItineraryMapSelection(world, selectedId, pinnedItinerary, itineraryReviewClock),
+  );
   const mapSelectionId = mapContext.selectionId;
   const homeAirport = mapContext.home;
   const geographic = live || mapStyle === 'geographic';
@@ -700,7 +736,7 @@ function Operations() {
                   selectedId={mapSelectionId}
                   onSelect={select}
                   apiKey={config.google_maps_api_key ?? ''}
-                  onClose={() => setMapStyle('architectural')}
+                  onClose={live ? undefined : () => setMapStyle('architectural')}
                 />
               ) : live ? (
                 <div className="live-empty-map">
@@ -861,6 +897,15 @@ function Operations() {
             void replan();
           }}
           onGroupRecovery={openGroupRecovery}
+          itineraryReview={pinnedItinerary}
+          onReturnToRecoveryCase={
+            pinnedItinerary
+              ? () => {
+                  if (!running.current && !notice?.retry) returnToRecoveryCase();
+                }
+              : undefined
+          }
+          reviewReturnDisabled={busy || Boolean(notice?.retry)}
           onScenario={showScenario}
           onApplied={applyResult}
           onRefresh={refresh}
@@ -1046,24 +1091,7 @@ function Operations() {
           onClose={closeModal}
           onApplied={applyResult}
           recoveryContext={recoveryDataContext}
-          onReturnToCase={() => {
-            const current = worldRef.current;
-            const context = current && resolveRecoveryDataContext(current, recoveryDataContext);
-            if (!recoveryDataContext || context?.kind !== 'ready') {
-              setNotice({
-                text: 'The original case context changed. Reopen the intended case from the workspace.',
-                error: true,
-              });
-              return;
-            }
-            setRecoveryCaseId(recoveryDataContext.incidentId);
-            setRecoverySelection({
-              ...recoveryDataContext,
-              groupIds: [...recoveryDataContext.groupIds],
-            });
-            setRecoverySetup(null);
-            setModal('recovery-case');
-          }}
+          onReturnToCase={returnToRecoveryCase}
         />
       )}
       {modal === 'recovery-picker' && live && (
@@ -1125,7 +1153,28 @@ function Operations() {
           onApplied={applyResult}
           onRefresh={refresh}
           onClose={closeModal}
+          reviewDisabled={busy || Boolean(notice?.retry)}
+          onReviewItinerary={(intent, context) => {
+            const current = worldRef.current;
+            if (!current || running.current || notice?.retry) return;
+            const target = prepareRecoveryItineraryNavigation(current, intent, context, false);
+            if (target.kind !== 'ready') {
+              setNotice({ text: target.reason, error: true });
+              return;
+            }
+            setRecoveryDataContext(target.context);
+            setItineraryReview(target.intent);
+            setSelectedId(target.group.id);
+            setShowLog(false);
+            setMobilePanel('inspector');
+            setMode('passenger');
+            setModal(null);
+            requestAnimationFrame(() =>
+              document.querySelector<HTMLElement>('.inspector')?.focus({ preventScroll: true }),
+            );
+          }}
           onManageData={(context) => {
+            setItineraryReview(undefined);
             setRecoveryCaseId(context.incidentId);
             setRecoveryDataContext({ ...context, groupIds: [...context.groupIds] });
             setModal('live-data');

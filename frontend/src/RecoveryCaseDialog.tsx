@@ -29,6 +29,7 @@ import { AirportRestrictionPanel } from './AirportRestrictionPanel';
 import type { RecoveryDataContext } from './recoveryDataContext';
 import { initialRecoverySelection } from './recoveryNavigation';
 import { cloneRecoveryFormDraft, type RecoveryFormDraft } from './recoveryFormDraft';
+import type { RecoveryItineraryIntent } from './recoveryItineraryReview';
 
 type ActionKind = 'create' | 'bind' | 'refresh';
 export default function RecoveryCaseDialog({
@@ -40,6 +41,8 @@ export default function RecoveryCaseDialog({
   onManageData,
   initialSelection,
   setupGroupId,
+  onReviewItinerary,
+  reviewDisabled = false,
 }: {
   world: World;
   incidentId: string | null;
@@ -49,6 +52,8 @@ export default function RecoveryCaseDialog({
   onManageData: (context: RecoveryDataContext) => void;
   initialSelection?: RecoveryDataContext;
   setupGroupId?: string;
+  onReviewItinerary?: (intent: RecoveryItineraryIntent, context: RecoveryDataContext) => void;
+  reviewDisabled?: boolean;
 }) {
   const [activeId, setActiveId] = useState(incidentId);
   const incident = (world.incidents ?? []).find((item) => item.id === activeId);
@@ -390,6 +395,23 @@ export default function RecoveryCaseDialog({
               refreshSignal={arrivalRefresh}
               receivedJob={arrivalJob}
               initialSelection={initialSelection}
+              reviewDisabled={reviewDisabled || searching}
+              onReviewItinerary={
+                onReviewItinerary
+                  ? (intent) => {
+                      if (running.current || lockedRef.current || searching || reviewDisabled)
+                        return;
+                      onReviewItinerary(intent, {
+                        scenarioId: world.scenario_id,
+                        incidentId: incident.id,
+                        groupIds: [...selectedRecoveryGroups.current],
+                        ...(searchDraft.current
+                          ? { searchDraft: cloneRecoveryFormDraft(searchDraft.current) }
+                          : {}),
+                      });
+                    }
+                  : undefined
+              }
               onSelectionChange={(ids) => {
                 selectedRecoveryGroups.current = ids;
               }}

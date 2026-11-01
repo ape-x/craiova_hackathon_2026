@@ -32,6 +32,13 @@ Aria automată actuală cuprinde căutarea zborurilor pentru grupuri explicit le
 6. **Completează serviciile lipsă.** Hotelurile necesită date și ocupare explicite, costuri obligatorii cunoscute și conexiuni fizice independente. Un serviciu introdus de operator necesită dovezi, capacitate, preț, orar și valabilitate.
 7. **Primește preferința pasagerului.** Acceptarea sau refuzul actualizează aceeași stare operațională. Acceptarea nu confirmă o rezervare la furnizor. Confirmarea externă este o acțiune distinctă, documentată pentru fiecare segment.
 
+Din rezultatul unei recuperări reușite, **Review itinerary** deschide itinerarul
+complet al propunerii exacte întoarse de acea încercare și focalizează grupul.
+Navigarea nu caută oferte noi. Întoarcerea în caz păstrează formularul netrimis;
+o cerere cu rezultat necunoscut trebuie clarificată înainte de plecare. Dacă
+propunerea nu mai este actuală, revizuirea indică acest lucru și nu o înlocuiește
+automat cu un itinerar mai nou al aceluiași grup.
+
 Condițiile aeroportului pot fi actualizate în cazul existent, din **Airport restrictions** sau printr-o comandă explicită: „Pentru RO321, OTP nu mai permite aterizarea. Recalculează pentru G1, maximum patru apeluri.” Raportul numește aeroportul, aterizările/decolările sau ambele și restricționarea/eliminarea restricției. Poate fi înregistrat singur sau împreună cu recuperarea grupurilor selectate. Interdicția se aplică acelui caz, inclusiv escalelor zborurilor; nu mută pasagerii și nu schimbă observația FR24. Legăturile rutiere pot continua să ajungă în zona aeroportului.
 
 Eliminarea unei restricții raportate de operator nu anulează restricțiile meteo sau externe. Un caz vechi cu aeroport indisponibil păstrează ambele direcții până la o actualizare explicită; migrarea și ultimele zece rapoarte sunt vizibile, iar auditul este persistent. Doar propunerile încă neconfirmate și dependente sunt invalidate. Rezervările confirmate rămân intacte, cu conflicte afișate pentru intervenție; căutarea nu consumă apeluri suplimentare când un asemenea conflict cunoscut o blochează. Sunt acceptate restricții curente până la eliminarea explicită; intervalele viitoare, istorice sau condiționale necesită clarificare și nu devin automat o închidere imediată.

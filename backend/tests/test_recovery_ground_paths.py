@@ -132,6 +132,78 @@ def test_fixed_other_group_reservations_reduce_available_ground_capacity(chain):
     assert_no_link(world, group)
 
 
+def fixed_ground_journey(world, *, status, reservations, capacity):
+    """A complete retained journey occupies both legs of the alternate-airport link."""
+    other = world.groups[1]
+    other.status = "confirmed" if status == "confirmed" else "offered"
+    legs = []
+    for resource in world.resources:
+        resource.capacity = capacity
+        resource.eligible_group_ids = [group.id for group in world.groups]
+        legs.append(Leg(resource_id=resource.id, kind=resource.kind,
+            origin=resource.origin, destination=resource.destination,
+            departure=resource.departure, arrival=resource.arrival,
+            cost=resource.cost_per_person * other.size))
+    offer = Offer(id="FIXED-JOURNEY", group_id=other.id, status=status,
+        itinerary=Itinerary(legs=legs, arrival=legs[-1].arrival,
+            total_cost=sum(leg.cost for leg in legs)),
+        expires_at=world.resources[0].valid_until, created_version=world.version)
+    world.offers.append(offer)
+    if reservations:
+        world.reservations.extend(Reservation(id="FIXED-" + leg.resource_id,
+            offer_id=offer.id, group_id=other.id, resource_id=leg.resource_id,
+            quantity=other.size, status=status, expires_at=offer.expires_at) for leg in legs)
+    return other
+
+
+@pytest.mark.parametrize("reservations", [False, True])
+@pytest.mark.parametrize("status", ["confirmed", "held", "proposed", "accepted"])
+def test_fixed_ground_itinerary_at_capacity_cannot_authorize_an_alternate_flight(chain, reservations, status):
+    from app.confirmed_allocations import confirmation_accounting_issues
+    world, group = chain
+    fixed_ground_journey(world, status=status, reservations=reservations, capacity=1)
+    assert confirmation_accounting_issues(world) == []
+    before = world.model_dump(mode="json")
+    assert_no_link(world, group)
+    assert world.model_dump(mode="json") == before
+    # Independent final allocation agrees: a real incoming flight alone cannot
+    # make the fully occupied ground connection a complete new journey.
+    service(world, "FLIGHT", "SBZ", "CRA", 30, 170, 100, kind="flight", source="offline-flight-fixture")
+    plan = build_candidate(world, Strategy(), scope_group_ids={group.id})
+    assert plan.validation["valid"] is True
+    assert plan.recovered_passengers == 0 and plan.allocations == []
+
+
+@pytest.mark.parametrize("reservations", [False, True])
+@pytest.mark.parametrize("status", ["confirmed", "held", "proposed", "accepted"])
+def test_fixed_ground_itinerary_and_mirrored_rows_consume_capacity_only_once(chain, reservations, status):
+    world, group = chain
+    fixed_ground_journey(world, status=status, reservations=reservations, capacity=2)
+    before = world.model_dump(mode="json")
+    found, gaps = options(world, group)
+    assert gaps == [] and len(found) == 1
+    assert (found[0]["query"]["origin_code"], found[0]["query"]["destination_code"]) == ("SBZ", "CRA")
+    assert world.model_dump(mode="json") == before
+    service(world, "FLIGHT", "SBZ", "CRA", 30, 170, 100, kind="flight", source="offline-flight-fixture")
+    before = world.model_dump(mode="json")
+    plan = build_candidate(world, Strategy(), scope_group_ids={group.id})
+    assert plan.validation["valid"] is True
+    assert plan.recovered_passengers == group.size
+    assert [leg.resource_id for leg in plan.allocations[0].itinerary.legs] == ["FLIGHT", "FIRST", "LAST"]
+    assert world.model_dump(mode="json") == before
+
+
+@pytest.mark.parametrize("reservations", [False, True])
+@pytest.mark.parametrize("status", ["held", "proposed", "accepted"])
+def test_selected_unconfirmed_ground_journey_remains_replaceable_during_query_discovery(chain, reservations, status):
+    world, group = chain
+    other = fixed_ground_journey(world, status=status, reservations=reservations, capacity=1)
+    before = world.model_dump(mode="json")
+    found, _ = flight_query_options(world, [group, other])
+    assert any(item["group_id"] == group.id and item["query"]["destination_code"] == "CRA" for item in found)
+    assert world.model_dump(mode="json") == before
+
+
 def test_prefix_and_suffix_costs_share_one_budget_and_keep_cheaper_later_prefix(chain):
     world, group = chain
     node(world, "CLJ", "airport")

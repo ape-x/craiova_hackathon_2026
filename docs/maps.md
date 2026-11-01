@@ -1,19 +1,24 @@
 # Google geographic 3D view
 
-The operator explicitly selects the geographic view. Only mounting
-`frontend/src/maps/GoogleMaps3D.tsx` loads Google Maps. The default procedural
-simulation view makes no Google API request. A singleton dynamic-import bootstrap
+Live operations use the geographic view when a browser Maps key is configured.
+Mounting `frontend/src/maps/GoogleMaps3D.tsx` loads Google Maps and can incur Google
+usage. Without the key, the workspace shows setup guidance while the passenger and
+inventory panels remain available. A rendering failure stays visible; live mode
+does not offer a procedural simulation as an alternative. The internal simulation
+has a separate architectural/geographic toggle; its architectural view makes no
+Google API request. A singleton dynamic-import bootstrap
 loads the current `weekly` JavaScript API and requests `maps3d` and `marker` using
 `google.maps.importLibrary()`. No deprecated npm `Loader` class is used.
 
 Component props: `{ world, mode, selectedId, onSelect, apiKey, onClose? }`, where
-`mode` is `airport | region | passenger`. The operator controls the view toggle.
+`mode` is `airport | region | passenger`. These are camera/workspace views, separate
+from `world.mode`, which determines live or internal simulation behavior.
 Unmount removes the map, model elements and listeners; the single shared API loader
 remains available for a later explicit toggle. World changes update overlays
-without reloading the API. Vehicles, Passengers and Terminal controls independently
-toggle the 3D object layers. Vehicles includes both simulated services and received
-aircraft models. These controls leave source markers and routes available and do
-not change the backend's traffic polling state.
+without reloading the API. In live mode, the object control toggles **Observed
+aircraft** only. Internal simulation additionally exposes authored vehicle,
+passenger and terminal layers. These controls leave source markers and routes
+available and do not change the backend's traffic polling state.
 
 ## Configuration and verification
 
@@ -61,11 +66,12 @@ account or activate billing; account administration remains with the owner.
 - Google supplies terrain and available imagery. 3D building detail depends on
   geographic coverage; this implementation does not claim that Craiova terminal
   buildings or interiors are available as photogrammetry.
-- Airport labels identify the authored simulation campus, registered near CRA's
-  commercial apron or placed relative to other scenario airports' coordinates.
-  The campus is not a surveyed terminal location.
-  Airport closure labels are simulation state, not a claim about the real airport's
-  operation.
+- Live airport operating status requires verification. Case restrictions and
+  reported passenger arrival/readiness are operator reports, separate from provider
+  observations. An itinerary does not establish a vehicle's physical position.
+- Live ground connections distinguish dated Google route geometry from
+  connection-only lines. A prediction or schematic connection is not a tracked
+  vehicle. Source and planning evidence remain visible in the selected service.
 - Cyan aircraft markers use received FR24 coordinates and source timestamps.
   Feet are converted to meters for the map. Missing altitude is not invented.
   Older points are visibly marked stale; static provider samples say SANDBOX.
@@ -73,15 +79,24 @@ account or activate billing; account administration remains with the owner.
   at 30 source samples per aircraft. They are not provider flight plans or predicted
   trajectories. Stale, replay, sandbox and unknown-time trails use the same muted
   color as their markers. No history endpoint or extra traffic API calls are made.
+### Internal simulation overlays
+
+These overlays are excluded from the live operation:
+
+- Airport labels identify the authored simulation campus, registered near CRA's
+  commercial apron or placed relative to other scenario airports' coordinates.
+  The campus is not a surveyed terminal location. Airport closure labels in this
+  mode are simulation state, not a claim about real airport operations.
 - Amber dashed connectors are schematic simulator network links. Green connectors
   have confirmed inventory in the simulator. Red links represent unavailable
   resources. They are **not road directions, flight plans or safe routing advice**.
 - Simulated vehicles follow the simulator's timetable along schematic links.
   Passenger positions follow their scenario origin and confirmed itinerary as
   simulation time advances. Labels say SIM; neither is a GPS measurement or a
-  live passenger location. All passenger groups in the demonstration are synthetic.
+  live passenger location. These internal fixture groups are synthetic; this does
+  not describe manifests imported into the live application.
 
-## Authored terminal, fleet and families
+## Authored terminal, fleet and families — internal simulation only
 
 The geographic view mounts authored core-PBR GLBs from
 `frontend/public/scene/models/`: `aircraft.glb`, `bus.glb`, `terminal.glb` and

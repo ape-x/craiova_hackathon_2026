@@ -68,8 +68,11 @@ application verification is recorded in the [verification report](verification/r
 
 These consumer endpoints are observed website interfaces, not a contracted public
 API. Unexpected protocol, tariff, identity or timing changes fail visibly. Other
-Romanian airport pairs and flight-arrival pickup binding are not established by
-this bounded integration.
+Romanian airport pairs are not established by this bounded integration. Its
+historical manual check did not establish flight-arrival pickup binding. The
+separate automatic flight → OTP → CAB → CRA implementation now binds the exact
+incoming offer and explicit processing allowance; its complete real-provider
+acceptance remains open, as detailed in the verification report.
 
 ### Automatic initial transfer before flight discovery
 

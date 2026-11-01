@@ -241,6 +241,22 @@ def fixed_offers(world: World, scope_group_ids: set[str] | None = None):
     return [offer for offer in active_offers(world) if offer.status == "confirmed" or (scope_group_ids is not None and offer.group_id not in scope_group_ids)]
 
 
+def fixed_itinerary_usage(world: World, offers) -> Counter:
+    """Count retained dated legs; reservation rows only mirror these allocations."""
+    resources = {resource.id: resource for resource in world.resources}
+    groups = {group.id: group for group in world.groups}
+    occupied = Counter()
+    for offer in offers:
+        group = groups.get(offer.group_id)
+        if group is None:
+            continue  # The independent allocation check rejects missing references.
+        for leg in offer.itinerary.legs:
+            resource = resources.get(leg.resource_id)
+            if resource is not None:
+                occupied[resource.id] += units(resource, group)
+    return occupied
+
+
 def validate_allocations(world: World, allocations: list[Allocation], include_confirmed=True, scope_group_ids: set[str] | None = None) -> dict:
     """Independent exact checker: never trusts totals or leg fields in a plan."""
     errors: list[str] = []
@@ -353,20 +369,11 @@ def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] 
             options[g.id], invalid_stays[g.id] = [], str(exc)
     resources = {r.id:r for r in projected.resources}
     fixed = fixed_offers(projected,scope_group_ids)
-    group_by_id = {group.id:group for group in projected.groups}
     # Match the independent validator's fixed itinerary accounting. Reservation
     # rows mirror these allocations; adding them would double-count passengers,
     # while relying on them alone loses capacity/vehicle occupancy for legacy
     # itineraries with missing rows. No persistent reservation is reconstructed.
-    initial_used = Counter()
-    for offer in fixed:
-        group = group_by_id.get(offer.group_id)
-        if group is None:
-            continue  # The final independent check rejects missing references.
-        for leg in offer.itinerary.legs:
-            resource = resources.get(leg.resource_id)
-            if resource is not None:
-                initial_used[resource.id] += units(resource,group)
+    initial_used = fixed_itinerary_usage(projected, fixed)
     # The fleet uncertainty policy follows fixed itinerary legs even when a
     # legacy/local reservation row is absent. It is not source stock of one.
     fixed_cab_ids = {leg.resource_id for offer in fixed for leg in offer.itinerary.legs

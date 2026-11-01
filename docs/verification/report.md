@@ -427,9 +427,11 @@ The deployed browser made two explicit quote searches (four supplier GETs total)
 Visual inspection exposed a selected-map defect: unrelated APL geometry made the CAB card inherit a dated Google-road legend, and its annotation overlapped the origin airport. The follow-up scopes the card/key to the selected route and moves the connection-only annotation between endpoints, explicitly not a vehicle position. Mixed-source map regressions preserve actual Google road geometry and overview keys.
 
 Automatic retrieval now has the separate offline and deployed-form evidence
-above; fresh combined-provider acceptance remains open. A pickup after a future
-flight, other Romanian airport pairs and successful spoken/full-itinerary
-acceptance are separate gaps. A manual sourced leg is not evidence for those flows.
+above; fresh combined-provider acceptance remains open. The later flight → OTP →
+CAB → CRA implementation binds a future-flight pickup, but still needs its own
+real-provider acceptance. Other Romanian airport pairs and successful spoken
+recovery remain separate gaps. This historical manual sourced leg is not evidence
+for those flows.
 
 ### Case airport restrictions and atomic recovery
 
@@ -828,7 +830,7 @@ The local Three.js scene is an interactive architectural illustration with origi
 
 ## Remaining acceptance gates
 
-- Automatic sourcing of verified connecting ground transport for an alternate arrival. Case-scoped directional airport updates are implemented and covered by isolated route/worker/UI checks above; this does not establish new ground inventory or a successful live spoken restriction-and-recovery run.
+- Live acceptance of the implemented automatic flight → OTP → Bucharest.CAB → CRA workflow, including fresh flight/vehicle evidence, chosen-only application and exact spoken reuse. Broader Romanian ground coverage remains open: reverse and other airport pairs, pickups inside the source's conservative nine-hour notice, coach stock and airport–station links. Case restrictions and routing over existing sourced ground connections are implemented; they do not imply wider inventory.
 - Successful spoken report → scoped automatic recovery on the current release. The latest authorized synthesized-audio attempt recognized the request and queued recovery, but an ECB timeout prevented the complete itinerary and the spoken acknowledgement used the wrong date. The subsequent corrections have not had another paid spoken run. Device microphone, playback and interruption also remain untested.
 - Continuous FR24 position display with original timestamps and agreed account usage/retention; the authorized flight lookup/case flow is already verified above.
 - Verified Romanian ground-transport availability and complete physical journeys. The CRA → OTP public-fare adapter now preserves dated adult-party prices, exact stops and original RON/estimated EUR evidence; consumer fare observations alone do not verify seats, luggage or booking expiry. Other Romanian routes remain outside implemented coverage.

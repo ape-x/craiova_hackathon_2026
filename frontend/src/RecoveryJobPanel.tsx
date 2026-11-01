@@ -16,6 +16,7 @@ import {
   type RecoveryFormDraft,
 } from './recoveryFormDraft';
 import { initialRecoverySelection, recoveryGroupSelectionIssue } from './recoveryNavigation';
+import { recoveryItineraryTarget, type RecoveryItineraryIntent } from './recoveryItineraryReview';
 import type { RecoveryDataContext } from './recoveryDataContext';
 import { Loader2, RefreshCw, Square } from 'lucide-react';
 import { api, ApiError, TransportError } from './api';
@@ -97,14 +98,58 @@ function RecoveryJobReference({ id, recorded }: { id: string; recorded?: Recover
   );
 }
 
+export function ReviewRecoveryItinerary({
+  world,
+  incidentId,
+  job,
+  offerId,
+  disabled = false,
+  onReview,
+}: {
+  world: World;
+  incidentId: string;
+  job: RecoveryJob;
+  offerId: string;
+  disabled?: boolean;
+  onReview: (intent: RecoveryItineraryIntent) => void;
+}) {
+  const target = recoveryItineraryTarget(world, incidentId, job, offerId);
+  if (target.kind === 'unavailable')
+    return (
+      <p className="field-hint">
+        {offerId} · {target.reason}
+      </p>
+    );
+  return (
+    <button
+      type="button"
+      className="secondary-button"
+      disabled={disabled}
+      onClick={() => {
+        if (disabled) return;
+        const current = recoveryItineraryTarget(world, incidentId, job, offerId);
+        if (current.kind === 'ready') onReview(current.intent);
+      }}
+    >
+      Review itinerary · {target.group.name} · {offerId}
+    </button>
+  );
+}
+
 export function RecoveryJobDetails({
   job,
   world,
   relatedJobs,
+  incidentId,
+  reviewDisabled,
+  onReviewItinerary,
 }: {
   job: RecoveryJob;
   world: World;
   relatedJobs?: readonly RecoveryJob[];
+  incidentId?: string;
+  reviewDisabled?: boolean;
+  onReviewItinerary?: (intent: RecoveryItineraryIntent) => void;
 }) {
   const result = job.result;
   const waitingForPrevious = recoveryJobWaiting(job);
@@ -299,6 +344,19 @@ export function RecoveryJobDetails({
               </dd>
             </div>
           </dl>
+          {incidentId &&
+            onReviewItinerary &&
+            result.offer_ids.map((offerId) => (
+              <ReviewRecoveryItinerary
+                key={offerId}
+                world={world}
+                incidentId={incidentId}
+                job={job}
+                offerId={offerId}
+                disabled={reviewDisabled}
+                onReview={onReviewItinerary}
+              />
+            ))}
           {result.hotel_recovery && (
             <section className="hotel-recovery-result" aria-label="Recorded hotel recovery scope">
               <h4>Hotel stay and both transfer directions</h4>
@@ -458,6 +516,8 @@ export default function RecoveryJobPanel({
   initialSelection,
   onSelectionChange,
   onDraftChange,
+  onReviewItinerary,
+  reviewDisabled = false,
 }: {
   world: World;
   incident: RecoveryIncident;
@@ -469,6 +529,8 @@ export default function RecoveryJobPanel({
   initialSelection?: RecoveryDataContext;
   onSelectionChange?: (groupIds: string[]) => void;
   onDraftChange?: (draft: RecoveryFormDraft) => void;
+  onReviewItinerary?: (intent: RecoveryItineraryIntent) => void;
+  reviewDisabled?: boolean;
 }) {
   const [jobs, setJobs] = useState<RecoveryJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -715,7 +777,14 @@ export default function RecoveryJobPanel({
       {jobs.map((job, index) =>
         index === 0 || recoveryJobActive(job) ? (
           <div key={job.id}>
-            <RecoveryJobDetails job={job} world={world} relatedJobs={jobs} />
+            <RecoveryJobDetails
+              job={job}
+              world={world}
+              relatedJobs={jobs}
+              incidentId={incident.id}
+              onReviewItinerary={onReviewItinerary}
+              reviewDisabled={locked || loading || reviewDisabled}
+            />
             {recoveryJobActive(job) && (
               <button
                 className="secondary-button"
@@ -732,7 +801,14 @@ export default function RecoveryJobPanel({
             <summary>
               Earlier attempt · {utcTimestamp(job.created_at)} · {job.status.replaceAll('_', ' ')}
             </summary>
-            <RecoveryJobDetails job={job} world={world} relatedJobs={jobs} />
+            <RecoveryJobDetails
+              job={job}
+              world={world}
+              relatedJobs={jobs}
+              incidentId={incident.id}
+              onReviewItinerary={onReviewItinerary}
+              reviewDisabled={locked || loading || reviewDisabled}
+            />
           </details>
         ),
       )}
