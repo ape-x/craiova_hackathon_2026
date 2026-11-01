@@ -78,6 +78,8 @@ ROUTE_NAMES = {
     ("GET", "/api/inventory/resources/{resource_id}"): "inventory.get",
 }
 EXCLUDED = {"/api/commands", "/api/voice/session", "/api/stream"}
+# Synthetic changes use the scenario event contracts, not live case/report APIs.
+LIVE_OPERATION_PATHS = ("/api/live/", "/api/incidents", "/api/recovery-jobs", "/api/demo/")
 SERVER_FIELDS = {"expected_version", "idempotency_key", "scenario_id"}
 PRIVATE_FIELDS = {"token", "password", "secret", "authorization", "cookie", "headers", "sdp",
     "passenger_url", "passenger_link", "members", "recipient", "csv_text"}
@@ -241,9 +243,17 @@ class PlatformActions:
         finally:
             self._selection.reset(token)
 
-    def model_context(self):
+    def available_in_mode(self, name, mode):
+        capability = self.capabilities.get(name)
+        return not (mode == "simulation" and capability
+            and capability.path.startswith(LIVE_OPERATION_PATHS))
+
+    def model_context(self, world=None):
+        mode = world.get("mode") if world is not None else self.store.read().mode
         return {"current_selection": self._selection.get(), "current_utc": utcnow().isoformat(),
-            **self.catalog,
+            **self.catalog, "operation_mode": mode,
+            "capabilities": [item for item in self.catalog["capabilities"]
+                if self.available_in_mode(item["name"], mode)],
             "reference_syntax": "$selection.group_id, $selection.incident_id, $selection.selected_id; "
                 "$result.0.incident_id or $result.0.group_ids refer to the result of action zero"}
 
@@ -459,6 +469,8 @@ class PlatformActions:
                 name = item["name"]
                 if not isinstance(name, str) or name not in {*self.capabilities, *UI_MODELS}:
                     raise DomainError(422, "Unknown or unavailable platform action")
+                if not self.available_in_mode(name, world.mode):
+                    raise DomainError(422, "This action requires a live operation; simulation changes use scenario events")
                 if not isinstance(item["arguments_json"], str) or len(item["arguments_json"]) > 32000:
                     raise DomainError(422, "Action arguments must be a bounded JSON object")
                 try:

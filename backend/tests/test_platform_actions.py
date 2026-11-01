@@ -73,6 +73,65 @@ def snapshot(client):
     return {key: world[key] for key in ("scenario_id", "version", "groups", "incidents", "resources", "offers")}
 
 
+@pytest.mark.parametrize("mode", ["simulation", "live"])
+def test_capability_catalog_uses_operation_mode(tmp_path, mode):
+    app = create_app(Settings(_env_file=None, operation_mode=mode,
+        database_path=str(tmp_path / "catalog.sqlite3")))
+    platform = app.state.platform_actions
+    context = platform.model_context(app.state.store.read().model_dump(mode="json"))
+    names = {item["name"] for item in context["capabilities"]}
+    assert context["operation_mode"] == mode
+    assert {"ui.navigate", "events.apply", "plans.replan", "world.get"} <= names
+    for name in ("resources.report_unavailability", "passengers.import", "recovery.start", "demo.create_case"):
+        assert (name in names) is (mode == "live")
+
+
+def test_simulation_live_report_rejected_before_inputs_or_mutation(tmp_path):
+    app = create_app(Settings(_env_file=None, operation_mode="simulation",
+        database_path=str(tmp_path / "simulation-report.sqlite3")))
+    ai = ActionAI()
+    app.state.service.ai = ai
+    ai.actions = [action("resources.report_unavailability", resource_id="B12")]
+    with TestClient(app) as client:
+        before = snapshot(client)
+        response = client.post("/api/commands", json=body(client,
+            text="Autocarul B12 nu mai este disponibil. Recalculează planul."))
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["applied"] is False
+        assert "simulation changes use scenario events" in data["platform_results"][0]["error"]
+        assert not data["platform_results"][0].get("missing_fields")
+        assert snapshot(client) == before
+
+
+@pytest.mark.asyncio
+async def test_simulation_interpretation_receives_mode_routing_contract(tmp_path):
+    from app.providers.ai import AIProvider
+
+    config = Settings(_env_file=None, operation_mode="simulation", openai_api_key="fixture",
+        database_path=str(tmp_path / "simulation-routing.sqlite3"))
+    app = create_app(config)
+    expected = {"events": [{"type": "resource_unavailable", "target_id": "B12", "value": None}],
+        "strategies": [], "platform_actions": [], "focus_id": "B12", "explanation": "Autocarul B12 devine indisponibil."}
+
+    def handler(request):
+        payload = json.loads(request.content)
+        context = json.loads(payload["input"])["platform_context"]
+        assert context["operation_mode"] == "simulation"
+        assert "resources.report_unavailability" not in {item["name"] for item in context["capabilities"]}
+        assert "SIMULATION ACTION ROUTING" in payload["instructions"]
+        return httpx.Response(200, json={"status": "completed", "output": [{"type": "message",
+            "content": [{"type": "output_text", "text": json.dumps(expected)}]}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = AIProvider(config, client=client)
+        provider.platform_actions = app.state.platform_actions
+        result = await provider.interpret("Autocarul B12 nu mai este disponibil.",
+            app.state.store.read().model_dump(mode="json"))
+    assert result["events"] == expected["events"]
+    assert result["platform_actions"] == []
+
+
 def test_named_demo_action_uses_existing_route_and_replays_without_duplicate_case(platform):
     _, client, ai = platform
     before = snapshot(client)

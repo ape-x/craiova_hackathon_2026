@@ -109,6 +109,21 @@ results to show returned source/search data. Explain only intended work here;
 the dispatcher returns the factual outcome after execution.
 """
 
+SIMULATION_ACTION_PROMPT = """
+SIMULATION ACTION ROUTING:
+The current world contains generated operational data. For scenario creation,
+passenger/resource authoring, disruptions and constraint changes, use the top-level
+events and strategies described above, with platform_actions=[]. The backend
+validates and applies the changes and recovery plan together. These scenario event
+contracts remain available alongside the additional platform capability catalog.
+A simulated bus becoming unavailable uses resource_unavailable with its existing
+resource ID and value=null; propose recovery strategies when replanning is asked.
+Never route a simulated disruption through live resource reports, live passenger
+imports or incident recovery jobs, and never ask for a live incident ID or real
+supplier evidence for an existing simulated resource. Interface-only requests still
+use ui.* platform actions. Preserve the target resource as focus_id for a disruption.
+"""
+
 
 class LiveRecoveryIntent(StrictModel):
     action: Literal["start", "status"]
@@ -698,7 +713,7 @@ class AIProvider(HTTPProvider):
         nearby = [{"airport_id": airport["id"], "options": nearby_airports(airport["id"])}
                   for airport in list(matches.values())[:4]]
         platform = getattr(self, "platform_actions", None)
-        platform_context = platform.model_context() if platform is not None else None
+        platform_context = platform.model_context(world) if platform is not None else None
         output_schema = schema.model_json_schema()
         # Real responses always include the field; legacy recorded/mock outputs
         # without it remain readable for backwards compatibility.
@@ -707,7 +722,7 @@ class AIProvider(HTTPProvider):
             "service_tier": getattr(self.settings, "openai_service_tier", "ultrafast"),
             "store": False,
             "max_output_tokens": 7000,
-            "instructions": (LIVE_COMMAND_PROMPT if world.get("mode") == "live" else SYSTEM_PROMPT) + (PLATFORM_ACTION_PROMPT if platform_context else ""),
+            "instructions": (LIVE_COMMAND_PROMPT if world.get("mode") == "live" else SYSTEM_PROMPT) + (PLATFORM_ACTION_PROMPT if platform_context else "") + (SIMULATION_ACTION_PROMPT if platform_context and world.get("mode") == "simulation" else ""),
             "input": json.dumps({"world": compact_world(world), "current_request": text, "conversation_context": context[-6000:], "airport_catalog_matches": list(matches.values())[:24], "nearby_airport_options": nearby,
                 **({"platform_context": platform_context} if platform_context else {})}, ensure_ascii=False),
             "text": {"format": {"type": "json_schema", "name": "airport_command", "strict": True, "schema": output_schema}},
