@@ -1,0 +1,148 @@
+{
+  "checked_on": "2026-11-01",
+  "environment": "Isolated synthetic database; no operational inventory changed",
+  "real_provider": "OpenAI Responses and Decisions",
+  "checks": [
+    {
+      "request": "Zborul F201 întârzie 30 de minute. Recalculează legăturile pasagerilor.",
+      "via": "browser",
+      "http_status": 200,
+      "applied": true,
+      "departure_before": 600,
+      "departure_after": 600,
+      "arrival_before": 750,
+      "arrival_after": 780,
+      "latency_ms": 6669.21,
+      "provider": "OpenAI Decisions / gpt-6-luna",
+      "candidate_count": 3,
+      "interpreted_events": [
+        {
+          "type": "resource_schedule",
+          "target_id": "F201",
+          "value": {
+            "departure": null,
+            "arrival": 780
+          }
+        }
+      ],
+      "interpretation_provider": {
+        "latency_ms": 5945.0,
+        "model": "gpt-6.1-sol",
+        "service_tier": "ultrafast"
+      },
+      "timings_ms": {
+        "interpretation_ms": 5945.6,
+        "solver_ms": 88.41,
+        "decisions_ms": 628.78,
+        "apply_ms": 1.48,
+        "transaction_ms": 9.04,
+        "server_total_ms": 6677.28
+      },
+      "candidate_counts": {
+        "computed": 3,
+        "validated": 3,
+        "shortlisted": 3,
+        "submitted": 3
+      }
+    },
+    {
+      "via": "HTTP command endpoint",
+      "request": "F201 mai întârzie încă 15 minute. Recalculează.",
+      "status": 200,
+      "applied": true,
+      "resource": "F201",
+      "departure": 600,
+      "arrival": 795,
+      "round_trip_ms": 2456.91,
+      "interpreted_events": [
+        {
+          "type": "resource_schedule",
+          "target_id": "F201",
+          "value": {
+            "departure": null,
+            "arrival": 795
+          }
+        }
+      ],
+      "interpretation_provider": {
+        "latency_ms": 2095.5,
+        "model": "gpt-6.1-sol",
+        "service_tier": "ultrafast"
+      },
+      "timings_ms": {
+        "interpretation_ms": 2097.29,
+        "solver_ms": 26.2,
+        "decisions_ms": 292.82,
+        "apply_ms": 1.55,
+        "transaction_ms": 12.41,
+        "server_total_ms": 2437.76
+      },
+      "candidate_counts": {
+        "computed": 1,
+        "validated": 1,
+        "shortlisted": 1,
+        "submitted": 1
+      }
+    },
+    {
+      "via": "HTTP command endpoint",
+      "request": "Întârzie serviciul F110 cu 20 de minute și recalculează.",
+      "status": 200,
+      "applied": true,
+      "resource": "F110",
+      "departure": 890,
+      "arrival": 1100,
+      "round_trip_ms": 3297.73,
+      "interpreted_events": [
+        {
+          "type": "resource_schedule",
+          "target_id": "F110",
+          "value": {
+            "departure": 890,
+            "arrival": 1100
+          }
+        }
+      ],
+      "interpretation_provider": {
+        "latency_ms": 2835.5,
+        "model": "gpt-6.1-sol",
+        "service_tier": "ultrafast"
+      },
+      "timings_ms": {
+        "interpretation_ms": 2837.35,
+        "solver_ms": 104.26,
+        "decisions_ms": 295.47,
+        "apply_ms": 1.74,
+        "transaction_ms": 19.8,
+        "server_total_ms": 3268.09
+      },
+      "candidate_counts": {
+        "computed": 3,
+        "validated": 3,
+        "shortlisted": 3,
+        "submitted": 3
+      }
+    },
+    {
+      "via": "HTTP command endpoint",
+      "request": "Schimbă ora decolării zborului F201, care este deja în aer, la 11:00. Păstrează sosirea.",
+      "status": 200,
+      "applied": false,
+      "resource": "F201",
+      "departure": 600,
+      "arrival": 795,
+      "round_trip_ms": 1524.89,
+      "explanation": "F201 este deja în aer, deci ora decolării efective nu poate fi modificată în simulator. Sosirea rămâne neschimbată, la 13:15.",
+      "interpreted_events": [],
+      "interpretation_provider": {
+        "latency_ms": 1481.9,
+        "model": "gpt-6.1-sol",
+        "service_tier": "ultrafast"
+      }
+    }
+  ],
+  "browser_console_errors": 0,
+  "microphone_tested": false,
+  "offline_targeted_tests_passed": 135,
+  "offline_full_backend_tests_passed": 3244
+}

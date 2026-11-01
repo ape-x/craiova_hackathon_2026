@@ -122,6 +122,8 @@ class VoiceProvider(HTTPProvider):
                     "backendul alege și explică valorile omise și compară aeroporturile de deviere. "
                     "Nu cere separat permisiunea pentru valori demonstrative sau pentru resetarea cerută. "
                     "Nu cere utilizatorului să aleagă devierea când a lăsat alegerea agentului. "
+                    "O întârziere a unui avion deja în aer modifică ora sosirii, păstrând decolarea. "
+                    "Deleagă cererea backendului; nu refuza o actualizare a sosirii pe motiv că avionul a decolat. "
                     "Aplicația decide ce poate reprezenta și cere detaliile lipsă; nu promite capabilități nelimitate.\n"
                     "Generate <|SpawnThinking|> when: Utilizatorul descrie un scenariu sau schimbă condițiile, "
                     "adaugă detalii, răspunde unei clarificări a aplicației, corectează o cerere, "

@@ -8,7 +8,9 @@ import pytest
 
 from app.providers.ai import AIProvider, Interpretation
 from app.providers.base import ProviderError
+from app.models import ScenarioChange
 from app.seed import seed_world
+from app.service import apply_change
 
 
 def flight():
@@ -96,6 +98,32 @@ async def test_airport_reopened_then_diverted_is_checked_against_projected_state
     obj["events"].pop(1)
     with pytest.raises(ProviderError):
         await interpret(obj)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("target", "value", "expected"), [
+    ("F201", {"departure": None, "arrival": 780}, (600, 780)),
+    ("F110", {"departure": 900, "arrival": None}, (900, 1080)),
+    ("F110", {"departure": 900, "arrival": 1110}, (900, 1110)),
+])
+async def test_schedule_patch_survives_structured_output_and_applies(target, value, expected):
+    response = {"events": [{"type": "resource_schedule", "target_id": target, "value": value}],
+                "strategies": [], "explanation": "Actualizare orar.", "focus_id": target}
+    parsed = await interpret(response, text="Întârzie zborul cu 30 de minute")
+    assert parsed["events"][0]["value"] == value
+    world = seed_world()
+    apply_change(world, ScenarioChange.model_validate(parsed["events"][0]))
+    resource = next(resource for resource in world.resources if resource.id == target)
+    assert (resource.departure, resource.arrival) == expected
+
+
+@pytest.mark.asyncio
+async def test_empty_schedule_patch_from_model_is_rejected():
+    response = {"events": [{"type": "resource_schedule", "target_id": "F201",
+                             "value": {"departure": None, "arrival": None}}],
+                "strategies": [], "explanation": "Actualizare orar.", "focus_id": "F201"}
+    with pytest.raises(ProviderError, match="invalid command"):
+        await interpret(response)
 
 
 def test_structured_output_contract_requires_every_object_property():

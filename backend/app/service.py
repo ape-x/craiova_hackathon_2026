@@ -113,10 +113,19 @@ def apply_change(world: World,event: ScenarioChange):
                 resource.cost_per_person=cost
                 impacted_resources.add(resource.id)
         elif kind=="resource_schedule":
-            departure,arrival=value["departure"],value["arrival"]
+            departure=resource.departure if value["departure"] is None else value["departure"]
+            arrival=resource.arrival if value["arrival"] is None else value["arrival"]
+            if (departure,arrival)==(resource.departure,resource.arrival):
+                audit(world,kind,f"{resource.id} schedule is unchanged; existing passenger commitments are preserved.",resource.id,{"value":value,"source":"simulation","no_change":True})
+                return
             airborne=resource.kind=="flight" and resource.departure<=world.sim_time<resource.arrival and (resource.available or resource.status=="needs_diversion")
-            if resource.departure<=world.sim_time and (not airborne or departure!=resource.departure):
-                raise DomainError(409,"A departed service cannot be moved back in time; an airborne flight may only change its arrival time")
+            ground_held=resource.kind=="flight" and resource.status=="weather_held" and not resource.available
+            if airborne and departure!=resource.departure:
+                raise DomainError(409,f"{resource.id} is an airborne flight; its departure is fixed at {resource.departure}. Set departure to null and change only arrival.",{"resource_id":resource.id,"departure":resource.departure,"arrival":resource.arrival,"sim_time":world.sim_time})
+            if ground_held and departure<=world.sim_time:
+                raise DomainError(409,f"{resource.id} is held on the ground by weather; reschedule departure after simulation time {world.sim_time}.")
+            if resource.departure<=world.sim_time and not airborne and not ground_held:
+                raise DomainError(409,f"{resource.id} has already departed or completed; its schedule cannot be changed.")
             validate_schedule(world,departure,arrival,allow_airborne=airborne)
             if (departure,arrival)!=(resource.departure,resource.arrival):
                 resource.departure,resource.arrival=departure,arrival

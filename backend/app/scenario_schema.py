@@ -6,7 +6,7 @@ never observations from an external provider.
 """
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 HORIZON_MINUTES = 7 * 24 * 60
@@ -58,8 +58,16 @@ class PassengerBatchDefinition(ScenarioPayload):
 
 
 class ResourceSchedule(ScenarioPayload):
-    departure: int = Field(ge=0, lt=HORIZON_MINUTES)
-    arrival: int = Field(gt=0, le=HORIZON_MINUTES)
+    # Both keys are required for strict model output. Null preserves the
+    # corresponding existing time instead of asking the model to copy it.
+    departure: int | None = Field(ge=0, lt=HORIZON_MINUTES)
+    arrival: int | None = Field(gt=0, le=HORIZON_MINUTES)
+
+    @model_validator(mode="after")
+    def has_update(self):
+        if self.departure is None and self.arrival is None:
+            raise ValueError("A schedule update must specify departure or arrival")
+        return self
 
 
 class ResourceRoute(ScenarioPayload):

@@ -371,9 +371,24 @@ chosen and disclosed for an explicitly requested new demo.
 Hotel capacity is rooms; despite its legacy name, cost_per_person means cost
 per room for the whole hotel stay segment, and per passenger for bus/flight.
 All times are absolute minutes from world.epoch midnight: today 22:00=1320,
-tomorrow 08:00=1920. Convert delays relative to the existing schedule, retaining
-duration unless the user changes it. A flight explicitly described as already
-airborne may depart before sim_time and arrive after it; ground services may not.
+tomorrow 08:00=1920. Convert delays relative to the CURRENT resource schedule.
+For a future service, a generic delay moves departure and arrival together,
+retaining duration. For an AIRBORNE flight, a generic delay changes ONLY arrival:
+its actual departure is immutable. A flight is airborne when departure<=sim_time
+<arrival AND (available=true OR status=needs_diversion). Example: at sim_time=600,
+flight F201 departure=600,arrival=750, delayed30 -> resource_schedule with
+departure=null,arrival=780; NEVER departure=630. Repeated delays use the latest ETA.
+A change to only arrival or landing time preserves departure using null. A change
+to only departure preserves arrival using null unless the user also asks to shift
+the whole service. Do not emit unchanged schedules for the other services.
+A weather_held flight has NOT departed: when rescheduling it after its original
+departure time, supply a new future departure AND arrival; weather restrictions
+still apply. Completed services and departed ground services cannot be rescheduled.
+If an explicit request changes the actual departure of an airborne flight, explain
+the constraint with NO events/strategies; do not silently substitute an ETA change.
+A flight explicitly described as already airborne when CREATED may depart before
+sim_time and arrive after it; ground services may not. To reconstruct an earlier
+scenario, use reset only when explicitly requested, never to bypass these rules.
 Budget values are absolute EUR; convert relative instructions from current data.
 Maximum authoring horizon 7 days, total 32 airports,150 resources,250 passenger
 groups/1500 passengers and64events per command. State a limit rather than truncate.
@@ -412,7 +427,10 @@ resource_added: new ID,ResourceDefinition (complete synthetic bus/flight/hotel).
 passengers_added: null,PassengerBatchDefinition; server generates group IDs and
 tokens. budget_per_person is per person, passenger_count is total people; split
 into group_size without splitting a group during recovery. Never predict group IDs.
-resource_schedule: resource ID,ResourceSchedule with departure AND arrival.
+resource_schedule: resource ID,ResourceSchedule with both keys departure AND
+arrival; either value may be null to preserve that current time. At least one
+must be an absolute minute value. For airborne delays use departure=null and the
+new arrival; for future whole-service delays set both new times.
 resource_route: resource ID,ResourceRoute with origin AND destination.
 resource_cost: resource ID,nonnegative EUR per passenger (hotel: per room/stay).
 group_destination: group ID,known airport ID. group_priority: group ID,integer1..10.
