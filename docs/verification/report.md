@@ -4,7 +4,7 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `baf061f` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `1bc5eae` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
 
 ### Romanian scheduled transport and hotel package — 1 November 2026
 
@@ -40,10 +40,28 @@ atomic replacement at inventory capacity. A swallowed package-selection clause
 in a model's report quotation is now rejected before masking; a source brand
 merely describing an affected service does not become a new package request.
 
-Release deployment and read-only browser evidence are recorded separately after
-replacing the existing services. Google account administration, fresh spoken
-recovery and complete fresh-provider acceptance remain open. No earlier voice
-allowance was reused and FR24 polling remains paused.
+Both images were built from the exact committed archive and replaced the existing
+services after an integrity-checked private backup; rollback images are retained.
+Chrome loaded `index-CQmZKSl3.js`, showed Connected and captured zero console
+errors. The new Romania package selector preserved the eight-call allowance and
+correctly rejected the existing LHR-origin group. The form inputs and submission
+remained disabled until an eligible OTP-origin group is selected. This checks
+coverage handling, not a completed live Romanian journey. No search was submitted;
+the temporary selection was restored and the modal closed.
+
+An independent post-browser audit confirmed both deployed image revisions and
+the served bundle. The whole world except its clock and all case-job history
+remained unchanged: version 52, two groups, 25 resources, no active jobs or
+confirmed offers/resources. FR24 remained paused at 81 requests / 3,215 reserved
+credits; CAB remained two receipts / four HTTP calls, recovery steps 27 and both
+saved-transfer counts zero. These unchanged local counters cover deployment and
+UI inspection; the separate source-discovery calls above still occurred.
+
+Code CI passed on [main, run 179](https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41282904553)
+and [codex, run 178](https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41282904481).
+Google account administration, fresh spoken recovery and complete fresh-provider
+acceptance remain open. No earlier voice allowance was reused. See
+[machine-readable release evidence](romanian-hotel-release.json).
 
 ### Exact itinerary review and ground-route capacity — 1 November 2026
 
@@ -916,10 +934,11 @@ The local Three.js scene is an interactive architectural illustration with origi
 
 ## Remaining acceptance gates
 
-- Live acceptance of the implemented automatic flight → OTP → Bucharest.CAB → CRA workflow, including fresh flight/vehicle evidence, chosen-only application and exact spoken reuse. Broader Romanian ground coverage remains open: reverse and other airport pairs, pickups inside the source's conservative nine-hour notice, coach stock and airport–station links. Case restrictions and routing over existing sourced ground connections are implemented; they do not imply wider inventory.
+- Live acceptance of the implemented automatic flight → OTP → Bucharest.CAB → CRA workflow, including fresh flight/vehicle evidence, chosen-only application and exact spoken reuse. Broader Romanian ground coverage remains open: reverse and other airport pairs, pickups inside the source's conservative nine-hour notice, larger coach-party availability and airport–station links. Case restrictions and routing over existing sourced ground connections are implemented; they do not imply wider inventory.
+- Complete fresh-provider acceptance of the typed OTP → Hotel Aro Palace → OTP → onward-flight package. Transfero timetables, reported seats, party fares and exact LiteAPI hotel rates/policy have real source evidence; the complete eight-call application workflow and stock accounting have offline evidence. Browser coverage rejection was verified with the existing LHR group. No eligible group or dates were invented to run the new package; Romanian saved-profile voice reuse is not implemented.
 - Successful spoken report → scoped automatic recovery on the current release. The latest authorized synthesized-audio attempt recognized the request and queued recovery, but an ECB timeout prevented the complete itinerary and the spoken acknowledgement used the wrong date. The subsequent corrections have not had another paid spoken run. Device microphone, playback and interruption also remain untested.
 - Continuous FR24 position display with original timestamps and agreed account usage/retention; the authorized flight lookup/case flow is already verified above.
-- Verified Romanian ground-transport availability and complete physical journeys. The CRA → OTP public-fare adapter now preserves dated adult-party prices, exact stops and original RON/estimated EUR evidence; consumer fare observations alone do not verify seats, luggage or booking expiry. Other Romanian routes remain outside implemented coverage.
+- Complete physical-journey verification beyond the explicitly bounded Romanian sources. The CRA → OTP public-fare adapter preserves dated adult-party prices, exact stops and original RON/estimated EUR evidence; those fare observations alone do not verify seats, luggage or booking expiry. The separate Transfero OTP ↔ Aro Palace adapter validates reported shared seats and standard baggage terms, but exact boarding bays and hotel-door access remain unverified. Unimplemented airport pairs and station connections are not implied by either source.
 - Replanning already confirmed bookings or completed physical journeys remains unsupported. The repeated-operation inventory/history implementation and its offline capacity tests are recorded above.
 - Confirm Google billing health and configure separate restricted browser/server credentials. The 1 November local audit found the two configured values identical without exposing either value. Google Cloud Console reported a `gstatic.com` JavaScript loading failure after reload and did not expose billing/key administration. Existing terrain rendering is not proof of the account restrictions. No credentials or billing settings were changed during that audit.
 - Verify surveyed terminal photogrammetry and precise alignment against current airport data; authored GLB rendering/orientation now has browser evidence.

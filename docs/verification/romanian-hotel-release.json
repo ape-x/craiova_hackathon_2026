@@ -1,0 +1,109 @@
+{
+  "checked_at_utc": "2026-11-01T07:03:07+00:00",
+  "code_revision": "1bc5eae991e2dd00900547cd57bbbbea4e89cda3",
+  "deployed_api_revision": "1bc5eae991e2dd00900547cd57bbbbea4e89cda3",
+  "deployed_web_revision": "1bc5eae991e2dd00900547cd57bbbbea4e89cda3",
+  "url": "http://localhost:8080",
+  "exact_commit_archive_build": true,
+  "additional_app_servers_started": false,
+  "backup_integrity": "ok",
+  "rollback_images_retained": true,
+  "checks": {
+    "backend_full_suite_before_final_guard_fix_passed": 3057,
+    "backend_final_command_regressions_passed": 347,
+    "new_cases_in_final_regressions": 3,
+    "frontend_tests_passed": 957,
+    "frontend_test_files": 57,
+    "typescript": true,
+    "production_build": true,
+    "format": true,
+    "diff_check": true,
+    "independent_review": true,
+    "independent_post_deployment_audit": true
+  },
+  "offline_acceptance": {
+    "bounded_eight_call_complete_workflow": true,
+    "chosen_only_four_resource_atomic_application": true,
+    "exact_hotel_and_stay_policy": true,
+    "party_ron_price_and_dated_ecb_estimate": true,
+    "mandatory_hotel_fees_included": true,
+    "shared_stock_across_receipt_revisions_and_groups": true,
+    "latest_stock_observation_with_all_fixed_usage": true,
+    "conservative_boarding_and_airport_connections": true,
+    "expiry_cancellation_changed_scope_and_unknown_outcomes": true,
+    "inventory_capacity_replacement": true,
+    "package_instruction_cannot_be_hidden_in_report_quote": true,
+    "no_uk_profile_substitution": true,
+    "booking_rejected_without_mutation": true
+  },
+  "source_discovery": {
+    "evidence": "romanian-hotel-source-discovery.json",
+    "transfero_successful_query_only_posts": 2,
+    "transfero_initial_get_without_query": 1,
+    "liteapi_read_only_requests": 3,
+    "saved_transfero_responses_replayed_with_production_parser": 2,
+    "source_options_accepted_in_replay": 26,
+    "replay_network_calls": 0,
+    "fresh_complete_application_workflow": false,
+    "new_paid_voice_model_or_flight_acceptance_run": false
+  },
+  "browser": {
+    "bundle": "/assets/index-CQmZKSl3.js",
+    "connected": true,
+    "captured_console_errors": 0,
+    "romanian_package_selector_verified": true,
+    "eight_call_allowance_preserved": true,
+    "existing_lhr_origin_group_rejected": true,
+    "ineligible_form_inputs_and_submission_disabled": true,
+    "eligible_complete_journey_exercised_live": false,
+    "search_submitted": false,
+    "temporary_form_selection_restored": true,
+    "modal_closed": true
+  },
+  "operational_state": {
+    "world_version": 52,
+    "groups": 2,
+    "resources": 25,
+    "active_jobs": 0,
+    "confirmed_offers": 0,
+    "confirmed_resources": 0,
+    "traffic_running": false,
+    "whole_world_except_clock_unchanged": true,
+    "all_case_job_history_unchanged": true
+  },
+  "unchanged_deployment_and_browser_counters": {
+    "fr24_requests": 81,
+    "fr24_credits": 3215,
+    "cab_receipts": [2, 4],
+    "recovery_steps": 27,
+    "saved_transfer_profiles": 0,
+    "saved_after_flight_profiles": 0
+  },
+  "google_admin": {
+    "console_loaded": false,
+    "observed_error": "Google Cloud Console has failed to load JavaScript sources from www.gstatic.com.",
+    "account_configuration_changed": false
+  },
+  "limitations": [
+    "Source observations and offline workflow evidence do not establish a fresh complete Romanian application run.",
+    "The current linked group's reported LHR origin is outside this package; no runtime group or dates were altered to manufacture eligibility.",
+    "Romanian recovery requires typed setup; saved-profile spoken reuse is not implemented.",
+    "Reported seats are not held, local freshness is not supplier quote expiry, and named stops do not verify exact physical access.",
+    "Prior spoken recovery remains incomplete; its single-run authorization was not reused.",
+    "Google account administration and full production acceptance remain open as detailed in report.md."
+  ],
+  "code_ci": [
+    {
+      "branch": "main",
+      "number": 179,
+      "status": "success",
+      "url": "https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41282904553"
+    },
+    {
+      "branch": "codex/airport-recovery-live",
+      "number": 178,
+      "status": "success",
+      "url": "https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41282904481"
+    }
+  ]
+}
