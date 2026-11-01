@@ -1,0 +1,96 @@
+{
+  "date_utc": "2026-11-01",
+  "code_revision": "9331322e83925749fa0531e0a403fe8c0deb23b1",
+  "deployed_api_revision": "9331322e83925749fa0531e0a403fe8c0deb23b1",
+  "deployed_web_revision": "9331322e83925749fa0531e0a403fe8c0deb23b1",
+  "url": "http://localhost:8080",
+  "exact_commit_archive_build": true,
+  "additional_app_servers_started": false,
+  "backup_integrity": "ok",
+  "rollback_images_retained": true,
+  "checks": {
+    "backend_tests_passed": 3214,
+    "frontend_tests_passed": 970,
+    "frontend_test_files": 58,
+    "typescript": true,
+    "production_build": true,
+    "format": true,
+    "diff_check": true,
+    "independent_reviews": true,
+    "independent_post_deployment_audit": true
+  },
+  "offline_acceptance": {
+    "profile_saved_only_with_successful_complete_plan": true,
+    "profile_ledger_world_and_receipt_rollback_together": true,
+    "exact_identity_and_detached_inputs": true,
+    "authenticated_exact_group_snapshot_read": true,
+    "missing_stale_invalid_profile_receipts": true,
+    "bounded_ai_summary_and_voice_validity_only": true,
+    "explicit_ro_en_scoped_reuse": true,
+    "nine_total_calls_required_default_eight_unchanged": true,
+    "plain_and_post_report_commands": true,
+    "mixed_profiles_and_changed_inputs_not_silently_omitted": true,
+    "shared_uk_and_romanian_report_excerpt_constraints": true,
+    "valid_readiness_and_exact_entity_labels_preserved": true,
+    "asgi_typed_plan_then_command_then_fresh_eight_call_worker": true,
+    "four_leg_proposal_other_group_preserved_no_bookings": true,
+    "same_key_replay_without_repeated_calls": true,
+    "explicit_draft_replacement_and_stale_read_guards": true,
+    "exact_dates_and_original_scope_modes_allowance_on_load": true,
+    "no_search_or_submission_on_read_or_load": true
+  },
+  "browser": {
+    "bundle": "/assets/index-C5oZqI3N.js",
+    "connected": true,
+    "captured_console_errors": 0,
+    "saved_romanian_review_control_verified": true,
+    "actual_authenticated_missing_profile_receipt": true,
+    "existing_lhr_group_and_no_profile_invented": true,
+    "eight_call_allowance_preserved": true,
+    "search_remained_disabled": true,
+    "populated_saved_profile_load_exercised_live": false,
+    "search_submitted": false,
+    "temporary_form_selections_restored": true,
+    "modal_closed": true
+  },
+  "operational_state": {
+    "world_version": 52,
+    "groups": 2,
+    "resources": 25,
+    "active_jobs": 0,
+    "confirmed_offers": 0,
+    "confirmed_resources": 0,
+    "traffic_running": false,
+    "whole_world_except_clock_unchanged": true,
+    "all_case_job_history_unchanged": true
+  },
+  "unchanged_usage": {
+    "fr24_requests": 81,
+    "fr24_credits": 3215,
+    "cab_receipts": [2, 4],
+    "recovery_steps": 27,
+    "saved_transfer_profiles": 0,
+    "saved_after_flight_profiles": 0,
+    "saved_romanian_hotel_profiles": 0
+  },
+  "limitations": [
+    "Positive saved-profile loading and complete command recovery have offline evidence; the browser read an actual missing profile.",
+    "No new paid voice/model/flight/transport/hotel acceptance run was performed.",
+    "No earlier single-run voice allowance was reused.",
+    "Google account administration and full fresh-source/spoken acceptance remain open as detailed in report.md."
+  ],
+  "code_ci": [
+    {
+      "branch": "main",
+      "number": 183,
+      "status": "success",
+      "url": "https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41285214959"
+    },
+    {
+      "branch": "codex/airport-recovery-live",
+      "number": 182,
+      "status": "success",
+      "url": "https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41285214934"
+    }
+  ]
+}

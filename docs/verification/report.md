@@ -4,7 +4,57 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `1bc5eae` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `9331322` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+
+### Saved Romanian hotel inputs and scoped command reuse — 1 November 2026
+
+Release `9331322` saves exact Romanian hotel inputs only with a successfully
+applied complete four-leg proposal, in the same transaction as inventory, ledger
+completion and idempotency. The separate profile binds operation, case, party
+and route. Authenticated review reads one exact group from a coherent snapshot;
+loading preserves the selected scope, exact dates, modes and call allowance.
+Nonempty drafts require explicit replacement. Failed or stale reads cannot
+replace a newer draft or create a search.
+
+An affirmative RO/EN command explicitly naming the saved Romanian hotel setup
+can queue fresh sourcing for one group and all three modes. It requires nine
+total calls including interpretation; the default eight is unchanged. Missing,
+stale, infeasible, edited or mixed-profile requests require review. The same
+input-change checks now examine report excerpts before masking in both Romanian
+and UK saved-hotel recovery: an outage quote cannot erase extra baggage, budget,
+property, route, margin or second-profile requirements. Valid reports survive
+known setup blocks; unexpected transaction failures roll back.
+
+Final local checks passed **3,214 backend tests** and **970 frontend tests across
+58 files**, TypeScript/production build, formatting and diff checks. Independent
+reviews covered profile/commit atomicity, API scope/privacy, command/report
+composition and draft loading. The existing Starlette and simulation-bundle
+warnings remain non-failing. Offline ASGI acceptance performed typed request →
+eight-call worker → saved profile → one interpreted command → a fresh eight-call
+four-leg proposal → updated profile → same-key replay. It preserved the other
+group and created no bookings. Models and source transports were mocked; these
+tests do not establish a new real spoken or supplier acceptance result.
+GitHub verification also passed on both published code branches:
+[main run 183](https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41285214959)
+and [codex run 182](https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41285214934).
+
+Both images were built from the exact committed archive and replaced the existing
+services after an integrity-checked private backup, retaining rollback images.
+Chrome loaded `index-C5oZqI3N.js`, showed Connected and captured zero console
+errors. Selecting Romania and reading the existing LHR group's profile returned
+the correct missing-profile receipt. The allowance stayed eight and submission
+remained disabled. No profile was fabricated, no search was submitted, temporary
+form selections were restored and the modal closed. Positive saved-input loading
+has offline component evidence, not a populated runtime Romanian profile.
+
+Independent post-deployment checks and the post-browser comparison confirmed
+world version 52, two groups, 25 resources, no active jobs or confirmed
+offers/resources, and unchanged complete world/job history apart from the clock.
+FR24 stayed paused at 81 requests / 3,215 reserved credits; CAB stayed two
+receipts / four HTTP calls, recovery steps 27 and all three separate profile-table
+counts zero. No new paid voice/model/source acceptance run was made. Google
+administration and remaining fresh-source/spoken gates are still open.
+See [machine-readable release evidence](romanian-hotel-profile-release.json).
 
 ### Romanian scheduled transport and hotel package — 1 November 2026
 
@@ -13,9 +63,10 @@ onward flight. It preserves party-priced RON, dated ECB EUR estimates, mandatory
 hotel fees, shared seat stock across receipt revisions, exact stay policy and
 explicit boarding/airport margins. Eight durable calls cover both scheduled
 services, hotel rates/metadata, ECB, Responses, flight source and Decisions.
-Only the chosen complete four-leg proposal is applied atomically. No booking
-or Romanian saved-profile voice reuse is implemented; named requests cannot
-silently substitute UK hotel inputs.
+Only the chosen complete four-leg proposal is applied atomically. Booking is
+not implemented. Romanian saved-profile voice reuse was absent in this earlier
+`1bc5eae` release; `9331322` adds the implementation described above. Named
+requests cannot silently substitute UK hotel inputs.
 
 Real source discovery made two successful query-only Transfero searches and three
 LiteAPI hotel requests. The latter returned EUR114.48 plus EUR1.86 mandatory fees
