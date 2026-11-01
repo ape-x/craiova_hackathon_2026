@@ -4,7 +4,54 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `61ba116` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `7c193e8` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+
+### Saved airport-transfer inputs and fresh-source recovery — 1 November 2026
+
+Release `7c193e8` stores exact CAB pickup and baggage inputs in a separate,
+scope-bound SQLite profile only when a complete chosen plan using a newly
+sourced CAB category commits. It does not alter passenger provenance or source
+fingerprints. Explicit current English/Romanian requests can reuse those inputs
+through ordinary recovery or a grounded service/arrival/airport report. The
+post-report state and original call allowance are revalidated. New pickup,
+baggage or route instructions are not silently replaced with saved values.
+
+A reproduced regression previously allowed a new no-fit source result to fall
+back to an older CAB quote. Explicit fresh searches now exclude earlier CAB
+quotes from their candidates, and the final commit independently requires this
+attempt's fresh evidence matching its exact pickup and baggage. Failed searches
+leave historical inventory and prior profiles intact.
+
+The complete suite passed **2,393 backend tests and 604 frontend tests across
+44 files**, TypeScript, production build, formatting and diff checks. The 43
+offline spoken-command integration cases exercise mocked interpretation, the
+real SQLite/solver/source parser, fresh CAB-only recovery in four total calls
+and CAB plus an onward flight in six. They also cover report-preserving blocked
+searches, exact resource IDs containing airport-code prefixes, missing/changed
+profiles, lower allowances, conditional or changed-input requests, privacy,
+authentication and atomic rollback. These are not live audio or supplier checks.
+
+Both container images came from the exact committed archive; revision labels
+match `7c193e8`. GitHub Actions passed on main (150) and codex (151). A verified
+private SQLite backup and previous image tags were retained before replacing
+the same two containers. Full state/history comparison after restart and browser
+review preserved world 52, two groups, 25 resources and zero active jobs or
+confirmed offers/resources. FR24 remains paused at 81 requests / 3,215 reserved
+credits. CAB receipts remain two with four HTTP dispatches; recovery steps
+remain 27, and no saved CAB profile was fabricated in the live operation.
+
+The deployed browser loaded `/assets/index-DylChHUj.js` with zero console errors.
+The new explicit **Review saved transfer inputs** control read the authenticated
+profile endpoint, displayed the selected group's missing-profile explanation,
+and retained the eight-call allowance. No source search, report, booking or voice
+session was submitted; the local draft was discarded. Successful load/replacement
+and stale-response protection have offline UI coverage, not a fabricated live
+profile. Expired proposals now direct operators to fresh provider sourcing.
+
+Fresh automatic CAB acceptance and successful spoken recovery remain open.
+The previously approved single voice run was already consumed; it was not
+repeated here. Earlier unapproved follow-up preparations target older code and
+must be refreshed before any separately authorized execution.
 
 ### Automatic initial airport transfers — 1 November 2026
 
@@ -49,8 +96,9 @@ have separate render regressions and never claim current availability from an
 old successful receipt.
 
 Fresh automatic CAB/provider acceptance, pickup after a future flight and the
-successful bounded spoken hotel rerun remain open. The new CAB fields are not
-currently supplied by voice commands. The earlier single voice-test permission
+successful bounded spoken hotel rerun remained open at `61ba116`; that release
+did not supply CAB fields through voice. Saved-input reuse was added above in
+`7c193e8`. The earlier single voice-test permission
 was consumed; its failed result below was not rerun during this release. The
 prepared follow-up probe still targets the earlier code and must be refreshed
 and revalidated before any separately approved run.
@@ -557,7 +605,7 @@ The local Three.js scene is an interactive architectural illustration with origi
 ## Remaining acceptance gates
 
 - Automatic sourcing of verified connecting ground transport for an alternate arrival. Case-scoped directional airport updates are implemented and covered by isolated route/worker/UI checks above; this does not establish new ground inventory or a successful live spoken restriction-and-recovery run.
-- Successful spoken report → scoped automatic recovery on the current release. The latest authorized synthesized-audio attempt failed recognition before any backend command. Device microphone, playback and interruption also remain untested.
+- Successful spoken report → scoped automatic recovery on the current release. The latest authorized synthesized-audio attempt recognized the request and queued recovery, but an ECB timeout prevented the complete itinerary and the spoken acknowledgement used the wrong date. The subsequent corrections have not had another paid spoken run. Device microphone, playback and interruption also remain untested.
 - Continuous FR24 position display with original timestamps and agreed account usage/retention; the authorized flight lookup/case flow is already verified above.
 - Verified Romanian ground-transport availability and complete physical journeys. The CRA → OTP public-fare adapter now preserves dated adult-party prices, exact stops and original RON/estimated EUR evidence; consumer fare observations alone do not verify seats, luggage or booking expiry. Other Romanian routes remain outside implemented coverage.
 - Replanning already confirmed bookings or completed physical journeys remains unsupported. The repeated-operation inventory/history implementation and its offline capacity tests are recorded above.
