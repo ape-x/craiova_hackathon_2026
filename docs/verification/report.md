@@ -4,7 +4,56 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `622bb0b` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `61ba116` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+
+### Automatic initial airport transfers — 1 November 2026
+
+Release `61ba116` adds explicit per-group Bucharest.CAB retrieval to normal
+recovery and atomic arrival recovery. The source is queried before flight
+discovery, so a current OTP→CRA initial leg can justify an onward CRA flight.
+Both source HTTP phases have distinct job-ledger outcomes; anonymous bootstrap
+data stays in memory. Manual and automatic imports share durable quote revision
+ordering. Only the chosen resources are committed with the selected proposal.
+
+The final code passed **2,286 backend tests and 582 frontend tests across 43
+files**, strict TypeScript, production builds and formatting. The combined
+34-case offline suite uses the real source parser, SQLite ledger and solver
+with captured public fixtures, mocked HTTP and fake AI/flight adapters. It
+proves a bus-only completion in three calls and one CAB-plus-flight completion
+in five, including the 30-minute connection allowance. It also checks declared
+zero luggage, exact pickup preservation, partial failure, cancellation/version
+changes between HTTP phases, expiry during query planning or Decisions,
+surviving route witnesses, fixed fleet limits, revision interleaving,
+chosen-only capacity, rollback and report-preserving arrival/restriction
+prerequisites. No real-provider or real-model completion is inferred from these
+offline results. Existing Starlette/httpx and authored-Scene size warnings remain.
+
+Both images were built from the exact committed archive and their revision
+labels match `61ba116`. GitHub Actions passed for main (147) and codex (146).
+A private SQLite backup passed integrity checking before replacement of the
+same two containers. Readiness and full comparisons after restart and browser
+review preserved world 52, both groups, 25 resources and all recovery history.
+No job is active, no resource/offer is confirmed, and traffic remains paused.
+FR24 remains at 81 reserved requests and 3,215 reserved credits; CAB receipt
+counters and recovery-step counts are unchanged.
+
+The actual browser loaded `/assets/index-KVmzlvvI.js` with zero console errors.
+An unsubmitted arrival draft showed the new source controls against its projected
+OTP state: pickup and both bag totals started empty, explicit keyboard-entered
+UTC times and two bags of each type remained visible, and the call limit stayed
+eight. Changing the draft airport back to LHR retained but disabled stale inputs
+and required review. The dialog was closed without submitting a report, job,
+supplier search or voice session. This checks the deployed form, not a fresh
+combined-provider run. Historical fare observations on blocked/completed jobs
+have separate render regressions and never claim current availability from an
+old successful receipt.
+
+Fresh automatic CAB/provider acceptance, pickup after a future flight and the
+successful bounded spoken hotel rerun remain open. The new CAB fields are not
+currently supplied by voice commands. The earlier single voice-test permission
+was consumed; its failed result below was not rerun during this release. The
+prepared follow-up probe still targets the earlier code and must be refreshed
+and revalidated before any separately approved run.
 
 The subsequent automatic hotel workflow (`b3afa9e`) and scope-bound reusable input profile (`95a0606`) have passed **1,252 backend tests and 273 frontend tests**, strict TypeScript, the production build and formatting. The automatic core passed GitHub Actions on both branches (runs 84/85); the full UI release passed both branch runs 88/89. Actual source-backed automatic acceptance is recorded below. Backend tests include required hotel stays, counted source calls, independent connection/budget validation, chosen-only atomic application, immutable out-of-scope bookings, profile identity before both transfer fingerprints, exact voice reuse and bounded call allowances. Focused counts overlap the full suite and are not added to it. One initial CI run on `95a0606` failed only because the read-derived live minute advanced during a whole-world test comparison. `ca7eea7` excludes that display clock while retaining every operational field and version assertion; both full branch runs 90/91 passed. Application timing and expiry logic were unchanged.
 
@@ -105,9 +154,10 @@ The deployed browser made two explicit quote searches (four supplier GETs total)
 
 Visual inspection exposed a selected-map defect: unrelated APL geometry made the CAB card inherit a dated Google-road legend, and its annotation overlapped the origin airport. The follow-up scopes the card/key to the selected route and moves the connection-only annotation between endpoints, explicitly not a vehicle position. Mixed-source map regressions preserve actual Google road geometry and overview keys.
 
-Automatic retrieval from this new source, a pickup after a future flight, other
-Romanian airport pairs and successful spoken/full-itinerary acceptance remain
-separate acceptance gates. A manual sourced leg is not evidence for those flows.
+Automatic retrieval now has the separate offline and deployed-form evidence
+above; fresh combined-provider acceptance remains open. A pickup after a future
+flight, other Romanian airport pairs and successful spoken/full-itinerary
+acceptance are separate gaps. A manual sourced leg is not evidence for those flows.
 
 ### Case airport restrictions and atomic recovery
 
