@@ -1,0 +1,52 @@
+{
+  "date": "2026-11-01",
+  "code_revision": "25aa32232a35439de30da15dd564ab1194cde947",
+  "application": "http://localhost:8080",
+  "extra_application_instances_started": 0,
+  "verification": {
+    "backend_tests_passed": 2724,
+    "frontend_tests_passed": 795,
+    "frontend_test_files": 50,
+    "new_command_cases": 55,
+    "typescript_production_build": "passed",
+    "format_and_diff_checks": "passed",
+    "mocked_reuse_total_call_limits": [7, 8, 9],
+    "runtime_model_or_supplier_calls": 0,
+    "additional_voice_probes": 0,
+    "browser_console_errors": 0,
+    "browser_bundle": "/assets/index-Bs9TEyDe.js",
+    "browser_profile_read": "Authenticated read correctly returned missing configuration for selected live group",
+    "browser_call_limit_preserved": 8,
+    "browser_draft_restored": true,
+    "github_ci": {"codex_branch_run": 163, "main_run": 162, "both": "success"}
+  },
+  "deployment": {
+    "exact_committed_archive": true,
+    "api_and_web_revision_labels_match": true,
+    "backup_integrity": "ok",
+    "readiness": "ready",
+    "entire_world_except_clock_unchanged": true,
+    "existing_job_history_unchanged": true,
+    "world_version": 52,
+    "passenger_groups": 2,
+    "resources": 25,
+    "active_jobs": 0,
+    "supplier_confirmed_resources": 0,
+    "supplier_confirmed_offers": 0
+  },
+  "usage_unchanged": {
+    "fr24_paused": true,
+    "fr24_requests": 81,
+    "fr24_credits_reserved": 3215,
+    "cab_receipts": 2,
+    "cab_http_requests": 4,
+    "recovery_steps": 27,
+    "saved_initial_transfer_profiles": 0,
+    "saved_after_flight_profiles": 0
+  },
+  "remaining_acceptance": [
+    "Real flight and CAB end-to-end attempt and successful saved-profile reuse",
+    "Successful spoken recovery and device microphone behavior",
+    "Terminal access, physical journey and supplier booking confirmation"
+  ]
+}

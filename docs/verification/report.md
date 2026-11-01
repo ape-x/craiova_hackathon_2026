@@ -4,7 +4,46 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `f599139` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `25aa322` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+
+### Saved after-flight inputs and live command composition — 1 November 2026
+
+Release `25aa322` saves the exact after-flight window, processing, bags and
+maximum alternatives only with a complete selected flight–CAB plan. Its separate
+SQLite profile is committed atomically with the world and job receipt. Explicit
+RO/EN voice/text reuse revalidates the current or post-report conditions and runs
+fresh flight and vehicle searches. Seven total calls include interpretation and
+one variant; nine can allow two only with saved maximum two. Default eight is
+unchanged. No old fare, arrival or booking is supplied by the profile.
+
+The final local suite passed **2,724 backend tests and 795 frontend tests across
+50 files**, plus TypeScript/production build, formatting and diff checks. The 55
+new command cases cover exact scope, 7/8/9-call bounds, fresh re-sourcing and replay,
+bus failures, restriction/arrival reports, expired inputs, known setup blocks,
+unexpected transaction rollback and model omissions. Literal guards reject dropped
+groups and requested money/party/accessibility/window/bag/route/alternative edits.
+Report quotes cannot swallow a separate saved-input command, including branded
+references; a negative airport report does not negate a separate affirmative reuse.
+Storage tests verify successful-plan-only persistence and full rollback. Actual
+Responses/Voice adapters and the authenticated voice endpoint were exercised with
+mocked transports; startup context exposes only the separate scope-valid boolean.
+
+Both images were built from the exact committed archive and installed over the
+existing services after a verified private backup. GitHub checks **163** (codex)
+and **162** (main) both passed. Browser QA loaded
+`/assets/index-Bs9TEyDe.js` with zero console errors. The new review button performed
+the real authenticated read and correctly showed that the selected group has no
+saved after-flight setup; the call limit remained eight and no search started.
+Successful loading, exact old dates and incompatible/stale-draft handling have
+component-test evidence. Unsent selections were restored and the dialog closed.
+
+The entire world excluding its clock and all existing job receipts are unchanged:
+world 52, two groups, 25 resources, no active jobs and no supplier-confirmed travel.
+FR24 remains paused at 81 requests/3,215 reserved credits; CAB remains two receipts,
+four HTTP requests and 27 recovery steps. Both saved-transfer tables have zero live
+profiles. No additional runtime model/supplier call or paid voice probe was made.
+Real end-to-end provider and spoken acceptance remains open; the consumed voice
+allowance was not reused. [Machine-readable evidence](after-flight-reuse-release.json).
 
 ### AI-selected incoming flight and airport transfer — 1 November 2026
 
@@ -30,8 +69,9 @@ Frontend tests verify explicit inputs, new-airport arrival previews without fake
 coordinates, historical connection proof, non-minute operation epochs and combined
 flight/vehicle freshness. A bound flight's 120-second source window and any earlier
 strict supplier expiry limit the vehicle badge as well; missing or changed source
-evidence cannot leave it labeled current. Explicit future flight-to-transfer
-voice/text requests require typed setup until separate saved-profile reuse exists.
+evidence cannot leave it labeled current. At this earlier release, explicit future
+flight-to-transfer voice/text requests required typed setup; separate saved-profile
+reuse is covered by the newer release above.
 
 Both images were built from the exact committed archive, labeled `f599139`, and
 installed over the existing Compose services after a verified private backup.
