@@ -54,10 +54,11 @@ export default function PassengerHistory({
         </ul>
       )}
       <p>
-        Recorded {costPresentation(offer.itinerary).estimated ? 'estimated total' : 'total'}:{' '}
-        {costPresentation(offer.itinerary).amount}
+        Recorded{' '}
+        {costPresentation(offer.itinerary, sources).estimated ? 'estimated total' : 'total'}:{' '}
+        {costPresentation(offer.itinerary, sources).amount}
       </p>
-      <EstimatedCostNote value={offer.itinerary} />
+      <EstimatedCostNote value={offer.itinerary} resources={sources} />
     </details>
   );
 }

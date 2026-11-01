@@ -1,0 +1,376 @@
+{
+  "success": true,
+  "vehicle_types": [
+    {
+      "id": 1,
+      "type": "Sedan",
+      "text_color": null,
+      "vehicle_types_icons_id": 2,
+      "passengers": 3,
+      "suitcases": 2,
+      "handbags": 2,
+      "price_per_km": "0.80",
+      "price_per_hour": "1000.00",
+      "baby_seat": 1,
+      "baby_seat_max_number": 2,
+      "baby_seat_price": "0.00",
+      "child_seat": 1,
+      "child_seat_max_number": 2,
+      "child_seat_price": "0.00",
+      "booster_seat": 1,
+      "booster_seat_max_number": 2,
+      "booster_seat_price": "0.00",
+      "meet_greet_price": "0.00",
+      "status": 1,
+      "minimal_order_price": "27.00",
+      "additional_stop_price": "5.00",
+      "created_at": "2025-05-06T08:26:28.000000Z",
+      "updated_at": "2026-07-25T13:27:51.000000Z",
+      "skis": 0,
+      "skis_max_number": 0,
+      "skis_price": "0.00",
+      "snowboards": 0,
+      "snowboards_max_number": 0,
+      "snowboards_price": "0.00",
+      "bicycles": 0,
+      "bicycles_max_number": 0,
+      "bicycles_price": "0.00",
+      "pets": 0,
+      "pets_max_number": 0,
+      "pets_price": "0.00",
+      "night_surcharge": false,
+      "night_surcharge_fee": "3.00",
+      "night_surcharge_start_time": "22:00:00",
+      "night_surcharge_end_time": "05:00:00",
+      "break_hours": []
+    },
+    {
+      "id": 2,
+      "type": "Combi",
+      "text_color": null,
+      "vehicle_types_icons_id": 3,
+      "passengers": 4,
+      "suitcases": 3,
+      "handbags": 3,
+      "price_per_km": "0.90",
+      "price_per_hour": "1000.00",
+      "baby_seat": 1,
+      "baby_seat_max_number": 2,
+      "baby_seat_price": "0.00",
+      "child_seat": 1,
+      "child_seat_max_number": 2,
+      "child_seat_price": "0.00",
+      "booster_seat": 1,
+      "booster_seat_max_number": 2,
+      "booster_seat_price": "0.00",
+      "meet_greet_price": "0.00",
+      "status": 1,
+      "minimal_order_price": "30.00",
+      "additional_stop_price": "5.00",
+      "created_at": "2025-05-06T08:26:28.000000Z",
+      "updated_at": "2026-07-25T13:28:31.000000Z",
+      "skis": 0,
+      "skis_max_number": 0,
+      "skis_price": "0.00",
+      "snowboards": 0,
+      "snowboards_max_number": 0,
+      "snowboards_price": "0.00",
+      "bicycles": 0,
+      "bicycles_max_number": 0,
+      "bicycles_price": "0.00",
+      "pets": 0,
+      "pets_max_number": 0,
+      "pets_price": "0.00",
+      "night_surcharge": false,
+      "night_surcharge_fee": "3.00",
+      "night_surcharge_start_time": "22:00:00",
+      "night_surcharge_end_time": "05:00:00",
+      "break_hours": []
+    },
+    {
+      "id": 3,
+      "type": "Van",
+      "text_color": null,
+      "vehicle_types_icons_id": 5,
+      "passengers": 7,
+      "suitcases": 7,
+      "handbags": 7,
+      "price_per_km": "1.00",
+      "price_per_hour": "1000.00",
+      "baby_seat": 1,
+      "baby_seat_max_number": 2,
+      "baby_seat_price": "0.00",
+      "child_seat": 1,
+      "child_seat_max_number": 2,
+      "child_seat_price": "0.00",
+      "booster_seat": 1,
+      "booster_seat_max_number": 2,
+      "booster_seat_price": "0.00",
+      "meet_greet_price": "0.00",
+      "status": 1,
+      "minimal_order_price": "50.00",
+      "additional_stop_price": "20.00",
+      "created_at": "2025-05-06T08:26:28.000000Z",
+      "updated_at": "2026-07-26T06:24:23.000000Z",
+      "skis": 0,
+      "skis_max_number": 0,
+      "skis_price": "0.00",
+      "snowboards": 0,
+      "snowboards_max_number": 0,
+      "snowboards_price": "0.00",
+      "bicycles": 0,
+      "bicycles_max_number": 0,
+      "bicycles_price": "0.00",
+      "pets": 0,
+      "pets_max_number": 0,
+      "pets_price": "0.00",
+      "night_surcharge": false,
+      "night_surcharge_fee": "3.00",
+      "night_surcharge_start_time": "22:00:00",
+      "night_surcharge_end_time": "05:00:00",
+      "break_hours": []
+    },
+    {
+      "id": 4,
+      "type": "Business Class",
+      "text_color": null,
+      "vehicle_types_icons_id": 8,
+      "passengers": 2,
+      "suitcases": 2,
+      "handbags": 2,
+      "price_per_km": "1.10",
+      "price_per_hour": "1000.00",
+      "baby_seat": 0,
+      "baby_seat_max_number": 1,
+      "baby_seat_price": "5.00",
+      "child_seat": 0,
+      "child_seat_max_number": 1,
+      "child_seat_price": "5.00",
+      "booster_seat": 0,
+      "booster_seat_max_number": 1,
+      "booster_seat_price": "2.00",
+      "meet_greet_price": "0.00",
+      "status": 1,
+      "minimal_order_price": "50.00",
+      "additional_stop_price": "10.00",
+      "created_at": "2025-05-23T11:28:51.000000Z",
+      "updated_at": "2026-07-25T13:27:10.000000Z",
+      "skis": 0,
+      "skis_max_number": 0,
+      "skis_price": "0.00",
+      "snowboards": 0,
+      "snowboards_max_number": 0,
+      "snowboards_price": "0.00",
+      "bicycles": 0,
+      "bicycles_max_number": 0,
+      "bicycles_price": "0.00",
+      "pets": 0,
+      "pets_max_number": 0,
+      "pets_price": "0.00",
+      "night_surcharge": false,
+      "night_surcharge_fee": "3.00",
+      "night_surcharge_start_time": "22:00:00",
+      "night_surcharge_end_time": "05:00:00",
+      "break_hours": []
+    }
+  ],
+  "start_place_data": {
+    "id": "ChIJd49YtoEcskARfodtna1dThE",
+    "formattedAddress": "Calea Bucureștilor 224E, 075150 Otopeni, Romania",
+    "addressComponents": [
+      {
+        "longText": "224E",
+        "shortText": "224E",
+        "types": [
+          "street_number"
+        ],
+        "languageCode": "en-US"
+      },
+      {
+        "longText": "Calea Bucureștilor",
+        "shortText": "Calea Bucureștilor",
+        "types": [
+          "route"
+        ],
+        "languageCode": "ro"
+      },
+      {
+        "longText": "Otopeni",
+        "shortText": "Otopeni",
+        "types": [
+          "locality",
+          "political"
+        ],
+        "languageCode": "ro"
+      },
+      {
+        "longText": "Județul Ilfov",
+        "shortText": "IF",
+        "types": [
+          "administrative_area_level_1",
+          "political"
+        ],
+        "languageCode": "ro"
+      },
+      {
+        "longText": "Romania",
+        "shortText": "RO",
+        "types": [
+          "country",
+          "political"
+        ],
+        "languageCode": "en"
+      },
+      {
+        "longText": "075150",
+        "shortText": "075150",
+        "types": [
+          "postal_code"
+        ],
+        "languageCode": "en-US"
+      }
+    ],
+    "location": {
+      "latitude": 44.5668635,
+      "longitude": 26.0949265
+    },
+    "displayName": {
+      "text": "Bucharest Henri Coandă International Airport"
+    },
+    "types": [
+      "international_airport",
+      "airport",
+      "transportation_service",
+      "point_of_interest",
+      "establishment"
+    ],
+    "cached": true
+  },
+  "end_place_data": {
+    "id": "ChIJacWVAiDUUkcRabz12pg8Tz4",
+    "formattedAddress": "Calea București 325, 200621 Craiova, Romania",
+    "addressComponents": [
+      {
+        "longText": "325",
+        "shortText": "325",
+        "types": [
+          "street_number"
+        ],
+        "languageCode": "en-US"
+      },
+      {
+        "longText": "Calea București",
+        "shortText": "Calea București",
+        "types": [
+          "route"
+        ],
+        "languageCode": "ro"
+      },
+      {
+        "longText": "Craiova",
+        "shortText": "Craiova",
+        "types": [
+          "locality",
+          "political"
+        ],
+        "languageCode": "ro"
+      },
+      {
+        "longText": "Municipiu Craiova",
+        "shortText": "Municipiu Craiova",
+        "types": [
+          "administrative_area_level_2",
+          "political"
+        ],
+        "languageCode": "ro"
+      },
+      {
+        "longText": "Județul Dolj",
+        "shortText": "DJ",
+        "types": [
+          "administrative_area_level_1",
+          "political"
+        ],
+        "languageCode": "ro"
+      },
+      {
+        "longText": "Romania",
+        "shortText": "RO",
+        "types": [
+          "country",
+          "political"
+        ],
+        "languageCode": "en"
+      },
+      {
+        "longText": "200621",
+        "shortText": "200621",
+        "types": [
+          "postal_code"
+        ],
+        "languageCode": "en-US"
+      }
+    ],
+    "location": {
+      "latitude": 44.3127651,
+      "longitude": 23.878591099999998
+    },
+    "displayName": {
+      "text": "Craiova international Airport"
+    },
+    "types": [
+      "international_airport",
+      "airport",
+      "transportation_service",
+      "point_of_interest",
+      "establishment"
+    ],
+    "cached": true
+  },
+  "distance": {
+    "destination_addresses": [
+      "Craiova international Airport (CRA), Calea București 325, 200621 Craiova, Romania"
+    ],
+    "origin_addresses": [
+      "Bucharest Henri Coandă Int'l Airport (OTP), Calea Bucureștilor 224E, 075150 Otopeni, Romania"
+    ],
+    "rows": [
+      {
+        "elements": [
+          {
+            "distance": {
+              "text": "234 km",
+              "value": 234466
+            },
+            "duration": {
+              "text": "2 hours 26 mins",
+              "value": 8787
+            },
+            "status": "OK"
+          }
+        ]
+      }
+    ],
+    "status": "OK"
+  },
+  "website": {
+    "id": 1,
+    "name": "Bucharest.CAB",
+    "card_payment_fee": "3.00",
+    "currency": "EUR",
+    "free_cancel_time": 24,
+    "min_advance_day_booking": 4,
+    "min_advance_night_booking": 9,
+    "night_restricted_start_time": "23:00:00",
+    "night_restricted_end_time": "08:00:00",
+    "night_surcharge": 1,
+    "night_surcharge_start_time": "22:00:00",
+    "night_surcharge_end_time": "05:00:00",
+    "night_surcharge_fee": "3.00",
+    "return_drive_discount": 0,
+    "return_drive_discount_percentage": "0.00"
+  },
+  "timezone": "Europe/Bucharest",
+  "datetime_param": "2026-11-02 12:00:00",
+  "datetime": "2026-11-02 10:00:00"
+}

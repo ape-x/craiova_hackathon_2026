@@ -10,6 +10,41 @@ The subsequent automatic hotel workflow (`b3afa9e`) and scope-bound reusable inp
 
 The scoped voice startup release `e10fa81` passed **1,281 backend tests and 282 frontend tests**, strict TypeScript/production build and formatting; GitHub Actions passed on both branches (main 96, codex 97). Both Docker images were built from the exact committed archive. The API healthcheck and routed readiness passed; the web container was running and served the refreshed application. Post-restart comparison preserved every operational field, version 49, both groups, 24 resources and the saved profile; only read-derived `sim_time` changed. No job was active at restart. Browser inspection retained the completed ten-call hotel result, honest quote expiry, original GBP/ECB estimates and sourced Google road. No voice session or supplier refresh was started for these deployment checks. Voice recognition remains the separate acceptance gap below.
 
+### Romanian initial airport vehicle quotes
+
+The Bucharest.CAB integration passed **2,228 backend tests and 547 frontend
+tests**, strict TypeScript, production build and frontend formatting. The only
+backend warning is the pre-existing Starlette/httpx deprecation; the frontend
+retains the existing large authored-Scene chunk warning. These checks are
+offline. The separate consumer-site/API observation on 1 November reproduced
+EUR188/212/235/258 for OTP→CRA, 2 November at 12:00 local, two adults; no vehicle
+was selected or booked on the supplier site.
+
+Provider tests cover the two bounded anonymous GETs, canonical airport/date/UTC
+identity, exact supplier-authored native-EUR cash formula, source vehicle limits,
+changed tariffs, redirects, malformed responses and sanitized errors. Solver and
+API tests cover group-only initial-leg scope, exact readiness, conservative time
+rounding, unknown fleet, onward flight connection, per-dispatch eligibility,
+atomic post-response assessment, replay/context drift, cancellation, source
+expiry, retired revisions and external-confirmation rejection. The application
+window and complete proposal expire at the earlier of 120 seconds and the source
+advance-notice cutoff. Backup regressions prove that only the copy loses
+transient bodies, counters/revision ordinals survive, interrupted claims become
+unknown, and restored same-key requests perform no source calls.
+
+Frontend tests cover explicit request/import, uncertain-result recovery, source
+scope and expiry, unchanged native EUR cents, correct airport-level endpoints,
+estimated undated driving arrival, connection-only map geometry and historical
+source evidence. A separate local label-update check preserved every other group
+field and its source-scope fingerprint and proved replay without another write.
+The legacy default label can therefore be corrected without replacing passenger
+identities or supply facts. Runtime deployment and browser results are recorded
+after this release is installed.
+
+Automatic retrieval from this new source, a pickup after a future flight, other
+Romanian airport pairs and the pending paid spoken-Heathrow probe remain
+separate acceptance gates. A manual sourced leg is not evidence for those flows.
+
 ### Case airport restrictions and atomic recovery
 
 Final local validation passed **1,973 backend tests** and **492 frontend tests** (38 files), plus TypeScript/production build and formatting. The backend run had one existing Starlette/httpx deprecation warning; the frontend retained the existing large-scene bundle notice. All new model/provider/worker tests use isolated storage and fake transports with sockets disabled. No new paid voice or supplier test was executed.

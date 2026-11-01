@@ -18,6 +18,11 @@ from .initial_position import valid_initial_position
 from .airport_arrival import valid_airport_arrival
 from .stay_requirements import StayRequirementError, itinerary_stay_errors, read_stay_requirement
 from .pricing import APL_SOURCE, app_receipt_deadline, aware_timestamp, cost_summary, matching_cost_summary, valid_apl_resource_price
+from .airport_cab_evidence import (
+    SOURCE as AIRPORT_CAB_SOURCE, CONTEXT_KEY as AIRPORT_CAB_CONTEXT,
+    QUOTE_KEY as AIRPORT_CAB_QUOTE, OPTION_KEY as AIRPORT_CAB_OPTION,
+    airport_cab_current, airport_cab_fleet_errors, valid_airport_cab_resource,
+)
 
 
 def units(resource: Resource, group: PassengerGroup) -> int:
@@ -36,6 +41,8 @@ def live_resource_current(resource: Resource) -> bool:
         return False
     try:
         now=datetime.now(timezone.utc)
+        if resource.source == AIRPORT_CAB_SOURCE:
+            return airport_cab_current(resource, now=now)
         if resource.source == APL_SOURCE:
             deadline = app_receipt_deadline(resource)
             if deadline is None or resource.valid_until is not None or resource.provenance.get("quoted_at") is not None:
@@ -115,7 +122,12 @@ def resource_feasible(world: World, r: Resource, g: PassengerGroup, current: str
     if world.mode=="live":
         if r.eligible_group_ids and g.id not in r.eligible_group_ids:
             return False
-        if r.source == APL_SOURCE or r.price_evidence is not None or r.quote_freshness is not None:
+        cab_evidence = any(key in r.provenance for key in (AIRPORT_CAB_CONTEXT, AIRPORT_CAB_QUOTE, AIRPORT_CAB_OPTION))
+        if r.source == AIRPORT_CAB_SOURCE or cab_evidence:
+            if (used_ids or current != g.origin
+                    or not valid_airport_cab_resource(world, r, g, now=datetime.now(timezone.utc))):
+                return False
+        elif r.source == APL_SOURCE or r.price_evidence is not None or r.quote_freshness is not None:
             if world.currency != "EUR" or not valid_apl_resource_price(r, g, require_current=g.status != "confirmed"):
                 return False
         if g.status!="confirmed" and not live_resource_current(r):
@@ -290,6 +302,7 @@ def validate_allocations(world: World, allocations: list[Allocation], include_co
         if count > resources[rid].capacity:
             errors.append(f"{rid}: capacity exceeded ({count}/{resources[rid].capacity})")
     errors.extend(vehicle_schedule_errors([resources[i] for i in occupied_resources]))
+    errors.extend(airport_cab_fleet_errors([resources[i] for i in occupied_resources]))
     if total_cost > world.budget+0.005:
         errors.append("Scenario budget exceeded")
     return {"valid":not errors,"errors":errors,"checks":["family_integrity","shared_capacities","temporal_continuity","full_destination","accessibility","deadlines","group_budgets","scenario_budget","hotel_room_occupancy","requested_hotel_stay","vehicle_schedule"],"total_committed_cost":round(total_cost,2)}
@@ -329,6 +342,10 @@ def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] 
     resources = {r.id:r for r in projected.resources}
     fixed = fixed_offers(projected,scope_group_ids)
     fixed_ids = {offer.id for offer in fixed}
+    # The fleet uncertainty policy follows fixed itinerary legs even when a
+    # legacy/local reservation row is absent. It is not source stock of one.
+    fixed_cab_ids = {leg.resource_id for offer in fixed for leg in offer.itinerary.legs
+        if leg.resource_id in resources and resources[leg.resource_id].source == AIRPORT_CAB_SOURCE}
     initial_used = Counter({r.id: sum(item.quantity for item in projected.reservations if item.resource_id==r.id and item.offer_id in fixed_ids and item.status in ("held","proposed","accepted","confirmed")) for r in projected.resources})
     initial_cost = sum(o.itinerary.total_cost for o in fixed)
     weights={k:max(0,min(100,float(strategy.weights.get(k,1)))) for k in ("arrival","cost","stability")}
@@ -363,7 +380,9 @@ def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] 
                 needs = Counter({leg.resource_id:units(resources[leg.resource_id],g) for leg in itin.legs})
                 if any(used[rid]+q>resources[rid].capacity for rid,q in needs.items()):
                     continue
-                if vehicle_schedule_errors([resources[rid] for rid in occupied|set(needs)]):
+                selected_resources = [resources[rid] for rid in occupied|set(needs)]
+                if vehicle_schedule_errors(selected_resources) or airport_cab_fleet_errors(
+                        [resources[rid] for rid in occupied|set(needs)|fixed_cab_ids]):
                     continue
                 allocations.append(Allocation(group_id=g.id,itinerary=itin))
                 used.update(needs)
@@ -396,6 +415,10 @@ def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] 
             else:
                 if not options[g.id] and read_stay_requirement(g) is not None:
                     reason = "No complete sourced itinerary includes the requested hotel interval, room count and rest while meeting the group's other constraints."
+                elif options[g.id] and all(any(resources[leg.resource_id].source == AIRPORT_CAB_SOURCE for leg in option.legs) for option in options[g.id]):
+                    committed_ids = fixed_cab_ids | {leg.resource_id for allocation in best for leg in allocation.itinerary.legs}
+                    if any(resources[rid].source == AIRPORT_CAB_SOURCE for rid in committed_ids):
+                        reason = "The application permits only one Bucharest.CAB category quote across the combined plan and fixed allocations because multiple-vehicle availability is unverified. Other group and budget constraints still apply."
                 exception.append({"group_id":g.id,"passengers":g.size,"reason":reason})
     pax = sum(g.size for g in groups if g.id in recovered)
     arrival = sum(a.itinerary.arrival*next(g.size for g in groups if g.id==a.group_id) for a in best)/pax if pax else 0

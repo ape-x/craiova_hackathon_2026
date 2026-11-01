@@ -17,6 +17,7 @@ import { ItineraryView } from './Inspector';
 import ThemeToggle from './ThemeToggle';
 import PassengerHistory from './PassengerHistory';
 import { sourcedArrival } from './journeyPresentation';
+import { airportCabFinalArrival } from './airportCabPresentation';
 import { costPresentation, EstimatedCostNote } from './priceEvidence';
 import {
   LIVE_PASSENGER_HORIZON_MINUTES,
@@ -329,7 +330,10 @@ function PassengerJourney({ token }: { token: string }) {
                       </span>
                     )}
                     <span>
-                      <Clock3 size={15} /> Arrival{' '}
+                      <Clock3 size={15} />{' '}
+                      {airportCabFinalArrival(offer.itinerary, state.resources)
+                        ? 'Estimated arrival'
+                        : 'Arrival'}{' '}
                       {live
                         ? (sourcedArrival(offer, state.resources, state.epoch) ??
                           `${formatOperationTime(state.epoch, offer.itinerary.arrival)} · Europe/Bucharest operations time`)
@@ -337,16 +341,16 @@ function PassengerJourney({ token }: { token: string }) {
                     </span>
                   </div>
                   <div
-                    className={`boarding-total${costPresentation(offer.itinerary).estimated ? ' estimated-total' : ''}`}
+                    className={`boarding-total${costPresentation(offer.itinerary, state.resources).estimated ? ' estimated-total' : ''}`}
                   >
                     <span>
-                      {costPresentation(offer.itinerary).estimated
+                      {costPresentation(offer.itinerary, state.resources).estimated
                         ? 'Estimated itinerary total'
                         : 'Complete group itinerary'}
                     </span>
-                    <strong>{costPresentation(offer.itinerary).amount}</strong>
+                    <strong>{costPresentation(offer.itinerary, state.resources).amount}</strong>
                   </div>
-                  <EstimatedCostNote value={offer.itinerary} />
+                  <EstimatedCostNote value={offer.itinerary} resources={state.resources} />
                   {!confirmed && !accepted && (
                     <>
                       <div className="hold-countdown">

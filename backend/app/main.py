@@ -24,7 +24,7 @@ from .models import AcceptRequest, CommandRequest, ConstraintRequest, EventReque
 from .providers import AIProvider, FlightProvider, ProviderError, VoiceProvider
 from .real_data import RealDataRequest, RealDataService
 from .live_data import ManifestImport, ManualResourceInput, PassengerGenerationInput
-from .live_service import LiveOperations, HotelQuoteImport, ExternalConfirmation
+from .live_service import LiveOperations, HotelQuoteImport, ExternalConfirmation, GroupLabelUpdate
 from .live_travel import LiveTravel, LiveTravelSearch, TravelQuoteImport
 from .providers.travel import TravelProvider
 from .recovery_jobs import RecoveryJobs, RecoveryJobRequest, RecoveryCancellation
@@ -38,6 +38,7 @@ from .store import DomainError, Store, utcnow
 from .voice_context import VoiceScope, build_voice_context
 from .operational_reports import ArrivalReportInput, OperationalReports, ResourceUnavailabilityInput
 from .airport_restrictions import AirportRestrictionReportInput, AirportRestrictions
+from .airport_cab_planning import AirportCabPlanning, create_airport_cab_router
 from .inventory_history import create_inventory_history_router
 
 
@@ -106,6 +107,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         apl_provider=ground_transfers.provider,fx_provider=ground_transfers.fx,coach_fares=coach_fares)
     service.live_commands=LiveCommands(store,jobs)
     ground_planning=GroundPlanning(store,ground_transfers,real_data.provider)
+    airport_cab=AirportCabPlanning(settings,store)
     operational_reports=OperationalReports(store,jobs)
     airport_restrictions=AirportRestrictions(store,jobs)
     login_attempts=defaultdict(deque)
@@ -118,6 +120,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
             try:
                 await asyncio.to_thread(store.purge_observations)
                 await asyncio.to_thread(ground_planning.purge)
+                await asyncio.to_thread(airport_cab.purge)
             except sqlite3.Error:
                 logging.getLogger(__name__).warning("Observation cache cleanup could not access the database")
                 await asyncio.sleep(1)
@@ -148,7 +151,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         with suppress(asyncio.CancelledError):
             await task
         await jobs.aclose()
-        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose(),ground_transfers.aclose(),coach_fares.aclose())
+        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose(),ground_transfers.aclose(),coach_fares.aclose(),airport_cab.aclose())
 
     app=FastAPI(title="Airport Recovery Live",version="0.1.0",lifespan=lifespan,docs_url=None if settings.production else "/docs",redoc_url=None,openapi_url=None if settings.production else "/openapi.json")
     app.state.store,app.state.service,app.state.settings=store,service,settings
@@ -161,6 +164,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     app.state.ground_transfers=ground_transfers
     app.state.coach_fares=coach_fares
     app.state.ground_planning=ground_planning
+    app.state.airport_cab=airport_cab
     app.state.operational_reports=operational_reports
     app.state.airport_restrictions=airport_restrictions
     app.add_middleware(CORSMiddleware,allow_origins=settings.origins,allow_credentials=True,allow_methods=["GET","POST","DELETE"],allow_headers=["Content-Type","Authorization","Last-Event-ID"])
@@ -197,6 +201,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     app.include_router(create_transfer_router(ground_transfers,operator))
     app.include_router(create_coach_router(coach_fares,operator))
     app.include_router(create_planning_transfer_router(ground_planning,operator))
+    app.include_router(create_airport_cab_router(airport_cab,operator))
     app.include_router(create_inventory_history_router(store,operator))
 
     @app.middleware("http")
@@ -366,6 +371,10 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     @app.post("/api/live/generate-passengers",dependencies=[Depends(operator)])
     def generate_test_passengers(body: PassengerGenerationInput):
         return live.generate(body)
+
+    @app.post("/api/live/groups/{group_id}/label",dependencies=[Depends(operator)])
+    def label_passenger_group(group_id: str,body: GroupLabelUpdate):
+        return live.label_group(group_id,body)
 
     @app.post("/api/live/resources",dependencies=[Depends(operator)])
     def add_verified_resource(body: ManualResourceInput):

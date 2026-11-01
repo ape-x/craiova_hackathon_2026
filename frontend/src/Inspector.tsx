@@ -42,6 +42,7 @@ import { airportArrivalEvidence, resourceMeetingEvidence } from './airportArriva
 import { OperatorReportNote, ResourceUnavailabilityDialog } from './OperationalReportForms';
 import { unavailabilityIssue } from './operationalReports';
 import { AirportArrivalDetails, SupplierMeetingInstructions } from './TransferEvidence';
+import { AirportCabFareDetails, isAirportCab } from './airportCabPresentation';
 import {
   costPresentation,
   EstimatedCostNote,
@@ -70,6 +71,7 @@ export function ItineraryView({
       {offer.itinerary.legs.map((leg, index) => {
         const transfer = privateTransfer(leg);
         const resource = world?.resources?.find((item) => item.id === leg.resource_id);
+        const cab = isAirportCab(resource);
         const names = { airports: world?.airports ?? [] };
         const epoch = sourceInstant(world?.epoch);
         const Icon = transfer
@@ -142,7 +144,7 @@ export function ItineraryView({
                 </span>
               )}
               <AirportArrivalDetails assumption={leg.airport_arrival_assumption} />
-              {transfer && (
+              {transfer && !cab && (
                 <SupplierMeetingInstructions
                   value={resourceMeetingEvidence(resource?.provenance)}
                   context={
@@ -164,13 +166,20 @@ export function ItineraryView({
                   </>
                 )}
               </span>
+              {cab && (
+                <span>
+                  Road arrival is estimated from supplier duration without departure-time traffic.
+                  Airport-level endpoints; terminal and curb access are unverified.
+                </span>
+              )}
               {transfer && (
                 <details className="record-references">
                   <summary>Transfer record</summary>
                   <span>{leg.resource_id}</span>
                 </details>
               )}
-              <PriceEvidenceDetails evidence={leg.price_evidence} />
+              {!cab && <PriceEvidenceDetails evidence={leg.price_evidence} />}
+              {cab && resource && <AirportCabFareDetails resource={resource} leg={leg} />}
             </div>
           </div>
         );
@@ -408,6 +417,7 @@ function ResourceFacts({
   const planningCurrent =
     !freshness || liveResourceStatus(resource, freshness, booked).planningCurrent;
   const transfer = privateTransfer(resource);
+  const cab = isAirportCab(resource);
   const arrival = airportArrivalEvidence(resource.airport_arrival_assumption);
   const route = resource.provenance?.google_route as Record<string, unknown> | undefined;
   const routeReceived = route?.source === 'Google Routes' ? sourceInstant(route.fetched_at) : null;
@@ -431,9 +441,11 @@ function ResourceFacts({
             {booked
               ? 'A supplier booking is recorded separately.'
               : 'Unbooked planning quote. Check the group’s current proposal for complete-journey status.'}{' '}
-            {arrival
-              ? 'The airport drop-off is reported by operations.'
-              : 'The pickup point is reported by operations.'}{' '}
+            {cab
+              ? 'Pickup and drop-off are airport-level references; terminal and curb access are unverified.'
+              : arrival
+                ? 'The airport drop-off is reported by operations.'
+                : 'The pickup point is reported by operations.'}{' '}
             No vehicle position is observed.
           </p>
           <details className="record-references">
@@ -441,16 +453,24 @@ function ResourceFacts({
             <dl>
               <dt>Transfer record</dt>
               <dd>{resource.id}</dd>
-              <dt>{arrival ? 'Hotel property' : 'Meeting point'}</dt>
+              <dt>
+                {cab ? 'Origin airport reference' : arrival ? 'Hotel property' : 'Meeting point'}
+              </dt>
               <dd>{resource.origin}</dd>
-              <dt>{arrival ? 'Airport reference' : 'Hotel property'}</dt>
+              <dt>
+                {cab
+                  ? 'Destination airport reference'
+                  : arrival
+                    ? 'Airport reference'
+                    : 'Hotel property'}
+              </dt>
               <dd>{resource.destination}</dd>
             </dl>
           </details>
         </>
       )}
       <AirportArrivalDetails assumption={resource.airport_arrival_assumption} />
-      {transfer && (
+      {transfer && !cab && (
         <SupplierMeetingInstructions
           value={resourceMeetingEvidence(resource.provenance)}
           context={arrival ? 'hotel_to_airport' : undefined}
@@ -466,14 +486,14 @@ function ResourceFacts({
           </b>
         </span>
         <span>
-          {transfer ? 'Predicted road arrival' : 'Arrival'}{' '}
+          {cab ? 'Estimated road arrival' : transfer ? 'Predicted road arrival' : 'Arrival'}{' '}
           <b>
             {transfer && operationEpoch !== null
               ? freshnessTime(operationEpoch + resource.arrival * 60_000)
               : formatWorldTime(world, resource.arrival)}
           </b>
         </span>
-        {transfer && (
+        {transfer && !cab && (
           <span>
             Road prediction received{' '}
             <b>
@@ -509,7 +529,8 @@ function ResourceFacts({
           </b>
         </span>
         <span>
-          Accessibility <b>{resource.accessible ? 'Supported' : 'Not supported'}</b>
+          Accessibility{' '}
+          <b>{cab ? 'Unverified' : resource.accessible ? 'Supported' : 'Not supported'}</b>
         </span>
         {resource.price_evidence == null && !privateTransfer(resource) && (
           <span>
@@ -520,8 +541,17 @@ function ResourceFacts({
           </span>
         )}
       </div>
-      <PriceEvidenceDetails evidence={resource.price_evidence} />
-      {privateTransfer(resource) && resource.price_evidence == null && (
+      {!cab && <PriceEvidenceDetails evidence={resource.price_evidence} />}
+      {cab && (
+        <>
+          <p className="field-hint">
+            Supplier driving duration estimate without departure-time traffic. Arrival is not
+            guaranteed; vehicle limits do not confirm remaining fleet.
+          </p>
+          <AirportCabFareDetails resource={resource} />
+        </>
+      )}
+      {privateTransfer(resource) && !cab && resource.price_evidence == null && (
         <p className="field-hint">Price evidence unavailable. Revalidation is required.</p>
       )}
       {world.mode === 'live' && (
@@ -603,7 +633,7 @@ function ResourceFacts({
 function DecisionDetails({ decision, world }: { decision: Decision; world: World }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const selected = decision.candidates.find((plan) => plan.id === decision.selected_plan_id);
-  const selectedCost = costPresentation(selected);
+  const selectedCost = costPresentation(selected, world.resources);
   const historical = world.decisions.at(-1)?.id !== decision.id;
   const activeCount = world.offers.filter(
     (offer) =>
@@ -662,7 +692,7 @@ function DecisionDetails({ decision, world }: { decision: Decision; world: World
           <span>measured</span>
         </div>
       </div>
-      {selected && <EstimatedCostNote value={selected} />}
+      {selected && <EstimatedCostNote value={selected} resources={world.resources} />}
       <div className="inspector-section">
         <div className="section-label">
           <span>Alternatives evaluated</span>
@@ -682,8 +712,9 @@ function DecisionDetails({ decision, world }: { decision: Decision; world: World
               <div>
                 <strong>{plan.strategy.label}</strong>
                 <span>
-                  {plan.recovered_passengers} pax <b>·</b> {costPresentation(plan).amount}
-                  {costPresentation(plan).estimated ? ' estimated' : ''}
+                  {plan.recovered_passengers} pax <b>·</b>{' '}
+                  {costPresentation(plan, world.resources).amount}
+                  {costPresentation(plan, world.resources).estimated ? ' estimated' : ''}
                 </span>
                 {expanded === plan.id && (
                   <p>
@@ -939,16 +970,16 @@ export default function Inspector({
                 </div>
                 <ItineraryView offer={offer} world={world} />
                 <div
-                  className={`offer-total${costPresentation(offer.itinerary).estimated ? ' estimated-total' : ''}`}
+                  className={`offer-total${costPresentation(offer.itinerary, world.resources).estimated ? ' estimated-total' : ''}`}
                 >
                   <span>
-                    {costPresentation(offer.itinerary).estimated
+                    {costPresentation(offer.itinerary, world.resources).estimated
                       ? 'Estimated itinerary total'
                       : 'Complete itinerary'}
                   </span>
-                  <strong>{costPresentation(offer.itinerary).amount}</strong>
+                  <strong>{costPresentation(offer.itinerary, world.resources).amount}</strong>
                 </div>
-                <EstimatedCostNote value={offer.itinerary} />
+                <EstimatedCostNote value={offer.itinerary} resources={world.resources} />
               </>
             ) : (
               <div className="empty-detail">

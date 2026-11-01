@@ -12,12 +12,13 @@ import {
   Search,
 } from 'lucide-react';
 import { request } from './api';
-import type { Airport } from './types';
+import type { Airport, MutationResult, World } from './types';
 import { isAirportNode } from './locationNodes';
 import { Modal, Tag } from './ui';
 import HotelOfferPrice from './HotelOfferPrice';
 import TransferQuotes from './TransferQuotes';
 import CoachFares from './CoachFares';
+import AirportCabPanel from './AirportCabPanel';
 import {
   addCalendarDays,
   bucharestDate,
@@ -69,10 +70,14 @@ export default function RealDataDialog({
   airports: nodes,
   selectedId,
   onClose,
+  world,
+  onApplied,
 }: {
   airports: Airport[];
   selectedId: string | null;
   onClose: () => void;
+  world?: World;
+  onApplied?: (result: MutationResult) => void;
 }) {
   const airports = nodes.filter(isAirportNode);
   const today = bucharestDate();
@@ -98,6 +103,8 @@ export default function RealDataDialog({
   const [busy, setBusy] = useState(false);
   const [showTransfers, setShowTransfers] = useState(false);
   const [showCoaches, setShowCoaches] = useState(false);
+  const [showAirportCab, setShowAirportCab] = useState(false);
+  const [airportCabPending, setAirportCabPending] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle');
   const copyGeneration = useRef(0);
   const currentRequest = useRef<AbortController | null>(null);
@@ -177,7 +184,13 @@ export default function RealDataDialog({
     }
   }
   return createPortal(
-    <Modal title="Real hotels & routes" onClose={onClose} wide>
+    <Modal
+      title="Real hotels & routes"
+      onClose={() => {
+        if (!airportCabPending) onClose();
+      }}
+      wide
+    >
       <div className="real-data-intro">
         <Tag tone="cyan">EXTERNAL SOURCES</Tag>
         <p>
@@ -185,6 +198,34 @@ export default function RealDataDialog({
           provider is connected.
         </p>
       </div>
+      {world?.mode === 'live' && onApplied && (
+        <>
+          <button
+            type="button"
+            className="secondary-button transfer-toggle"
+            aria-expanded={showAirportCab}
+            aria-controls="airport-cab-panel"
+            disabled={airportCabPending}
+            onClick={() => setShowAirportCab((visible) => !visible)}
+          >
+            {showAirportCab ? 'Hide OTP → CRA vehicle fares' : 'Get OTP → CRA vehicle fares'}
+          </button>
+          {showAirportCab && (
+            <div id="airport-cab-panel">
+              <AirportCabPanel
+                world={world}
+                onApplied={onApplied}
+                onMutationPending={setAirportCabPending}
+              />
+            </div>
+          )}
+          {airportCabPending && (
+            <p role="status" className="field-hint">
+              Resolve the airport-transfer request before closing this dialog.
+            </p>
+          )}
+        </>
+      )}
       <button
         type="button"
         className="secondary-button transfer-toggle"

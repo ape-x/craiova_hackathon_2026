@@ -6,6 +6,7 @@ import { PriceEvidenceDetails, privateTransfer } from './priceEvidence';
 import { freshnessTime, sourceInstant } from './resourceFreshness';
 import { locationName } from './resourceLabels';
 import type { InventoryResourceRecord } from './types';
+import { AirportCabFareDetails, isAirportCab } from './airportCabPresentation';
 import './inventoryHistory.css';
 
 function timestamp(value: unknown): string {
@@ -62,7 +63,13 @@ export function SourceRecordDetails({
           </dd>
         </div>
         <div>
-          <dt>{resource.kind === 'hotel' ? 'Recorded stay' : 'Recorded schedule'}</dt>
+          <dt>
+            {isAirportCab(resource)
+              ? 'Recorded pickup and estimated road arrival'
+              : resource.kind === 'hotel'
+                ? 'Recorded stay'
+                : 'Recorded schedule'}
+          </dt>
           <dd>
             {time(resource.departure)} – {time(resource.arrival)}
           </dd>
@@ -108,7 +115,8 @@ export function SourceRecordDetails({
           </div>
         )}
       </dl>
-      <PriceEvidenceDetails evidence={resource.price_evidence} />
+      {!isAirportCab(resource) && <PriceEvidenceDetails evidence={resource.price_evidence} />}
+      {isAirportCab(resource) && <AirportCabFareDetails resource={resource} />}
     </section>
   );
 }

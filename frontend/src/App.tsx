@@ -591,6 +591,7 @@ function Operations() {
           onScenario={showScenario}
           onLiveData={() => setModal('live-data')}
           onRecoveryCase={openRecoveryCase}
+          onApplied={applyResult}
         />
         <main className="map-workspace" aria-label="Operational 3D view">
           <WorkspaceSummary

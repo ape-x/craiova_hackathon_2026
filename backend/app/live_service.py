@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .airport_catalog import lookup_airport
+from .airport_cab_evidence import SOURCE as AIRPORT_CAB_SOURCE, QUOTE_KEY as AIRPORT_CAB_QUOTE
 from .hotel_location import property_location, property_zone
 from .hotel_policy import HotelPolicyError, validate_stay_policy
 from .live_data import (
@@ -51,6 +52,17 @@ def _hotel_budget_total(quote: dict, booking_amount: Decimal) -> Decimal | None:
     # Keep the supplier's exact decimal amount in pricing/provenance. Solver
     # cents are a conservative allowance, never a claim about the actual charge.
     return mandatory.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+
+
+class GroupLabelUpdate(Mutation):
+    name: str = Field(min_length=1, max_length=140)
+
+    @field_validator("name")
+    @classmethod
+    def useful_label(cls, value):
+        if not value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("Supply a meaningful group label without control characters")
+        return value.strip()
 
 
 class HotelQuoteImport(Mutation):
@@ -197,6 +209,22 @@ class LiveOperations:
 
     def generate(self, request: PassengerGenerationInput):
         return self._import("live-test-passengers", request, prepare_generated_passengers, "Created the requested passenger planning assumptions; no transport inventory was created.")
+
+    def label_group(self, group_id: str, request: GroupLabelUpdate):
+        def apply(world):
+            _live(world)
+            group = _find(world.groups, group_id, "passenger group")
+            if any(item.id != group.id and item.name.casefold() == request.name.casefold() for item in world.groups):
+                raise DomainError(409, "Choose a distinct group label so voice scope remains unambiguous")
+            previous = group.name
+            group.name = request.name
+            if previous != request.name:
+                audit(world, "group_label_updated", "Updated the passenger group's display label.", group.id,
+                    {"previous_name": previous, "name": request.name})
+            return {"applied": previous != request.name, "group_id": group.id,
+                "explanation": "Group label updated. Passenger identities, initial requirements and source evidence are preserved."}
+        return self.store.mutate("group-label:" + request.idempotency_key,
+            {"group_id": group_id, **request.model_dump(mode="json")}, request.expected_version, apply)
 
     def resource(self, request: ManualResourceInput):
         return self._import("live-resource", request, prepare_resource, "Imported operator-confirmed transport availability.")
@@ -386,6 +414,10 @@ class LiveOperations:
             resources = {resource.id: resource for resource in world.resources}
             if any(resources.get(resource_id) is None or resources[resource_id].source == "synthetic" for resource_id in expected_ids):
                 raise DomainError(409, "Every confirmed segment must use real sourced inventory")
+            if any(resources[resource_id].source == AIRPORT_CAB_SOURCE or AIRPORT_CAB_QUOTE in resources[resource_id].provenance for resource_id in expected_ids):
+                raise DomainError(409,
+                    "Bucharest.CAB supplies unreserved vehicle-category quotes; source booking confirmation is not implemented. No booking or passenger state was changed.",
+                    {"code": "airport_cab_booking_not_supported"})
             reservations = [reservation for reservation in world.reservations if reservation.offer_id == offer.id and reservation.status in ("proposed", "accepted")]
             expected = {(resource_id, units(resources[resource_id], group)) for resource_id in expected_ids}
             if len(reservations) != len(expected) or {(item.resource_id, item.quantity) for item in reservations} != expected:

@@ -2,6 +2,7 @@ import type { Resource, World } from '../types';
 import type { GeoPoint } from './contracts';
 import { sourceInstant } from '../resourceFreshness';
 import { airportArrivalEvidence } from '../airportArrival';
+import { isAirportCab } from '../airportCabPresentation';
 
 /** Decode Google's 1e5 polyline format with bounded input, work and coordinates. */
 export function decodeRoadPolyline(encoded: unknown): GeoPoint[] | null {
@@ -103,6 +104,8 @@ export function groundPath(
     end = dropoff?.point ?? coordinates({ latitude: destination.lat, longitude: destination.lon });
   if (!start || !end) return null;
   const fallback = { path: [start, end], geometry: 'connection_only' as const };
+  // CAB's source contract has a duration estimate, but no road geometry.
+  if (isAirportCab(resource)) return fallback;
   const route = object(resource.provenance?.google_route),
     request = object(route?.request),
     road = object(route?.road_endpoints);

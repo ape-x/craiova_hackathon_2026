@@ -16,6 +16,7 @@ from .weather import apply_weather_to_flight, departure_allowed, landing_allowed
 from .scenario_reset import reset_scenario
 from .solver import active_offers, build_candidate, default_strategies, units, validate_allocations, validate_plan
 from .pricing import app_receipt_deadline
+from .airport_cab_evidence import SOURCE as AIRPORT_CAB_SOURCE, airport_cab_deadline
 from .store import DomainError, Store, audit, utcnow
 
 
@@ -386,7 +387,7 @@ class RecoveryService:
                 limits=[datetime.fromisoformat(expires)]
                 for leg in allocation.itinerary.legs:
                     resource=resources[leg.resource_id]
-                    receipt_deadline=app_receipt_deadline(resource)
+                    receipt_deadline=airport_cab_deadline(resource) if resource.source == AIRPORT_CAB_SOURCE else app_receipt_deadline(resource)
                     if receipt_deadline is not None:
                         limits.append(receipt_deadline)
                     elif resource.valid_until:

@@ -51,6 +51,12 @@ try:
                 destination.execute("DELETE FROM transfer_quote_cache")
             if "transfer_quote_receipts" in tables:
                 destination.execute("UPDATE transfer_quote_receipts SET status='unknown' WHERE status='dispatched'")
+            # Retain airport quote request keys, revisions and consumed HTTP
+            # allowance; restoring a snapshot must not repeat their dispatch.
+            if "airport_cab_cache" in tables:
+                destination.execute("DELETE FROM airport_cab_cache")
+            if "airport_cab_receipts" in tables:
+                destination.execute("UPDATE airport_cab_receipts SET status='unknown' WHERE status='dispatched'")
             # Search-result bodies are temporary. The canonical request and
             # dispatch/outcome ledger remain, but a historical backup must never
             # automatically resume work that may have run after it was captured.

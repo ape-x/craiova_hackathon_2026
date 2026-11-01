@@ -1,6 +1,7 @@
 import { formatCost } from './api';
 import { transferFxReference } from './transferQuoteData';
 import type { CostEvidence, Itinerary, Leg, Plan, PriceEvidence, Resource } from './types';
+import { nativeAirportCabLeg } from './airportCabPresentation';
 import './priceEvidence.css';
 
 const exactAmount = /^(?:0|[1-9]\d{0,12})(?:\.\d{1,12})?$/;
@@ -67,7 +68,7 @@ function validSummary(evidence: CostEvidence | null | undefined, total: number):
   );
 }
 
-export function costPresentation(value: Itinerary | Plan | undefined) {
+export function costPresentation(value: Itinerary | Plan | undefined, resources: Resource[] = []) {
   const legs = value
     ? 'legs' in value
       ? value.legs
@@ -75,12 +76,24 @@ export function costPresentation(value: Itinerary | Plan | undefined) {
     : [];
   const estimated =
     value?.cost_evidence != null ||
-    legs.some((leg) => leg.price_evidence != null || privateTransfer(leg));
+    legs.some(
+      (leg) =>
+        leg.price_evidence != null ||
+        (privateTransfer(leg) && !nativeAirportCabLeg(leg, resources)),
+    );
+  const nativeCab = legs.some((leg) => nativeAirportCabLeg(leg, resources));
   const summary = value?.cost_evidence;
   return {
     estimated,
     amount: !estimated
-      ? formatCost(value?.total_cost ?? 0)
+      ? nativeCab
+        ? new Intl.NumberFormat('en-GB', {
+            style: 'currency',
+            currency: 'EUR',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }).format(value?.total_cost ?? 0)
+        : formatCost(value?.total_cost ?? 0)
       : validSummary(summary, value!.total_cost)
         ? `≈ ${money(summary!.total_eur, 'EUR', true)}`
         : 'Estimated total unavailable',
@@ -118,9 +131,26 @@ export function PriceEvidenceDetails({ evidence }: { evidence: PriceEvidence | n
   );
 }
 
-export function EstimatedCostNote({ value }: { value: Itinerary | Plan }) {
-  const { estimated } = costPresentation(value);
-  if (!estimated) return null;
+export function EstimatedCostNote({
+  value,
+  resources = [],
+}: {
+  value: Itinerary | Plan;
+  resources?: Resource[];
+}) {
+  const { estimated } = costPresentation(value, resources);
+  if (!estimated) {
+    const legs =
+      'legs' in value
+        ? value.legs
+        : value.allocations.flatMap((allocation) => allocation.itinerary.legs);
+    return legs.some((leg) => nativeAirportCabLeg(leg, resources)) ? (
+      <p className="estimated-cost-note">
+        Includes a supplier-calculated vehicle fare in EUR, cash without extras. The quote does not
+        confirm vehicle availability or create a reservation.
+      </p>
+    ) : null;
+  }
   const summary = value.cost_evidence;
   return (
     <p className="estimated-cost-note">

@@ -76,7 +76,7 @@ export async function request<T>(path: string, body?: unknown, signal?: AbortSig
   if (!response.ok) {
     const details = data.details;
     if (
-      path === '/transfers/planning-quotes' &&
+      ['/transfers/planning-quotes', '/airport-transfers/quotes'].includes(path) &&
       guardedMutation &&
       response.status === 503 &&
       data.applied === null &&

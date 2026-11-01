@@ -14,6 +14,61 @@ adds inventory, holds rooms, reserves seats or modifies the recovery scenario.
 | Hotel room offers | Booking.com Demand API 3.3, when configured | Full-stay prices returned for the selected dates, adults and rooms, joined with property names from the details endpoint. No booking is placed. |
 | Hotel room offers | Nuitee / LiteAPI, preferred by automatic selection when configured for live use | A validated offer per hotel for all requested rooms and adults, preferring complete mandatory costs. Supplier booking amount and additional mandatory fees remain separately visible; no prebooking or payment is performed. |
 | Private-transfer planning | APL, exact LiteAPI property metadata, dated Google Routes and ECB | Manual initial UK airport-point → hotel or hotel → UK airport leg. Return binds an exact group-scoped onward flight and operator buffer. GBP is the supplier price; EUR and driving arrival are estimates. No vehicle booking or complete itinerary is implied. |
+| Romanian airport transfer | Bucharest.CAB consumer quotation, OTP → CRA | Native EUR cash/no-extras vehicle-category fare for an explicit pickup and adult party. Initial airport-level leg only; source driving duration is an estimate without departure-time traffic. Fleet stock and supplier expiry remain unknown. |
+
+## Romanian airport vehicle quotes
+
+The **Bucharest.CAB** panel in **Real hotels & routes** supports an explicit
+adult-only group of one to seven people whose recorded initial airport is OTP.
+Choose a future pickup, suitcases and cabin bags, then request the quote. The
+destination of this leg is CRA; the group's eventual destination may be another
+airport. Adding the leg does not create the onward flight or a complete itinerary.
+
+The backend performs exactly two read-only GETs: the public
+[consumer form](https://www.bucharest.cab/en/book) for a fresh anonymous session,
+then its localized vehicle-search endpoint. No account or company credentials
+are required. The query sends the exact date/time, party and public airport place
+identities. Supplier-returned airport references, coordinates, local/UTC pickup,
+timezone, road distance and vehicle limits must agree. Luggage fit is checked
+locally; the source endpoint does not receive bag counts. No booking, price-store,
+payment or driver-dispatch endpoint is implemented.
+
+The displayed fare reproduces the supplier's published client calculation from
+its returned route distance and vehicle tariff, including a returned night
+surcharge. It is **native EUR, cash, with no optional extras**, not an ECB
+conversion. Payment-link fees and optional extras are outside that amount.
+The source's day/night advance rules are currently four/nine hours; because the
+rule-selection clock is undocumented, the adapter enforces their greater value
+and explains that application policy. It never silently shifts the pickup.
+
+Each receipt has an application window of **at most 120 seconds**, also bounded
+by the conservative advance-notice cutoff. This is not a supplier hold or expiry.
+The route's driving duration has no pickup-time traffic query.
+Airport references do not verify a terminal, curb, pedestrian connection or
+accessible vehicle. The planning resource is bound to the exact group's current
+initial facts and may only be the first leg. A later flight arrival cannot reuse
+that initial-position evidence. For this source, the combined plan and fixed
+allocations may contain at most one quoted vehicle; this is a conservative
+application limit because simultaneous fleet availability is unverified.
+
+Source searches, per-HTTP dispatch counts and imports are durable and idempotent.
+Scope is checked before each dispatch, when the response is saved, on replay and
+again on import. An uncertain search is never silently repeated. An old receipt
+cannot resurrect retired supply. Imported capacity describes the selected
+group's allocation, not available seats in a fleet. Generic external-booking
+confirmation is disabled for these unreserved category quotes.
+
+On 1 November 2026, the public consumer flow and its query-only endpoint returned
+OTP → CRA for **2 November, 12:00 Europe/Bucharest, two adults**: Sedan EUR188,
+Combi EUR212, Van EUR235 and Business Class EUR258, with 234,466 metres and an
+8,787-second source road estimate. These are historical observations, not current
+prices or reserved vehicles. The interface and parser matched; the later
+application verification is recorded in the [verification report](verification/report.md).
+
+These consumer endpoints are observed website interfaces, not a contracted public
+API. Unexpected protocol, tariff, identity or timing changes fail visibly. Other
+Romanian airport pairs, automatic new-source retrieval during recovery and
+flight-arrival pickup binding are not established by this bounded integration.
 
 **Compare hotel prices** opens the public Momondo hotel search and provides a
 copyable summary of the airport, dates, guests and rooms. The search summary is
@@ -217,6 +272,26 @@ general availability, latency guarantees or a spoken/browser-voice hotel run.
 See the [verification report](verification/report.md) for the bounded evidence.
 
 ## Romanian ground-transport coverage gap
+
+The bounded [Bucharest.CAB initial OTP → CRA flow](#romanian-airport-vehicle-quotes)
+is now separate from this remaining network-coverage gap. It does not establish
+reverse-direction service, CRA/SBZ-wide coverage, coach stock or rail connections.
+
+Further read-only consumer research on 1 November found two useful, **not yet
+integrated** sources. [Transfero](https://www.transfero.ro/bilete-online/) returned
+OTP Arrivals → Hotel Aro Palace, Brașov for 2 November: a two-adult RON260 total
+and three source-reported seats. The same departure disappeared for four adults.
+No requested OTP↔SBZ or OTP↔GHV offer was returned for that date; CRA was absent
+from the observed selector. Its local-clock times, baggage and expiry need their
+own contract; a hotel stop must not be relabeled as an airport.
+
+The [CFR consumer flow](https://www.cfrcalatori.ro/cum-cumpar-online/) returned
+R-E9900 Craiova railway station → București Nord on 2 November, 02:10–06:23,
+RON97 for two adults in second class, with a separate timestamped 530-seat
+availability response. The seven read-only HTTP requests stopped at pricing,
+before account/confirmation steps. Rail requires its own mode, shared stock and
+exact airport–station links. Neither research observation created app inventory,
+held seats or established current supply.
 
 The connected APL flow covers supported UK airport–hotel transfers. It does not
 provide CRA/OTP/SBZ supply. A read-only review on 31 October 2026 found a relevant

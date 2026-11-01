@@ -1,5 +1,6 @@
 import type { Resource, World } from './types';
 import { privateTransfer } from './priceEvidence';
+import { isAirportCab } from './airportCabPresentation';
 import { flightSegments } from './journeyPresentation';
 import {
   freshnessTime,
@@ -22,7 +23,11 @@ function cleanLabel(value: unknown): string | null {
 export function resourceTitle(resource: Resource): string {
   if (!privateTransfer(resource)) return resource.id;
   const name = cleanLabel(resource.name);
-  return name && name !== resource.id ? name : 'APL private transfer';
+  return name && name !== resource.id
+    ? name
+    : isAirportCab(resource)
+      ? 'Bucharest.CAB private transfer'
+      : 'APL private transfer';
 }
 
 /** Labels only source segments that reconcile with the authoritative resource schedule. */
@@ -70,8 +75,9 @@ export function transferReview(world: World, resource: Resource, now: number) {
   return {
     title: resourceTitle(resource),
     status: `${recordedBooking(world, resource) ? 'Booking recorded' : 'Unbooked'} · ${freshness.label}${!resource.available ? ' · Unavailable' : resource.status === 'superseded' ? ' · Superseded' : ''}`,
-    sourceTime:
-      received === null
+    sourceTime: isAirportCab(resource)
+      ? 'Supplier driving estimate without departure-time traffic'
+      : received === null
         ? 'Road prediction source time unavailable'
         : `Road prediction received ${freshnessTime(received)}`,
   };

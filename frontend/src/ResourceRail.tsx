@@ -14,7 +14,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { activeOffer, availableUnits, formatWorldTime } from './api';
-import type { World, ResourceKind, SceneMode } from './types';
+import type { World, ResourceKind, SceneMode, MutationResult } from './types';
 import { Dot, Tag } from './ui';
 import { observationInfo } from './observation';
 import RealDataDialog from './RealDataDialog';
@@ -43,6 +43,7 @@ export default function ResourceRail({
   onScenario,
   onLiveData,
   onRecoveryCase,
+  onApplied,
 }: {
   world: World;
   selectedId: string | null;
@@ -51,6 +52,7 @@ export default function ResourceRail({
   onScenario: () => void;
   onLiveData: () => void;
   onRecoveryCase?: (id: string | null) => void;
+  onApplied?: (result: MutationResult) => void;
 }) {
   const [tab, setTab] = useState<ResourceKind | 'groups'>('flight');
   const [query, setQuery] = useState('');
@@ -177,6 +179,8 @@ export default function ResourceRail({
           airports={world.airports.filter(isAirportNode)}
           selectedId={selectedId}
           onClose={closeRealData}
+          world={world}
+          onApplied={onApplied}
         />
       )}
       <div className="resource-tabs" role="group" aria-label="Resource type">
