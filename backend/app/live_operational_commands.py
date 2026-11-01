@@ -251,6 +251,9 @@ def _total_limit(text, intent):
 
 
 def _recovery_requested(text):
+    from .after_flight_commands import saved_after_flight_recovery_requested
+    if saved_after_flight_recovery_requested(text):
+        return True
     value = normalized(text)
     actions = list(re.finditer(r"\b(?:recover|recalculate|replan|search|recupereaza|recalculeaza|replanifica|cauta)\b", value))
     actions += list(re.finditer(r"\b(?:start|begin|run|porneste|incepe|cer)\b.{0,25}\b(?:recovery|search|cautarea|recuperarea)\b", value))
@@ -276,6 +279,13 @@ def _job_request(world, request, case, groups, intent, total, report, *, jobs, c
     spans = [_fragment(request.text, item.report_reference) for item in (report, *additional_reports)]
     for report_text, report_start in sorted(spans, key=lambda item: item[1], reverse=True):
         followup = followup[:report_start] + " " * len(report_text) + followup[report_start + len(report_text):]
+    from .airport_cab_commands import AirportTransferSetupRequired, resolve_saved_airport_transfers
+    from .after_flight_commands import resolve_saved_after_flight_transfer
+    try:
+        after_flight_transfer = resolve_saved_after_flight_transfer(jobs, world, case, groups,
+            intent.modes, followup, allowance, conn=conn)
+    except AirportTransferSetupRequired as exc:
+        raise RecoveryBlocked(exc.code, str(exc)) from exc
     hotel = "hotel" in intent.modes or bool(re.search(r"\b(?:hotel\w*|cazare\w*|accommodation)\b", normalized(followup)))
     if hotel:
         if len(groups) != 1 or set(intent.modes) != {"flight", "hotel", "bus"}:
@@ -291,17 +301,16 @@ def _job_request(world, request, case, groups, intent, total, report, *, jobs, c
             raise RecoveryBlocked("hotel_setup_required", "Configurația hotelului nu mai corespunde poziției și datelor actuale. Revizuiește formularul; nu presupun coordonate, date sau o preluare nouă.") from exc
         if allowance < REQUIRED_CALLS:
             raise RecoveryBlocked("insufficient_call_allowance", f"Hotelul necesită {REQUIRED_CALLS + 1} apeluri totale, inclusiv interpretarea. Limita curentă {total} nu a fost mărită.")
-    from .airport_cab_commands import AirportTransferSetupRequired, resolve_saved_airport_transfers
     try:
-        airport_transfers = resolve_saved_airport_transfers(jobs, world, case, groups,
-            intent.modes, followup, allowance, conn=conn)
+        airport_transfers = [] if after_flight_transfer is not None else resolve_saved_airport_transfers(
+            jobs, world, case, groups, intent.modes, followup, allowance, conn=conn)
     except AirportTransferSetupRequired as exc:
         raise RecoveryBlocked(exc.code, str(exc)) from exc
     payload = RecoveryJobRequest(expected_version=world.version,
         idempotency_key="live-command-" + Store.fingerprint({"key": request.idempotency_key, "scenario": world.scenario_id}),
         group_ids=groups, objective=intent.objective, modes=intent.modes,
         max_provider_calls=allowance, instructions=request.text, hotel_recovery=inputs,
-        airport_transfers=airport_transfers)
+        airport_transfers=airport_transfers, after_flight_transfer=after_flight_transfer)
     if inputs is not None:
         try:
             validate_hotel_job(world, payload)
@@ -391,7 +400,8 @@ def route_operational_report(commands, request, world, interpreted):
             raise Clarification("Nu combin raportul cu evenimente sau planuri globale. Separă celelalte modificări; nimic nu a fost aplicat.")
         claim = (_fragment(request.text, report.report_reference)[0] if airport_report
                  else _claim(request.text, report.report_reference, report.type))
-        if _recovery_requested(claim):
+        from .after_flight_commands import saved_after_flight_instruction
+        if _recovery_requested(claim) or saved_after_flight_instruction(claim):
             raise Clarification("Raportul și cererea de căutare trebuie identificate separat; nu omit servicii sau condiții ascunse în citatul raportului.")
         case, groups, readiness_basis = None, [], None
         if isinstance(report, LiveAirportRestrictionReport):
@@ -476,7 +486,7 @@ def route_operational_report(commands, request, world, interpreted):
                 conn.execute("ROLLBACK TO spoken_report_recovery")
                 conn.execute("RELEASE spoken_report_recovery")
                 code = (exc.details or {}).get("code")
-                if exc.status == 422 and job_request.airport_transfers:
+                if exc.status == 422 and (job_request.airport_transfers or job_request.after_flight_transfer is not None):
                     raise RecoveryBlocked("airport_transfer_setup_required", exc.message) from exc
                 if code not in ("recovery_queue_full", "recovery_group_active", "recovery_handoff_limit"):
                     raise
@@ -488,6 +498,9 @@ def route_operational_report(commands, request, world, interpreted):
                 "Niciun itinerar găsit sau rezervare efectuată nu este confirmat de această înregistrare.")
             if job_request.airport_transfers:
                 response["explanation"] += " Configurațiile salvate de transfer au fost copiate exact în cerere; tarifele vor fi căutate din nou, în limita curentă."
+            if job_request.after_flight_transfer is not None:
+                from .after_flight_commands import after_flight_reuse_explanation
+                response["explanation"] += after_flight_reuse_explanation(job_request.after_flight_transfer)
             if result["job"].get("supersedes_job_ids"):
                 response["explanation"] += " Cererea nouă înlocuiește încercările depășite pentru grupurile selectate. Așteaptă încheierea apelurilor deja trimise; un rezultat incert cere revizuire înainte de alte apeluri."
         except RecoveryBlocked as exc:

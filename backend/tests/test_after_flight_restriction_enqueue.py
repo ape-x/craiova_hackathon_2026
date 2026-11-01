@@ -7,6 +7,19 @@ from app.airport_restrictions import AirportRestrictions
 from app.store import DomainError, utcnow
 from test_airport_restriction_reports import report, stable
 from test_recovery_jobs import setup
+from test_after_flight_recovery import connection, env, setup as connected_setup
+
+
+def test_typed_restriction_queue_does_not_claim_saved_profile_reuse(connected_setup):
+    e = connected_setup
+    request = report(e.store, airport_code="LHR", operations=["arrivals"], recovery={
+        "group_ids": ["G1"], "modes": ["flight", "bus"], "max_provider_calls": 6,
+        "after_flight_transfer": connection()})
+    result = AirportRestrictions(e.store, e.jobs).report("CASE", request)
+    assert result["applied"] and result["recovery_job"]["status"] == "queued"
+    assert result["command_interpretation_calls"] == 0
+    assert "configurația salvată" not in result["explanation"]
+    assert not e.source.calls and not e.flights.calls
 
 
 @pytest.mark.parametrize("status", [422, 409])

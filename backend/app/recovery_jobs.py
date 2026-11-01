@@ -16,6 +16,7 @@ from .airport_constraints import case_airport_operation_blocked
 from .airport_cab_recovery import AIRPORT_TRANSFER_CONTEXT, AirportCabRecoveryInput, source_airport_transfers, validate_airport_transfer_job, validate_airport_transfer_selection
 from .airport_cab_profile import AirportCabProfiles
 from .after_flight_inputs import AfterFlightTransferInput
+from .after_flight_profile import AfterFlightProfiles
 from .after_flight_recovery import run_after_flight_recovery, validate_after_flight_job
 from .hotel_location import coordinate_timezone, property_zone
 from .hotel_recovery import HotelRecoveryInputs, _rates, _restore_rates, run_hotel_recovery, validate_hotel_job
@@ -268,6 +269,7 @@ class RecoveryJobs:
         self.coach_fares=coach_fares
         self.airport_cab=airport_cab
         self.airport_cab_profiles=AirportCabProfiles(store)
+        self.after_flight_profiles=AfterFlightProfiles(store)
         self.ledger=RecoveryLedger(store,settings.request_timeout_seconds+60)
         self.task=None
 

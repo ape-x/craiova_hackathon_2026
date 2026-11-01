@@ -474,6 +474,19 @@ export interface AirportTransferProfiles {
   world_version: number;
   profiles: AirportTransferProfile[];
 }
+export type AfterFlightTransferProfile =
+  | {
+      group_id: string;
+      configured: true;
+      inputs: AfterFlightTransferInput;
+      source_job_id: string;
+      saved_at: string;
+    }
+  | { group_id: string; configured: false; reason: string };
+export interface AfterFlightTransferProfiles {
+  world_version: number;
+  profiles: AfterFlightTransferProfile[];
+}
 export interface RecoveryJob extends Omit<RecoveryJobInput, 'instructions' | 'hotel_recovery'> {
   airport_transfer_quotes?: AirportTransferQuoteSummary[];
   ground_references?: import('./coachFareData').GroundFareReference[];

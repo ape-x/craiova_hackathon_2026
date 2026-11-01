@@ -291,6 +291,9 @@ def enqueue_airport_restriction_recovery(conn, store, jobs, response, request, *
     response["recovery_job"] = result["job"]
     response["explanation"] += (f" Recovery was queued for exactly groups {', '.join(selected)} with at most {job_request.max_provider_calls} provider/model calls. "
         "The receipt does not confirm a feasible itinerary or booking.")
+    if interpretation_calls and job_request.after_flight_transfer is not None:
+        from .after_flight_commands import after_flight_reuse_explanation
+        response["explanation"] += after_flight_reuse_explanation(job_request.after_flight_transfer)
     if result["job"].get("supersedes_job_ids"):
         response["explanation"] += " Earlier overlapping attempts must drain; unknown outcomes require review before successor calls."
 

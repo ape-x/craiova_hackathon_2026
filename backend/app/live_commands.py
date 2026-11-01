@@ -208,7 +208,12 @@ class LiveCommands:
                 with self.store.connect() as conn:
                     summaries = {group.id: self.jobs.airport_cab_profiles.summary(world, group, conn=conn)
                         for group in world.groups}
+                    profiles = getattr(self.jobs, "after_flight_profiles", None)
+                    after_flight = {group.id: profiles.summary(world, group, conn=conn)
+                        for group in world.groups} if profiles is not None else {}
                 command_world["airport_transfer_profiles"] = {key: summary for key, summary in summaries.items()
+                    if summary.get("configured") or summary.get("reason") in ("stale", "invalid")}
+                command_world["after_flight_transfer_profiles"] = {key: summary for key, summary in after_flight.items()
                     if summary.get("configured") or summary.get("reason") in ("stale", "invalid")}
                 args = (request.text, command_world)
                 result = await ai.interpret(*args, request.context) if request.context else await ai.interpret(*args)
@@ -305,6 +310,14 @@ class LiveCommands:
                 return self._reply(request, world, "Numește explicit grupurile existente legate de acest caz; nu am selectat un subset presupus. Nicio căutare pornită; interpretarea a folosit 1 apel.")
         if not groups or len(groups) > 24 or set(groups) & confirmed:
             return self._reply(request, world, "Selectează între 1 și 24 de grupuri legate de caz, fără rezervări confirmate. Nu am pornit căutarea și nu am înlocuit rezervări. Interpretarea a folosit 1 apel.")
+        from .airport_cab_commands import AirportTransferSetupRequired, resolve_saved_airport_transfers
+        from .after_flight_commands import after_flight_reuse_explanation, resolve_saved_after_flight_transfer
+        try:
+            after_flight_transfer = resolve_saved_after_flight_transfer(self.jobs, world, case, groups,
+                intent.modes, request.text, allowance)
+        except AirportTransferSetupRequired as exc:
+            return self._reply(request, world, str(exc) + " Interpretarea a folosit 1 apel.",
+                recovery_total_call_limit=total_limit, recovery_blocked={"code": exc.code, "explanation": str(exc)})
         hotel_inputs = None
         hotel_requested = "hotel" in intent.modes or bool(re.search(
             r"\b(?:hotel(?:ul|ului|uri)?|cazare|cazarea|accommodation)\b", normalized(request.text)))
@@ -319,10 +332,9 @@ class LiveCommands:
                 return self._reply(request, world, "Configurația hotelului lipsește, este invalidă sau nu mai corespunde acestui grup și traseu. Completează formularul și finalizează prima planificare pentru a salva datele. Nu am presupus coordonate sau date și nu am pornit căutarea. Interpretarea a folosit 1 apel.", recovery_total_call_limit=total_limit)
             if allowance < REQUIRED_CALLS:
                 return self._reply(request, world, f"Traseul cu hotel necesită minimum {REQUIRED_CALLS + 1} apeluri în total: 1 interpretare și {REQUIRED_CALLS} pentru job. Limita cerută este {total_limit}; interpretarea a folosit 1 și rămân {max(0, allowance)}. Nu am pornit căutarea și nu am mărit limita.", recovery_total_call_limit=total_limit)
-        from .airport_cab_commands import AirportTransferSetupRequired, resolve_saved_airport_transfers
         try:
-            airport_transfers = resolve_saved_airport_transfers(self.jobs, world, case, groups,
-                intent.modes, request.text, allowance)
+            airport_transfers = [] if after_flight_transfer is not None else resolve_saved_airport_transfers(
+                self.jobs, world, case, groups, intent.modes, request.text, allowance)
         except AirportTransferSetupRequired as exc:
             return self._reply(request, world, str(exc) + " Interpretarea a folosit 1 apel.",
                 recovery_total_call_limit=total_limit, recovery_blocked={"code": exc.code, "explanation": str(exc)})
@@ -330,7 +342,7 @@ class LiveCommands:
             idempotency_key="live-command-" + Store.fingerprint({"key": request.idempotency_key, "scenario": world.scenario_id}),
             group_ids=groups, objective=intent.objective, modes=intent.modes,
             max_provider_calls=allowance, instructions=request.text, hotel_recovery=hotel_inputs,
-            airport_transfers=airport_transfers)
+            airport_transfers=airport_transfers, after_flight_transfer=after_flight_transfer)
         if hotel_inputs is not None:
             try:
                 validate_hotel_job(world, job_request)
@@ -351,6 +363,8 @@ class LiveCommands:
                 explanation += f" {len(skipped)} grupuri cu rezervări confirmate au rămas în afara căutării."
             if airport_transfers:
                 explanation += " Am reutilizat exact configurațiile salvate de transfer; orele și bagajele sunt în cererea jobului. Tarifele vor fi căutate din nou, în limita curentă; acestea nu sunt rezervări."
+            if after_flight_transfer is not None:
+                explanation += after_flight_reuse_explanation(after_flight_transfer)
             response = {"world": self.store._with_observations(conn, receipt_world).model_dump(mode="json"),
                 "replayed": result["replayed"], "applied": False, "mode": "ai", "explanation": explanation,
                 "incident_id": case.id, "recovery_job": job, "command_interpretation_calls": 1,

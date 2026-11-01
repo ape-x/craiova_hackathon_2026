@@ -6,6 +6,7 @@ import { airportTransferInputs } from './airportTransferRecovery';
 import type { AirportTransferDraft } from './airportTransferRecovery';
 import AirportTransferQuoteObservations from './AirportTransferQuoteObservations';
 import SavedAirportTransferInputs from './SavedAirportTransferInputs';
+import SavedAfterFlightInputs from './SavedAfterFlightInputs';
 import AfterFlightTransferFields, {
   AfterFlightTransferRequestDetails,
 } from './AfterFlightTransferFields';
@@ -884,15 +885,30 @@ export default function RecoveryJobPanel({
               />
             )}
             {((!hotelMode && modes.includes('bus')) || Boolean(afterFlightTransfer)) && (
-              <AfterFlightTransferFields
-                world={world}
-                groupIds={selectedGroups}
-                modes={modes}
-                allowance={Number(limit)}
-                value={afterFlightTransfer}
-                onChange={setAfterFlightTransfer}
-                incompatibleSetup={hotelMode || airportTransfers.length > 0}
-              />
+              <>
+                <AfterFlightTransferFields
+                  world={world}
+                  groupIds={selectedGroups}
+                  modes={modes}
+                  allowance={Number(limit)}
+                  value={afterFlightTransfer}
+                  onChange={setAfterFlightTransfer}
+                  incompatibleSetup={hotelMode || airportTransfers.length > 0}
+                />
+                {selectedGroups.length > 0 && (
+                  <SavedAfterFlightInputs
+                    world={world}
+                    incident={incident}
+                    groupIds={selectedGroups}
+                    modes={modes}
+                    allowance={Number(limit)}
+                    draft={afterFlightTransfer}
+                    onChange={setAfterFlightTransfer}
+                    incompatibleSetup={hotelMode || airportTransfers.length > 0}
+                    disabled={locked || active || loading}
+                  />
+                )}
+              </>
             )}
             {!hotelMode &&
               !afterFlightTransfer &&

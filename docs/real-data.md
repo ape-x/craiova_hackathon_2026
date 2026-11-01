@@ -186,6 +186,45 @@ unknown outcomes do not cause automatic retries. Terminal access, baggage delive
 fleet stock, protected connection and booking remain unverified. This integration
 currently has offline coverage; no new live supplier or spoken acceptance is claimed.
 
+Only a complete applied plan using the newly selected incoming flight and CAB
+category saves its exact `after_flight_transfer` inputs in the separate SQLite
+`after_flight_profiles` table, in the same transaction. Searches, manual imports,
+unused candidates, failures and rollbacks cannot replace that profile. It is
+independent of initial `airport_cab_profiles` and saved hotel configuration.
+Identity binds the operation, case and party/route; readiness, deadlines, budgets,
+restrictions and source rules must be checked against current conditions.
+
+Authenticated `GET /api/incidents/{id}/after-flight-transfer-profiles` returns
+`{world_version,profiles:[{group_id,configured,inputs?,source_job_id?,saved_at?,reason?}]}`.
+**Review saved flight + transfer inputs** explicitly reads this configuration.
+Loading copies the selected group's exact window instants, processing, bags and
+maximum alternatives into the ordinary form. It does not call a supplier, submit,
+change groups/services or increase the allowance. Past dates remain unchanged for
+editing. Changed case/version/selection invalidates the review; incompatible
+initial/hotel or stale after-flight setup must be removed or reset explicitly.
+The loaded draft still passes normal current-input validation on submission.
+
+RO/EN text or voice can affirmatively request the separately saved after-flight
+configuration, for example “Recalculate using the saved after-flight configuration”
+or “Recalculează folosind configurația salvată după zbor”. The literal current
+recovery clause must authorize reuse for one exact group with flight and ground
+modes, including after a valid operational report. Profile existence, passenger
+names, negated requests or conditional mentions do not authorize a search. Missing,
+stale or incompatible configuration requires typed review; requests to alter the
+window, route, processing, bags or maximum alternatives cannot edit those inputs
+through speech or silently fall back to an initial transfer.
+
+The minimum is **seven total calls including interpretation**. **Nine** allow up
+to two inbound alternatives only when saved `max_inbound_options=2`; default
+**eight** is unchanged and allows at most one. These are bounds, not promised
+results. Realtime startup context exposes only the profile's scope-valid boolean;
+it does not contain the saved window, bags or fares. Current constraints and source
+eligibility are revalidated and flight/vehicle quotes are sourced again; no old
+fare, observed arrival or booking is supplied by a profile. Persistence, form
+review/load and command reuse have offline evidence only. Historical manual CAB
+acceptance does not establish this path's live supplier or paid voice acceptance,
+which remains outstanding.
+
 ## Configuration
 
 Merge the needed values from [the credential template](../backend/real-data.env.example)

@@ -362,6 +362,9 @@ async def run_after_flight_recovery(jobs, job, owner, world, started):
 
     def completed(conn, response):
         jobs.ledger.complete_in_transaction(conn, job["id"], owner, response, completed_result)
+        committed = jobs.store._load(conn)
+        selected_group = next(item for item in committed.groups if item.id == inputs.group_id)
+        jobs.after_flight_profiles.save_in_transaction(conn, committed, selected_group, inputs, job["id"])
 
     task = asyncio.create_task(asyncio.to_thread(jobs.store.mutate, "recovery-job-apply:"+job["id"], {"job_id": job["id"]}, world.version,
         apply, on_commit=completed, request_started=started))

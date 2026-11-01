@@ -31,6 +31,9 @@ def _after_flight_transfer_requested(value):
     target = rf"(?:{flight}|{landing}|{arrival_of_flight}|(?:we|they)\s+land\b)"
     after = rf"\b(?:after|following|once|when|dupa|cand)\s+{modifiers}{target}"
     gap = r"[^.;!?\n]{0,140}"
+    label = r"\b(?:after[\s-]+flight|post[\s-]*flight|dupa[\s-]+zbor(?:ul)?|post[\s-]*zbor)\b"
+    if re.search(rf"{label}{gap}{transfer}|{transfer}{gap}{label}", value):
+        return True
     if re.search(rf"{transfer}{gap}{after}|{after}{gap}{transfer}", value):
         return True
     # An explicitly ordered route can be expressed without the word 'after'.
@@ -60,7 +63,7 @@ def resolve_saved_airport_transfers(jobs, world, case, group_ids, modes, text, a
         raise AirportTransferSetupRequired(
             "Un transfer după un zbor viitor necesită formularul «Flight to OTP + transfer to CRA»: "
             "grupul exact, intervalul de preluare, minutele de procesare și bagajele explicite. "
-            "Reutilizarea vocală a acestui flux nu este încă disponibilă. Nu am substituit un transfer inițial salvat "
+            "Sau cere explicit configurația salvată separată pentru transferul după zbor. Nu am substituit un transfer inițial salvat "
             "și nu am presupus aterizarea sau pornit altă căutare.")
     saved = re.search(r"\b(?:saved|stored|salvat\w*|memorat\w*)\b", value)
     transfer_pattern = r"\b(?:transfers?|transfer(?:ul|ului|uri|urile|urilor)|transport(?:ul|ului)?|bucharest[.\s-]*cab)\b"

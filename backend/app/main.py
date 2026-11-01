@@ -365,6 +365,17 @@ def create_app(settings: Settings | None=None) -> FastAPI:
                 raise DomainError(404,"Selected case no longer exists")
             return {"world_version":world.version,"profiles":jobs.airport_cab_profiles.public_for_case(world,incident_id,conn=conn)}
 
+    @app.get("/api/incidents/{incident_id}/after-flight-transfer-profiles",dependencies=[Depends(operator)])
+    def after_flight_transfer_profiles(incident_id: str):
+        with store.connect() as conn:
+            conn.execute("BEGIN")
+            world=store._load(conn)
+            if not any(case.id==incident_id for case in world.incidents):
+                raise DomainError(404,"Selected case no longer exists")
+            if world.mode!="live":
+                raise DomainError(409,"Saved after-flight transfer configurations require live mode")
+            return {"world_version":world.version,"profiles":jobs.after_flight_profiles.public_for_case(world,incident_id,conn=conn)}
+
     @app.get("/api/recovery-jobs/{job_id}",dependencies=[Depends(operator)])
     def recovery_job_get(job_id: str):
         return jobs.get(job_id)
@@ -467,7 +478,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         if body.scope is None:
             return await voice.create(body.sdp)
         context=await asyncio.to_thread(build_voice_context,await asyncio.to_thread(store.read),body.scope,
-            airport_cab_profiles=jobs.airport_cab_profiles)
+            airport_cab_profiles=jobs.airport_cab_profiles,after_flight_profiles=jobs.after_flight_profiles)
         return await voice.create(body.sdp,reference_context=context)
 
     @app.post("/api/traffic/start",dependencies=[Depends(operator)])

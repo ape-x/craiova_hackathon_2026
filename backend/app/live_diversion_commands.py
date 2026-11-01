@@ -74,7 +74,8 @@ def route_diversion_reports(commands, request, world, interpreted):
         arrival_span = _unique_span(request.text, bundle.arrival.report_reference)
         if max(restriction_span[1], arrival_span[1]) < min(restriction_span[2], arrival_span[2]):
             raise Clarification("Restricția și pregătirea pasagerilor necesită două declarații distincte, fără citate suprapuse.")
-        if _recovery_requested(restriction_span[0]) or _recovery_requested(arrival_span[0]):
+        from .after_flight_commands import saved_after_flight_instruction
+        if any(_recovery_requested(span[0]) or saved_after_flight_instruction(span[0]) for span in (restriction_span, arrival_span)):
             raise Clarification("Separă citatele celor două rapoarte de cererea de recuperare; nu omit condiții din căutare.")
         case = _case(world, request.text, bundle.restriction.incident_id)
         arrival_case = _case(world, request.text, bundle.arrival.incident_id)

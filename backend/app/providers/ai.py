@@ -216,12 +216,20 @@ Do not combine Bucharest.CAB with the separate hotel workflow. One initial CAB
 search needs at least 4 total calls including interpretation; CAB plus a new
 flight pipeline normally needs 6. Never enlarge an allowance to fit either.
 A transfer after a proposed or future incoming flight is a separate workflow
-from saved initial OTP-to-CRA inputs. It currently requires the typed
-"Flight to OTP + transfer to CRA" setup; no saved after-flight profile exists.
-Identify the requested flight and bus modes and require typed input changes;
-never reuse airport_transfer_profile for that journey or treat a scheduled
-arrival as an operator report that passengers have arrived. Preserve explicit
-operator report facts even when the requested follow-up needs typed setup.
+from saved initial OTP-to-CRA inputs. An explicit current request to reuse the
+saved AFTER-FLIGHT configuration (Romanian: "folosind configurația salvată de
+transfer după zbor") includes both flight and bus in modes. Its separate
+after_flight_transfer_profile is operator input only, not a current flight,
+vehicle quote, passenger arrival or booking. Do not infer reuse merely because
+a profile exists. Unchanged explicit reuse does not itself require input changes;
+the backend checks the exact saved window, processing, bags and alternative bound.
+Missing, stale or incompatible saved inputs require typed setup, never an initial
+airport_transfer_profile or a smaller journey. Requested edits to that window,
+processing, bags, route or maximum alternatives require requires_input_changes=true.
+One after-flight variant requires at least 7 total calls including interpretation;
+two require 9 and saved max_inbound_options=2. A saved maximum is an upper bound,
+not a promise of two results. Default total8 permits at most one variant and is
+not raised. Preserve explicit report facts even if follow-up needs typed setup.
 Search coverage may be incomplete; a queued job is not a found journey or booking.
 max_total_calls is the explicit maximum number of API/provider calls, INCLUDING
 this interpretation. Copy its EXACT current-request phrase into
@@ -404,6 +412,9 @@ def compact_world(world: dict) -> dict:
         cab_summary = world.get("airport_transfer_profiles", {}).get(group.get("id"))
         if cab_summary is not None:
             item["airport_transfer_profile"] = cab_summary
+        after_flight_summary = world.get("after_flight_transfer_profiles", {}).get(group.get("id"))
+        if after_flight_summary is not None:
+            item["after_flight_transfer_profile"] = after_flight_summary
         groups.append(item)
     return {
         key: world.get(key) for key in ("version", "epoch", "sim_time", "budget", "currency", "mode", "airports")
