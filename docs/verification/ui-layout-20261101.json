@@ -1,0 +1,48 @@
+{
+  "date": "2026-11-01",
+  "scope": "Operations workspace layout, region camera bounds, timeline interval packing",
+  "isolated_commit_validation": {
+    "base_commit": "8bdfc0490e459260144090020200198a9133d194",
+    "production_build": "passed",
+    "frontend_test_files": 60,
+    "frontend_tests_passed": 1013
+  },
+  "deployed_frontend_validation": {
+    "production_build": "passed",
+    "frontend_test_files": 67,
+    "frontend_tests_passed": 1144
+  },
+  "browser": {
+    "url": "http://localhost:8081/",
+    "viewports": [
+      [
+        1728,
+        826
+      ],
+      [
+        1280,
+        720
+      ],
+      [
+        390,
+        844
+      ]
+    ],
+    "no_document_overflow": true,
+    "recovery_cases_mouse_and_keyboard_toggle": "passed",
+    "region_LHR_OTP_both_visible": "passed",
+    "responsive_map_controls": "checked",
+    "viewport_override_reset": true
+  },
+  "deployment": {
+    "service": "air-walkthrough-demo-web-1",
+    "api_container_restarted": false,
+    "world_version_before": 24,
+    "world_version_after": 24,
+    "scenario_preserved": true
+  },
+  "limitations": [
+    "Google map tiles and terrain detail depend on provider coverage.",
+    "Existing production chunk-size warning remains."
+  ]
+}

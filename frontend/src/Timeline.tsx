@@ -1,23 +1,36 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BedDouble, BusFront, ChevronLeft, ChevronRight, Plane, Minus, Plus } from 'lucide-react';
 import type { World } from './types';
 import { formatWorldTime } from './api';
+import { layoutTimelineLane, TIMELINE_BAR_HEIGHT, TIMELINE_TICK_HEIGHT } from './timelineLayout';
 export default function Timeline({
   world,
   onSelect,
+  navigation,
 }: {
   world: World;
   onSelect: (id: string) => void;
+  navigation?: { request: number; action: 'earlier' | 'later' | 'now' | 'zoom_in' | 'zoom_out' };
 }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState(0);
   const start = world.sim_time + offset,
     span = 720 / zoom;
+  const consumedNavigation = useRef<number | null>(null);
+  useEffect(() => {
+    if (!navigation || consumedNavigation.current === navigation.request) return;
+    consumedNavigation.current = navigation.request;
+    if (navigation.action === 'now') setOffset(0);
+    else if (navigation.action === 'earlier')
+      setOffset((value) => Math.max(-world.sim_time, value - span / 2));
+    else if (navigation.action === 'later') setOffset((value) => value + span / 2);
+    else if (navigation.action === 'zoom_in') setZoom((value) => Math.min(4, value * 2));
+    else setZoom((value) => Math.max(0.5, value / 2));
+  }, [navigation, span, world.sim_time]);
   const lanes = useMemo(
     () =>
-      ['flight', 'bus', 'hotel'].map((kind) => ({
-        kind,
-        resources: world.resources
+      ['flight', 'bus', 'hotel'].map((kind) => {
+        const resources = world.resources
           .filter(
             (resource) =>
               resource.kind === kind &&
@@ -27,9 +40,10 @@ export default function Timeline({
                   reservation.resource_id === resource.id && reservation.status !== 'released',
               ),
           )
-          .slice(0, 10),
-      })),
-    [world.resources, world.reservations],
+          .slice(0, 10);
+        return { kind, resources, ...layoutTimelineLane(resources, start, span) };
+      }),
+    [world.resources, world.reservations, start, span],
   );
   return (
     <section className="timeline" aria-label="Resource schedule">
@@ -78,7 +92,12 @@ export default function Timeline({
         </div>
       </div>
       <div className="timeline-grid">
-        <div className="timeline-labels">
+        <div
+          className="timeline-labels"
+          style={{
+            gridTemplateRows: `${TIMELINE_TICK_HEIGHT}px ${lanes.map((lane) => `${lane.height}px`).join(' ')}`,
+          }}
+        >
           <span />
           <span>
             <Plane size={12} />
@@ -94,7 +113,7 @@ export default function Timeline({
           </span>
         </div>
         <div className="timeline-chart">
-          <div className="timeline-ticks">
+          <div className="timeline-ticks" style={{ height: TIMELINE_TICK_HEIGHT }}>
             {Array.from({ length: 9 }, (_, index) => (
               <span key={index} style={{ left: `${index * 12.5}%` }}>
                 {formatWorldTime(world, start + (span * index) / 8)}
@@ -102,33 +121,33 @@ export default function Timeline({
             ))}
           </div>
           {lanes.map((lane) => (
-            <div key={lane.kind} className={`timeline-lane ${lane.kind}`}>
-              {lane.resources.map((resource, index) => {
-                const left = Math.max(0, ((resource.departure - start) / span) * 100),
-                  right = Math.min(100, ((resource.arrival - start) / span) * 100);
-                if (right <= left) return null;
-                return (
-                  <button
-                    key={resource.id}
-                    title={`${resource.id}: ${resource.origin} → ${resource.destination}, ${formatWorldTime(world, resource.departure)}–${formatWorldTime(world, resource.arrival)}`}
-                    aria-label={`Select ${resource.id}`}
-                    className="schedule-bar"
-                    style={{
-                      left: `${left}%`,
-                      width: `${right - left}%`,
-                      top: `${5 + (index % 3) * 3}px`,
-                      opacity: 1 - (index % 3) * 0.15,
-                    }}
-                    onClick={() => onSelect(resource.id)}
-                  >
-                    {right - left > 10 ? resource.id : ''}
-                  </button>
-                );
-              })}
-              {!lane.resources.length && (
+            <div
+              key={lane.kind}
+              className={`timeline-lane ${lane.kind}`}
+              style={{ height: lane.height }}
+            >
+              {lane.bars.map(({ resource, left, width, top }) => (
+                <button
+                  key={resource.id}
+                  title={`${resource.id}: ${resource.origin} → ${resource.destination}, ${formatWorldTime(world, resource.departure)}–${formatWorldTime(world, resource.arrival)}`}
+                  aria-label={`Select ${resource.id}`}
+                  className="schedule-bar"
+                  style={{
+                    left: `${left}%`,
+                    width: `${width}%`,
+                    top,
+                    height: TIMELINE_BAR_HEIGHT,
+                  }}
+                  onClick={() => onSelect(resource.id)}
+                >
+                  {width > 10 ? resource.id : ''}
+                </button>
+              ))}
+              {!lane.bars.length && (
                 <span className="timeline-empty">
-                  No allocated{' '}
+                  {lane.resources.length ? 'No ' : 'No allocated '}
                   {lane.kind === 'bus' ? 'transfers' : lane.kind === 'hotel' ? 'rooms' : 'flights'}
+                  {lane.resources.length ? ' in this time window' : ''}
                 </span>
               )}
             </div>
