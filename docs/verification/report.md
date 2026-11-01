@@ -4,7 +4,53 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `7c193e8` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `bfcd836` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+
+### Combined airport restriction and passenger arrival — 1 November 2026
+
+Release `bfcd836` accepts one current airport restriction and one explicit
+passenger position/readiness assertion for the same existing case in a single
+text/voice command. Both statements are independently grounded and commit in one
+world revision before optional recovery for exactly the reported groups. The
+original transcript and call cap are retained. Known setup or queue blocks keep
+both valid reports; unexpected failures roll back both reports, pending-offer
+invalidation, queue handoff and receipt. Confirmed case-wide conflicts remain
+visible, and confirmed passenger travel is not overwritten.
+
+The complete suite passed **2,443 backend tests and 662 frontend tests across
+45 files**, TypeScript, production build, formatting and diff checks. The 50 new
+backend cases include strict mocked Responses parsing, English/Romanian literal
+grounding, omitted/shared conditions, scope mismatches, stable relative-readiness
+anchors, replay, predecessor drain, and database failures at each atomic boundary.
+The documented Romanian command completed the isolated worker with one mocked
+interpretation and three remaining calls: OTP arrivals were restricted, the
+group was reported ready at CRA, and a mocked CRA→SBZ flight connected to an
+explicitly seeded dated SBZ→OTP ground service. Other groups and the original
+flight reference were preserved. This is offline integration evidence, not new
+live transport availability or a demonstrated real diversion.
+
+The frontend verifies that the two receipts correlate before acknowledging them,
+opening the case or focusing the arrival airport. Tests cover malformed receipts,
+queue/blocked/replay outcomes and one command submission for a duplicate voice
+delegation. Both report facts and the actual search outcome remain within the
+480-byte UTF-8 speech limit, including long dates and conflict warnings.
+
+GitHub Actions passed for `bfcd836` on main (run 155) and
+codex/airport-recovery-live (run 154). Both images were built from the exact
+committed archive, with revision labels `bfcd836`; a verified private SQLite
+backup and previous image tags were retained.
+After replacing the existing containers, full state/history comparison preserved
+world 52, two groups, 25 resources and zero active jobs or confirmed offers/resources.
+FR24 stayed paused at 81 requests / 3,215 reserved credits. CAB receipts stayed
+at two / four HTTP dispatches, recovery steps at 27 and saved CAB profiles at zero.
+The browser loaded `/assets/index-NaTdTLw6.js` without console errors, reconnected
+and opened the existing case with its original incident, restrictions and expired
+flight-context notice intact. No report or search was submitted during this check.
+
+No new voice session, model request, supplier search or booking was executed.
+The previously authorized single voice attempt remains consumed; the separate
+request for another bounded attempt is still pending. Combined spoken recovery
+has offline coverage and is not claimed as live verified.
 
 ### Saved airport-transfer inputs and fresh-source recovery — 1 November 2026
 
