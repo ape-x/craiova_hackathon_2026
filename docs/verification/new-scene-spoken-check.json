@@ -1,0 +1,585 @@
+{
+  "state": "closed_review_evidence",
+  "started_at": "2026-11-01T11:38:35.918Z",
+  "input": "Two macOS Ioana synthetic Romanian clips in one session",
+  "microphone_accessed": false,
+  "ambient_audio_recorded": false,
+  "max_backend_commands": 2,
+  "client_close_deadline_seconds": 180,
+  "timeline": [
+    {
+      "event": "session_start_requested",
+      "elapsed_ms": 42
+    },
+    {
+      "event": "synthetic_input_acquired",
+      "elapsed_ms": 44
+    },
+    {
+      "event": "session.started",
+      "elapsed_ms": 2476
+    },
+    {
+      "event": "first_speech_started",
+      "elapsed_ms": 2977
+    },
+    {
+      "event": "first_speech_ended",
+      "elapsed_ms": 8817
+    },
+    {
+      "event": "session.delegation.created",
+      "elapsed_ms": 10831
+    },
+    {
+      "event": "backend_command_requested",
+      "elapsed_ms": 11090
+    },
+    {
+      "event": "backend_result_received",
+      "elapsed_ms": 15234
+    },
+    {
+      "event": "first_question_scene_check",
+      "elapsed_ms": 33236
+    },
+    {
+      "event": "answer_speech_started",
+      "elapsed_ms": 33236
+    },
+    {
+      "event": "answer_speech_ended",
+      "elapsed_ms": 45622
+    },
+    {
+      "event": "session.delegation.created",
+      "elapsed_ms": 46494
+    },
+    {
+      "event": "backend_command_requested",
+      "elapsed_ms": 46752
+    },
+    {
+      "event": "backend_result_received",
+      "elapsed_ms": 52703
+    },
+    {
+      "event": "close_requested",
+      "elapsed_ms": 76458
+    },
+    {
+      "event": "session.closed",
+      "elapsed_ms": 82498
+    }
+  ],
+  "event_counts": {
+    "session.started": 1,
+    "session.input_transcript.delta": 50,
+    "session.delegation.created": 2,
+    "session.thinking.appended": 2,
+    "session.usage.updated": 5,
+    "session.output_transcript.delta": 75,
+    "session.commentary.appended": 2,
+    "session.closed": 1
+  },
+  "backend_receipts": [
+    {
+      "turn": 1,
+      "delegated_text": "Vreau să creez un scenariu nou la Lisabona, cu un avion care nu poate ateriza din cauza furtunii",
+      "voice_context": "",
+      "applied": false,
+      "before_version": 2,
+      "after_version": 2,
+      "verified_reply": "Nicio modificare operațională aplicată. Pot folosi 120 de pasageri cu destinația finală Lisabona și să aleg eu valori demonstrative pentru aeroportul de plecare, orar, termenele de sosire, bugete și transportul de la aeroporturile alternative, sau preferi să furnizezi aceste detalii? Versiunea 2.",
+      "scene_replaced": false
+    },
+    {
+      "turn": 2,
+      "delegated_text": "Sunt 24 de pasageri. Avionul vine de la Londra și este deja în aer. Completează tu restul datelor demonstrative, alege aeroportul de deviere și organizează transportul până la Lisabona",
+      "voice_context": "user:  Vreau să creez un scenariu nou la Lisabona, cu un avion care nu poate ateriza din cauza furtunii\nassistant:  Nu s-a aplicat nicio modificare încă. Pot folosi 120 de pasageri și să aleg eu valorile demonstrative pentru plecare, orar, termene, bugete și transport? Sau preferi să-mi spui tu detaliile? Mhm.",
+      "before_version": 2,
+      "after_version": 3,
+      "verified_reply": "Rezultat confirmat de simulator. Scenariul nou propus include 24 de pasageri Heathrow–Lisabona, deja în aer, cu orar demonstrativ 08:30–11:15 și furtună la Lisabona care interzice aterizările în simulare, fără restricții asupra decolărilor; alegerea devierii rămâne comparării automate între Faro și Porto. Am prevăzut câte un autocar de 24 de locuri la 13:00: Faro–Lisabona până la 16:30, la 40 EUR/persoană, respectiv Porto–Lisabona până la 17:00, la 45 EUR/persoană, cu termen final 20:00 și buget de 200 EUR/persoană, 4.800 EUR total. Orele sunt ale simulatorului, disponibilitatea pasagerilor începe la 11:45 înaintea ajustării pentru deviere, iar ipotezele standard sunt pasageri individuali cu prioritate normală, fără cerințe de accesibilitate, servicii disponibile fără facilități de accesibilitate declarate și fără vehicule nominalizate; acestea nu reprezintă rezervări reale.\n\nDecisions a selectat plan-fastest-FAO-4: 24 pasageri cu itinerar fezabil, cost 960.00 EUR, 0 grupuri fără soluție. Aceste valori provin din solver; ofertele necesită acceptarea pasagerilor. Versiunea 3.",
+      "scene_replaced": true
+    }
+  ],
+  "command_attempts": 2,
+  "finalization_confirmed": true,
+  "limitations": [
+    "Synthetic speech checks actual voice transport and delegation, not the physical microphone or room acoustics.",
+    "Assistant question/acknowledgement transcripts require semantic review; successful provider transport alone is not proof of completion."
+  ],
+  "audio_duration_seconds": {
+    "first": 5.8375,
+    "answer": 12.384208333333333
+  },
+  "client_state": "idle",
+  "transcript_timing": [
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 4222,
+      "delta": " Vreau",
+      "start_ms": 600,
+      "end_ms": 800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 4421,
+      "delta": " să",
+      "start_ms": 800,
+      "end_ms": 1000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 4726,
+      "delta": " creez un",
+      "start_ms": 1200,
+      "end_ms": 1400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 5462,
+      "delta": " scenariu",
+      "start_ms": 1800,
+      "end_ms": 2000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 5566,
+      "delta": " nou",
+      "start_ms": 2000,
+      "end_ms": 2200
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 5793,
+      "delta": " la",
+      "start_ms": 2200,
+      "end_ms": 2400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 6093,
+      "delta": " Lis",
+      "start_ms": 2600,
+      "end_ms": 2800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 6275,
+      "delta": "abona",
+      "start_ms": 2800,
+      "end_ms": 3000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 6876,
+      "delta": ", cu un",
+      "start_ms": 3400,
+      "end_ms": 3600
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 7298,
+      "delta": " avion",
+      "start_ms": 3800,
+      "end_ms": 4000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 7480,
+      "delta": " care",
+      "start_ms": 4000,
+      "end_ms": 4200
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 7746,
+      "delta": " nu",
+      "start_ms": 4200,
+      "end_ms": 4400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 7882,
+      "delta": " poate",
+      "start_ms": 4400,
+      "end_ms": 4600
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 8113,
+      "delta": " ater",
+      "start_ms": 4600,
+      "end_ms": 4800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 8157,
+      "delta": "iza",
+      "start_ms": 4800,
+      "end_ms": 5000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 8615,
+      "delta": " din",
+      "start_ms": 5200,
+      "end_ms": 5400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 9080,
+      "delta": " cauza",
+      "start_ms": 5600,
+      "end_ms": 5800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 9274,
+      "delta": " furt",
+      "start_ms": 5800,
+      "end_ms": 6000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 9675,
+      "delta": "unii",
+      "start_ms": 6200,
+      "end_ms": 6400
+    },
+    {
+      "type": "session.delegation.created",
+      "elapsed_ms": 10831,
+      "offset_ms": 7400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 34486,
+      "delta": " Sunt",
+      "start_ms": 31200,
+      "end_ms": 31400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 34907,
+      "delta": " ",
+      "start_ms": 31600,
+      "end_ms": 31800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 35132,
+      "delta": "24",
+      "start_ms": 31800,
+      "end_ms": 32000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 35651,
+      "delta": " de",
+      "start_ms": 32400,
+      "end_ms": 32600
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 36377,
+      "delta": " pasageri",
+      "start_ms": 33000,
+      "end_ms": 33200
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 36927,
+      "delta": ". Avion",
+      "start_ms": 33600,
+      "end_ms": 33800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 37107,
+      "delta": "ul",
+      "start_ms": 33800,
+      "end_ms": 34000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 37308,
+      "delta": " vine",
+      "start_ms": 34000,
+      "end_ms": 34200
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 37502,
+      "delta": " de",
+      "start_ms": 34200,
+      "end_ms": 34400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 37760,
+      "delta": " la",
+      "start_ms": 34400,
+      "end_ms": 34600
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 37892,
+      "delta": " Londra",
+      "start_ms": 34600,
+      "end_ms": 34800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 38102,
+      "delta": " și",
+      "start_ms": 34800,
+      "end_ms": 35000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 38286,
+      "delta": " este",
+      "start_ms": 35000,
+      "end_ms": 35200
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 38644,
+      "delta": " deja în",
+      "start_ms": 35400,
+      "end_ms": 35600
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 39075,
+      "delta": " aer",
+      "start_ms": 35800,
+      "end_ms": 36000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 39924,
+      "delta": ". Completează",
+      "start_ms": 36600,
+      "end_ms": 36800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 40147,
+      "delta": " tu",
+      "start_ms": 36800,
+      "end_ms": 37000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 40544,
+      "delta": " restul",
+      "start_ms": 37200,
+      "end_ms": 37400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 41009,
+      "delta": " datelor",
+      "start_ms": 37600,
+      "end_ms": 37800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 42079,
+      "delta": " demonstrative",
+      "start_ms": 38800,
+      "end_ms": 39000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 42491,
+      "delta": ", alege",
+      "start_ms": 39200,
+      "end_ms": 39400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 42631,
+      "delta": " aeroport",
+      "start_ms": 39400,
+      "end_ms": 39600
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 43283,
+      "delta": "ul",
+      "start_ms": 40000,
+      "end_ms": 40200
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 43343,
+      "delta": " de",
+      "start_ms": 40200,
+      "end_ms": 40400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 43899,
+      "delta": " deviere",
+      "start_ms": 40600,
+      "end_ms": 40800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 43916,
+      "delta": " și",
+      "start_ms": 40800,
+      "end_ms": 41000
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 44445,
+      "delta": " organizează",
+      "start_ms": 41400,
+      "end_ms": 41600
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 45296,
+      "delta": " transportul",
+      "start_ms": 42200,
+      "end_ms": 42400
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 45672,
+      "delta": " până la",
+      "start_ms": 42600,
+      "end_ms": 42800
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 46079,
+      "delta": " Lis",
+      "start_ms": 43000,
+      "end_ms": 43200
+    },
+    {
+      "type": "session.input_transcript.delta",
+      "elapsed_ms": 46479,
+      "delta": "abona",
+      "start_ms": 43400,
+      "end_ms": 43600
+    },
+    {
+      "type": "session.delegation.created",
+      "elapsed_ms": 46494,
+      "offset_ms": 43400
+    }
+  ],
+  "user_transcript": " Vreau să creez un scenariu nou la Lisabona, cu un avion care nu poate ateriza din cauza furtunii Sunt 24 de pasageri. Avionul vine de la Londra și este deja în aer. Completează tu restul datelor demonstrative, alege aeroportul de deviere și organizează transportul până la Lisabona",
+  "assistant_transcript": " Nu s-a aplicat nicio modificare încă. Pot folosi 120 de pasageri și să aleg eu valorile demonstrative pentru plecare, orar, termene, bugete și transport? Sau preferi să-mi spui tu detaliile? Mhm. Gata, am creat scenariul: 24 de pasageri, avionul e deviat spre FAO, iar toți au itinerarii simulate, cost total 960 de euro. Găsești detaliile în panou. Mai vrei să adaug o constrângere?",
+  "first_turn": {
+    "assistant_transcript": " Nu s-a aplicat nicio modificare încă. Pot folosi 120 de pasageri și să aleg eu valorile demonstrative pentru plecare, orar, termene, bugete și transport? Sau preferi să-mi spui tu detaliile?",
+    "before_version": 2,
+    "after_version": 2,
+    "same_scenario_id": true,
+    "complete_scene_unchanged": true,
+    "backend_commands_so_far": 1
+  },
+  "backend": {
+    "checks": {
+      "new_scenario_id": true,
+      "monotonic_version": true,
+      "atomic_empty_reset": true,
+      "old_resource_inventory_replaced": true,
+      "lisbon_landing_blocked": true,
+      "passenger_count_24": true,
+      "eligible_alternate_selected": true,
+      "new_ai_decision": true,
+      "selected_candidate_valid": true,
+      "all_passengers_recovered": true
+    },
+    "before_version": 2,
+    "after_version": 3,
+    "airport_ids": [
+      "LHR",
+      "LIS",
+      "FAO",
+      "OPO"
+    ],
+    "resource_ids": [
+      "FLIS24",
+      "BFAOLIS",
+      "BOPOLIS"
+    ],
+    "passenger_count": 24,
+    "diversion_airport": "FAO",
+    "reset_event": {
+      "type": "scenario_reset",
+      "data": {
+        "value": "empty",
+        "source": "simulation"
+      }
+    },
+    "provider": "OpenAI Decisions / gpt-6-luna",
+    "timings_ms": {
+      "interpretation_ms": 5497.39,
+      "solver_ms": 19.01,
+      "decisions_ms": 390.78,
+      "apply_ms": 1.22,
+      "transaction_ms": 6.37,
+      "server_total_ms": 5919.42
+    },
+    "recovered_passengers": 24,
+    "explanation": "Scenariul nou propus include 24 de pasageri Heathrow–Lisabona, deja în aer, cu orar demonstrativ 08:30–11:15 și furtună la Lisabona care interzice aterizările în simulare, fără restricții asupra decolărilor; alegerea devierii rămâne comparării automate între Faro și Porto. Am prevăzut câte un autocar de 24 de locuri la 13:00: Faro–Lisabona până la 16:30, la 40 EUR/persoană, respectiv Porto–Lisabona până la 17:00, la 45 EUR/persoană, cu termen final 20:00 și buget de 200 EUR/persoană, 4.800 EUR total. Orele sunt ale simulatorului, disponibilitatea pasagerilor începe la 11:45 înaintea ajustării pentru deviere, iar ipotezele standard sunt pasageri individuali cu prioritate normală, fără cerințe de accesibilitate, servicii disponibile fără facilități de accesibilitate declarate și fără vehicule nominalizate; acestea nu reprezintă rezervări reale.\n\nDecisions a selectat plan-fastest-FAO-4: 24 pasageri cu itinerar fezabil, cost 960.00 EUR, 0 grupuri fără soluție. Aceste valori provin din solver; ofertele necesită acceptarea pasagerilor."
+  },
+  "verified_reply": "Rezultat confirmat de simulator. Scenariul nou propus include 24 de pasageri Heathrow–Lisabona, deja în aer, cu orar demonstrativ 08:30–11:15 și furtună la Lisabona care interzice aterizările în simulare, fără restricții asupra decolărilor; alegerea devierii rămâne comparării automate între Faro și Porto. Am prevăzut câte un autocar de 24 de locuri la 13:00: Faro–Lisabona până la 16:30, la 40 EUR/persoană, respectiv Porto–Lisabona până la 17:00, la 45 EUR/persoană, cu termen final 20:00 și buget de 200 EUR/persoană, 4.800 EUR total. Orele sunt ale simulatorului, disponibilitatea pasagerilor începe la 11:45 înaintea ajustării pentru deviere, iar ipotezele standard sunt pasageri individuali cu prioritate normală, fără cerințe de accesibilitate, servicii disponibile fără facilități de accesibilitate declarate și fără vehicule nominalizate; acestea nu reprezintă rezervări reale.\n\nDecisions a selectat plan-fastest-FAO-4: 24 pasageri cu itinerar fezabil, cost 960.00 EUR, 0 grupuri fără soluție. Aceste valori provin din solver; ofertele necesită acceptarea pasagerilor. Versiunea 3.",
+  "listening_after_creation": true,
+  "voice_usage": {
+    "seconds": 74
+  },
+  "close_reason": "close_requested",
+  "output_transcript_after_creation": " Gata, am creat scenariul: 24 de pasageri, avionul e deviat spre FAO, iar toți au itinerarii simulate, cost total 960 de euro. Găsești detaliile în panou. Mai vrei să adaug o constrângere?",
+  "elapsed_ms": 82500,
+  "models": {
+    "voice": "gpt-live-1",
+    "reasoning": "gpt-6.1-sol",
+    "decision": "gpt-6-luna"
+  },
+  "automated_checks": {
+    "backend_full_suite": 3249,
+    "frontend_full_suite": 999,
+    "backend_final_prompt_checks": 76,
+    "production_build": "passed"
+  },
+  "implementation_base": "69b252a9209c43f97de5b418e62a6074f66d280e",
+  "source_sha256": {
+    "backend/app/providers/ai.py": "885fdadf2c72934926a6e6144be4812e274a72b4744f7da8b2a343c61e5c15fb",
+    "backend/app/providers/voice.py": "72d01296b16802706eac81dcbfb6c25ebb6feeea60e61f2456ec9e418716b970",
+    "frontend/src/App.tsx": "124cbc1e26a7b7af21914426e70d0146ff1dff0fa4b3d73588118b2616adb9ab",
+    "frontend/src/liveVoice.ts": "edc90e658dcaf2b8c8a128aca40736d7be4998c0277cd6ddb3c1817fba2e018c",
+    "frontend/src/voiceRequestReview.ts": "b5320aac66666a837f7c15b353246accb199a9b2650ac9e40f195906b19cadbd"
+  },
+  "earlier_checks": [
+    {
+      "result": "valid_scene_created",
+      "limitation": "An earlier 90-second harness deadline cut off the spoken acknowledgement after manual review delayed the second clip. Final run used a 180-second cap and an explicit stop after complete acknowledgement."
+    },
+    {
+      "result": "boundary_issue_found_and_fixed",
+      "limitation": "Already-received final words timestamped exactly at delegation were omitted. The fix reserves those fragments once while excluding later speech. Regression tests and the final spoken run verify both complete requests."
+    },
+    {
+      "result": "transient_voice_connection_failure",
+      "limitation": "One voice startup failed before any transcript or backend command. A fresh explicit retry succeeded; no silent model or scripted-response fallback was used."
+    }
+  ],
+  "semantic_review": {
+    "question_before_creation": true,
+    "operator_count_overrode_proposed_default": true,
+    "original_lisbon_storm_preserved": true,
+    "full_requests_delegated": true,
+    "spoken_count_destination_cost_match_committed_plan": true,
+    "invited_further_constraint_without_mutation": true
+  }
+}

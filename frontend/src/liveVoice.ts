@@ -31,8 +31,15 @@ export interface LiveVoiceOptions {
   onEvent?: (event: Record<string, unknown>) => void;
 }
 
-type Fragment = { text: string; start: number; end: number; receivedAt: number };
-type DelegationWindow = { start: number; end: number };
+type Fragment = {
+  text: string;
+  start: number;
+  end: number;
+  receivedAt: number;
+  /** A pre-existing boundary fragment is reserved by that delegation once. */
+  boundaryOwnerEnd?: number;
+};
+type DelegationWindow = { start: number; end: number; boundary: Fragment[] };
 type ConversationFragment = Fragment & { role: 'user' | 'assistant' };
 
 /** Context appends allow 500 tokens. A smaller UTF-8 byte budget is a
@@ -78,6 +85,103 @@ function reportedReadinessForSpeech(value: string): string {
   return `${instant.getUTCDate()} ${ROMANIAN_MONTHS[instant.getUTCMonth()]} ${instant.getUTCFullYear()}, ora ${instant.toISOString().slice(11, 16)} UTC`;
 }
 
+/** Speak the chosen outcome before optional details from a newly authored scene.
+ * Authoring prose may be long and contains assumptions, while arrival/readiness
+ * are different values. Only committed records supply these spoken facts.
+ */
+function newSceneAcknowledgement(result: MutationResult): string | undefined {
+  const { world, decision } = result;
+  if (
+    world.mode !== 'simulation' ||
+    result.applied === false ||
+    !decision ||
+    !world.events?.some(
+      (event) =>
+        event.type === 'scenario_reset' &&
+        event.version === world.version &&
+        event.data.source === 'simulation' &&
+        ['empty', 'seed'].includes(String(event.data.value)),
+    )
+  )
+    return undefined;
+  const currentDecision =
+    decision.applied_version === world.version && decision.source_version === world.version - 1;
+  if (result.applied !== true && !currentDecision) return undefined;
+
+  const qualification = 'Totul este simulat. Ofertele necesită acceptare; detaliile sunt în panou.';
+  const total = world.groups.reduce((sum, group) => sum + group.size, 0);
+  const totalKnown = Number.isSafeInteger(total) && total >= 0;
+  const facts = [
+    `Scenariu ${result.replayed ? 'deja' : 'nou'} creat${totalKnown ? `: ${total} pasageri` : ''}.`,
+  ];
+  const matches = decision.candidates.filter(
+    (candidate) => candidate.id === decision.selected_plan_id,
+  );
+  const plan = matches.length === 1 ? matches[0] : undefined;
+  const committed = world.events.some(
+    (event) =>
+      event.type === 'plan_applied' &&
+      event.version === world.version &&
+      event.target_id === decision.selected_plan_id &&
+      event.data.decision_id === decision.id &&
+      typeof event.data.validation === 'object' &&
+      event.data.validation !== null &&
+      'valid' in event.data.validation &&
+      event.data.validation.valid === true,
+  );
+  if (
+    !currentDecision ||
+    !plan ||
+    !committed ||
+    plan.validation.valid !== true ||
+    !totalKnown ||
+    !Number.isSafeInteger(plan.recovered_passengers) ||
+    plan.recovered_passengers < 0 ||
+    plan.recovered_passengers > total ||
+    !Number.isFinite(plan.total_cost) ||
+    plan.total_cost < 0
+  ) {
+    facts.push('Nu pot confirma planul ales din acest răspuns. Verifică panoul.');
+    return `${facts.join(' ')} ${qualification}`;
+  }
+  facts.push(
+    `Plan ales: ${plan.recovered_passengers} din ${total} pasageri cu itinerarii; cost ${plan.total_cost.toFixed(2)} EUR.`,
+  );
+  for (const event of world.events) {
+    if (
+      event.type !== 'flight_diverted' ||
+      event.version !== world.version ||
+      event.data.source !== 'simulation' ||
+      event.data.no_change
+    )
+      continue;
+    const flight = world.resources.find(
+      (resource) =>
+        resource.kind === 'flight' &&
+        resource.id === event.target_id &&
+        resource.destination === event.data.value &&
+        resource.status === 'diverted',
+    );
+    const airport = world.airports.find((item) => item.id === flight?.destination);
+    if (
+      !flight ||
+      !airport ||
+      !/^[A-Z0-9]{3,8}$/.test(airport.code) ||
+      !Number.isSafeInteger(flight.arrival) ||
+      flight.arrival < 0
+    )
+      continue;
+    const minute = flight.arrival % 1440;
+    const day = Math.floor(flight.arrival / 1440);
+    const arrival = `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}${day ? ` +${day} zile` : ''}`;
+    const detail = `Deviere ${flight.id} spre ${airport.code}, sosire ${arrival}, ora scenariului.`;
+    // Never cut a destination or time in half to make it fit.
+    if (new TextEncoder().encode([...facts, detail, qualification].join(' ')).byteLength <= 480)
+      facts.push(detail);
+  }
+  return `${facts.join(' ')} ${qualification}`;
+}
+
 /** Only facts from this backend receipt may describe the outcome or allowance.
  * Reserve room for the qualification; long scope/reason text cannot remove it.
  * Full details remain in the command reply and case panel, without another call.
@@ -86,6 +190,8 @@ export function voiceCommandAcknowledgement(result: MutationResult): string {
   const bundle = combinedReports(result);
   if (bundle.state === 'invalid') return UNCONFIRMED_COMBINED_REPORT;
   if (bundle.state === 'combined') return combinedReportAcknowledgement(result, bundle);
+  const newScene = newSceneAcknowledgement(result);
+  if (newScene) return newScene;
   const report =
     result.applied === true && result.report?.source === 'operator_report'
       ? result.report
@@ -565,17 +671,18 @@ export class LiveVoiceClient {
         event.start_ms >= 0 &&
         event.end_ms >= event.start_ms
       ) {
-        // The interval is half-open: speech exactly at the retired boundary
-        // belongs to the next turn. Earlier late speech is neither a command
-        // nor newly admitted reference context.
+        // Newly arriving speech at a retired boundary belongs to the next turn.
+        // Earlier late speech is neither a command nor new reference context.
+        // Existing exact-boundary fragments are reserved at delegation below.
         if (role === 'user' && event.start_ms < this.retiredThrough) return;
-        const fragment = {
+        const fragment: ConversationFragment = {
           text: event.delta,
           start: event.start_ms,
           end: event.end_ms,
           receivedAt: Date.now(),
+          role,
         };
-        this.conversation.push({ ...fragment, role });
+        this.conversation.push(fragment);
         this.conversation = this.conversation.slice(-300);
         if (role === 'user') {
           this.fragments.push(fragment);
@@ -606,7 +713,14 @@ export class LiveVoiceClient {
         });
         return;
       }
-      const window = { start: this.delegatedThrough, end: event.offset_ms };
+      // offset_ms locates delegation, not a guaranteed utterance end. A final
+      // word can already be transcribed exactly there when delegation arrives.
+      // Snapshot those existing objects, not wall-clock timestamps: a later
+      // fragment can arrive in the same millisecond and still belongs next.
+      const boundary = this.fragments.filter((part) => part.start === event.offset_ms);
+      for (const part of boundary) part.boundaryOwnerEnd = event.offset_ms;
+      this.fragments = this.fragments.filter((part) => part.start !== event.offset_ms);
+      const window = { start: this.delegatedThrough, end: event.offset_ms, boundary };
       this.delegatedThrough = window.end;
       const generation = this.generation;
       this.delegationQueue = this.delegationQueue
@@ -622,17 +736,22 @@ export class LiveVoiceClient {
     window: DelegationWindow,
     generation: number,
   ): Promise<Fragment[]> {
-    const deadline = Date.now() + 2000;
+    const started = Date.now();
+    const deadline = started + 2000;
     // GPT-Live has no transcript item ID or turn-complete event. Timeline
     // windows plus a bounded settling period are a grouping heuristic, not
     // proof an utterance is complete. Ambiguous requests still need clarification.
-    // https://developers.openai.com/api/docs/guides/live-conversations
+    // https://developers.openai.com/api/docs/guides/live-delegation
     while (generation === this.generation && !this.closing) {
       const now = Date.now();
-      const relevant = this.fragments.filter(
-        (part) => part.start >= window.start && part.start < window.end,
-      );
-      const lastArrival = Math.max(...relevant.map((part) => part.receivedAt));
+      const relevant = [
+        ...this.fragments.filter((part) => part.start >= window.start && part.start < window.end),
+        ...window.boundary,
+      ];
+      // An older partial transcript may already have been quiet before the
+      // delegation arrived. Give its final words time to arrive after delegation
+      // too; otherwise that partial would be dispatched and retired immediately.
+      const lastArrival = Math.max(started, ...relevant.map((part) => part.receivedAt));
       if (relevant.length && now - lastArrival >= 250) return relevant;
       if (now >= deadline) return [];
       await new Promise((resolve) => setTimeout(resolve, Math.min(50, deadline - now)));
@@ -658,7 +777,12 @@ export class LiveVoiceClient {
       .trim();
     const earlier: Array<{ role: 'user' | 'assistant'; text: string }> = [];
     for (const part of this.conversation) {
-      if (part.start >= window.end || (part.role === 'user' && part.start >= window.start))
+      const previousBoundary =
+        part.boundaryOwnerEnd !== undefined && part.boundaryOwnerEnd <= window.start;
+      if (
+        part.start >= window.end ||
+        (part.role === 'user' && part.start >= window.start && !previousBoundary)
+      )
         continue;
       const last = earlier.at(-1);
       if (last?.role === part.role) last.text += part.text;

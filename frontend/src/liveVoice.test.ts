@@ -1,8 +1,10 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { request, TransportError } from './api';
+import { commandContext, rememberCommand, verifiedCommandResult } from './commandContext';
+import type { CommandExchange } from './commandContext';
 import { LiveVoiceClient, voiceCommandAcknowledgement } from './liveVoice';
 import type { LiveVoiceOptions, VoiceState } from './liveVoice';
-import type { MutationResult, RecoveryJob, World } from './types';
+import type { Decision, MutationResult, Plan, RecoveryJob, World } from './types';
 
 function reportReceipt(overrides: Partial<MutationResult> = {}): MutationResult {
   return {
@@ -36,6 +38,135 @@ function queuedJob(overrides: Partial<RecoveryJob> = {}): RecoveryJob {
     ...overrides,
   } as RecoveryJob;
 }
+
+function newSceneReceipt(): MutationResult {
+  const plan = (id: string, airport: string, cost: number): Plan =>
+    ({
+      id,
+      strategy: { preferred_airport: airport },
+      validation: { valid: true },
+      recovered_passengers: 24,
+      total_cost: cost,
+    }) as unknown as Plan;
+  return {
+    world: {
+      scenario_id: 'NEW-SCENE',
+      mode: 'simulation',
+      version: 11,
+      sim_time: 600,
+      groups: [{ id: 'G1', size: 24, ready_at: 690 }],
+      airports: [
+        { id: 'FAO', code: 'FAO' },
+        { id: 'OPO', code: 'OPO' },
+      ],
+      resources: [
+        { id: 'F1', kind: 'flight', destination: 'FAO', arrival: 660, status: 'diverted' },
+      ],
+      events: [
+        {
+          id: 'reset',
+          type: 'scenario_reset',
+          version: 11,
+          data: { source: 'simulation', value: 'empty' },
+        },
+        {
+          id: 'divert',
+          type: 'flight_diverted',
+          target_id: 'F1',
+          version: 11,
+          data: { source: 'simulation', value: 'FAO' },
+        },
+        {
+          id: 'plan',
+          type: 'plan_applied',
+          target_id: 'SELECTED-FAO',
+          version: 11,
+          data: { decision_id: 'DEC1', validation: { valid: true } },
+        },
+      ],
+    } as unknown as World,
+    decision: {
+      id: 'DEC1',
+      source_version: 10,
+      applied_version: 11,
+      selected_plan_id: 'SELECTED-FAO',
+      candidates: [plan('OTHER-OPO', 'OPO', 9900), plan('SELECTED-FAO', 'FAO', 840)],
+      explanation: 'Ipoteze de construire a scenariului. '.repeat(80) + 'Sosirea este la 11:30.',
+    } as Decision,
+  };
+}
+
+describe('new-scene spoken results use committed outcomes', () => {
+  it('speaks the selected validated plan and actual flight arrival before the authoring essay', () => {
+    const content = voiceCommandAcknowledgement(newSceneReceipt());
+    expect(content).toContain('Scenariu nou creat: 24 pasageri');
+    expect(content).toContain('24 din 24 pasageri cu itinerarii');
+    expect(content).toContain('840.00 EUR');
+    expect(content).toContain('Deviere F1 spre FAO, sosire 11:00, ora scenariului');
+    expect(content).toContain('Totul este simulat. Ofertele necesită acceptare');
+    expect(content).not.toMatch(/OPO|9900|11:30|Ipoteze/);
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+  });
+
+  it.each(['missing', 'duplicate', 'invalid', 'wrong-audit', 'stale'])(
+    'does not announce a chosen recovery plan for %s selection evidence',
+    (fault) => {
+      const receipt = newSceneReceipt();
+      receipt.applied = true;
+      if (fault === 'missing') receipt.decision!.selected_plan_id = 'MISSING';
+      if (fault === 'duplicate') receipt.decision!.candidates.push(receipt.decision!.candidates[1]);
+      if (fault === 'invalid') receipt.decision!.candidates[1].validation.valid = false;
+      if (fault === 'wrong-audit') receipt.world.events[2].data.decision_id = 'ANOTHER';
+      if (fault === 'stale') receipt.decision!.applied_version = 10;
+      const content = voiceCommandAcknowledgement(receipt);
+      expect(content).toContain('Nu pot confirma planul ales din acest răspuns');
+      expect(content).not.toMatch(/840|9900|Deviere|11:30|Plan ales:/);
+      expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+    },
+  );
+
+  it('keeps replay historical and omits mismatched or stale diversion facts', () => {
+    const receipt = newSceneReceipt();
+    receipt.replayed = true;
+    receipt.world.resources[0].destination = 'OPO';
+    const content = voiceCommandAcknowledgement(receipt);
+    expect(content).toContain('Scenariu deja creat');
+    expect(content).toContain('840.00 EUR');
+    expect(content).not.toMatch(/Deviere|sosire/);
+  });
+
+  it('keeps complete optional details and the qualification inside the UTF-8 budget', () => {
+    const receipt = newSceneReceipt();
+    for (let index = 0; index < 8; index++) {
+      const id = `ZBOR-ȘȚÂÎ-${index}-` + 'X'.repeat(25);
+      receipt.world.resources.push({ ...receipt.world.resources[0], id, arrival: 2100 });
+      receipt.world.events.push({
+        ...receipt.world.events[1],
+        id: `divert-${index}`,
+        target_id: id,
+      });
+    }
+    const content = voiceCommandAcknowledgement(receipt);
+    expect(content).toContain('Deviere F1 spre FAO, sosire 11:00');
+    expect(content).toContain(
+      'Totul este simulat. Ofertele necesită acceptare; detaliile sunt în panou.',
+    );
+    expect(content).not.toContain('…');
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(480);
+  });
+
+  it('leaves a pure empty reset without a decision on the existing acknowledgement path', () => {
+    const receipt = newSceneReceipt();
+    receipt.decision = undefined;
+    receipt.world.groups = [];
+    receipt.world.resources = [];
+    receipt.applied = true;
+    receipt.explanation = 'Scena goală a fost creată.';
+    const content = voiceCommandAcknowledgement(receipt);
+    expect(content).toContain('Rezultat confirmat de simulator. Scena goală a fost creată.');
+    expect(content).not.toMatch(/Plan ales|pasageri cu itinerarii/);
+  });
+});
 
 describe('bounded voice acknowledgements from authoritative receipts', () => {
   it.each(['restrict', 'clear'] as const)(
@@ -807,6 +938,200 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
     await end(client, channel);
   });
 
+  it('keeps the original new-scene request when voice asks questions before its first delegation', async () => {
+    const { client, channel, onDelegation } = await connected();
+    const initial = 'Creează un scenariu nou. ';
+    const airport = 'La Lisabona. ';
+    const passengers = '24 de pasageri, avionul este deja în aer.';
+    [
+      ['user', initial, 0, 700],
+      ['assistant', 'La ce aeroport apare problema? ', 800, 1200],
+      ['user', airport, 1300, 1700],
+      ['assistant', 'Câți pasageri are avionul și a decolat deja?', 1800, 2300],
+      ['user', passengers, 2400, 3200],
+    ].forEach(([role, delta, start_ms, end_ms]) =>
+      channel.emit({
+        type:
+          role === 'user' ? 'session.input_transcript.delta' : 'session.output_transcript.delta',
+        delta,
+        start_ms,
+        end_ms,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(600);
+    expect(onDelegation).not.toHaveBeenCalled();
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 3300,
+      delegation: { id: 'completed-scene-details', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledExactlyOnceWith({
+      text: initial + airport + passengers,
+      delegationId: 'live_test:completed-scene-details',
+      context:
+        'assistant: La ce aeroport apare problema? Câți pasageri are avionul și a decolat deja?',
+    });
+    const delegated = onDelegation.mock.calls[0][0];
+    expect(delegated.text).not.toContain('Câți pasageri');
+    expect(delegated.context).not.toContain('Creează un scenariu nou');
+    await end(client, channel);
+  });
+
+  it('carries verified clarification into a short answer and never replays an applied creation', async () => {
+    const original = 'Vreau un scenariu nou cu un avion blocat de furtună.';
+    const question = 'Ce aeroport și câți pasageri?';
+    const answer = 'Lisabona, 24 de pasageri.';
+    const followup = 'Autocarul din Faro se strică. Recalculează.';
+    const created = newSceneReceipt();
+    const unchanged = {
+      world: { ...created.world, scenario_id: 'OLD', version: 10, events: [] },
+      applied: false,
+      explanation: question,
+    } as MutationResult;
+    const responses = [
+      unchanged,
+      created,
+      {
+        ...created,
+        world: { ...created.world, version: 12, events: [] },
+        decision: undefined,
+        applied: true,
+        explanation: 'Transportul a fost recalculat.',
+      },
+    ];
+    let currentWorld = unchanged.world;
+    let history: CommandExchange[] = [];
+    const backendRequests: Array<{ text: string; context: string; scenarioId: string }> = [];
+    const onDelegation = vi.fn<LiveVoiceOptions['onDelegation']>(async (request) => {
+      // Match App's separation of exact current text, optional raw voice
+      // references and authoritative request/result history.
+      backendRequests.push({
+        text: request.text,
+        context: commandContext(history, null, request.context),
+        scenarioId: currentWorld.scenario_id,
+      });
+      const result = responses.shift()!;
+      if (currentWorld.scenario_id !== result.world.scenario_id) history = [];
+      currentWorld = result.world;
+      history = rememberCommand(history, request.text, verifiedCommandResult(result));
+      return result;
+    });
+    const { client, channel, states } = await connected({ onDelegation });
+    command(channel, 'incomplete-scene', original);
+    await vi.advanceTimersByTimeAsync(250);
+    const clarification = channel.sent.find(
+      (event) =>
+        event.type === 'session.commentary.append' && event.delegation_id === 'incomplete-scene',
+    )?.content;
+    expect(clarification).toContain('Nicio modificare operațională aplicată');
+    expect(clarification).toContain(question);
+    expect(clarification).not.toContain('Scenariu nou creat');
+    expect(states.at(-1)?.[0]).toBe('listening');
+    channel.emit({
+      type: 'session.output_transcript.delta',
+      delta: question,
+      start_ms: 1100,
+      end_ms: 1500,
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: answer,
+      start_ms: 1600,
+      end_ms: 1900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'scene-details', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(backendRequests[1].text).toBe(answer);
+    expect(backendRequests[1].context).toContain(original);
+    expect(backendRequests[1].context).toContain('verified_backend');
+    expect(backendRequests[1].context).toContain('Nicio modificare operațională aplicată');
+    expect(backendRequests[1].context).toContain(question);
+    expect(backendRequests[1].scenarioId).toBe('OLD');
+    expect(
+      channel.sent.find(
+        (event) =>
+          event.type === 'session.commentary.append' && event.delegation_id === 'scene-details',
+      )?.content,
+    ).toContain('Scenariu nou creat: 24 pasageri');
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: followup,
+      start_ms: 2100,
+      end_ms: 2900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 3000,
+      delegation: { id: 'scene-followup', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(backendRequests).toHaveLength(3);
+    expect(backendRequests.map((entry) => entry.text)).toEqual([original, answer, followup]);
+    expect(backendRequests[2].scenarioId).toBe('NEW-SCENE');
+    expect(backendRequests[2].context).toContain('Nu reexecuta cereri anterioare');
+    expect(backendRequests[2].context).toContain('verified_backend');
+    expect(states.at(-1)?.[0]).toBe('listening');
+    await end(client, channel);
+  });
+
+  it('speaks a newly created scene result, stays listening and delegates only the fresh follow-up', async () => {
+    const create = 'Creează un scenariu nou: furtună la Lisabona și un avion deja în aer.';
+    const followup = 'Acum autocarul din Faro se strică. Recalculează.';
+    const result = {
+      world: { scenario_id: 'voice-created-scene', mode: 'simulation', version: 11 } as World,
+      applied: true,
+      explanation: 'Noul scenariu de la Lisabona a fost creat.',
+    } as MutationResult;
+    const onDelegation = vi
+      .fn<LiveVoiceOptions['onDelegation']>()
+      .mockResolvedValueOnce(result)
+      .mockResolvedValueOnce({
+        ...result,
+        world: { ...result.world, version: 12 },
+        explanation: 'Transportul a fost recalculat.',
+      });
+    const { client, channel, peer, states } = await connected({ onDelegation });
+    command(channel, 'new-scene', create);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledOnce();
+    expect(states.at(-1)?.[0]).toBe('listening');
+    expect(peer.close).not.toHaveBeenCalled();
+    expect(stream.track.stop).not.toHaveBeenCalled();
+    expect(
+      channel.sent.find(
+        (event) =>
+          event.type === 'session.commentary.append' && event.delegation_id === 'new-scene',
+      )?.content,
+    ).toContain('Noul scenariu de la Lisabona a fost creat');
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      event_id: 'new-scene-followup',
+      delta: followup,
+      start_ms: 1600,
+      end_ms: 2500,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2600,
+      delegation: { id: 'new-scene-followup', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
+    expect(onDelegation.mock.calls[1][0]).toEqual({
+      text: followup,
+      delegationId: 'live_test:new-scene-followup',
+      context: `user: ${create}`,
+    });
+    expect(states.at(-1)?.[0]).toBe('listening');
+    expect(peer.close).not.toHaveBeenCalled();
+    await end(client, channel);
+  });
+
   it('keeps recoverable command failures controllable and listening, then closes every local resource', async () => {
     const onAudioLevel = vi.fn();
     const { client, states, peer, channel } = await connected({
@@ -1070,6 +1395,161 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
     expect(onDelegation).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ text: 'Adaugă un autocar nou cu 52 de locuri spre Sibiu.' }),
     );
+    await end(client, channel);
+  });
+
+  it('waits after delegation even for an old partial transcript and keeps the next turn separate', async () => {
+    const { client, channel, onDelegation } = await connected();
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Creează un scenariu nou cu un avion spre ',
+      start_ms: 0,
+      end_ms: 400,
+    });
+    await vi.advanceTimersByTimeAsync(600);
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'new-scene-late-destination', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onDelegation).not.toHaveBeenCalled();
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Lisabona.',
+      start_ms: 400,
+      end_ms: 900,
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Acum închide aeroportul din Faro.',
+      start_ms: 1000,
+      end_ms: 1400,
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(onDelegation).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onDelegation).toHaveBeenCalledExactlyOnceWith({
+      text: 'Creează un scenariu nou cu un avion spre Lisabona.',
+      delegationId: 'live_test:new-scene-late-destination',
+      context: '',
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1500,
+      delegation: { id: 'after-new-scene', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
+    expect(onDelegation).toHaveBeenLastCalledWith({
+      text: 'Acum închide aeroportul din Faro.',
+      delegationId: 'live_test:after-new-scene',
+      context: 'user: Creează un scenariu nou cu un avion spre Lisabona.',
+    });
+    await end(client, channel);
+  });
+
+  it.each([
+    ['Transportă pasagerii până la Lis', 'abona.'],
+    ['Avionul nu poate ateriza din cauza', ' furtunii.'],
+  ])('reserves an already received exact-boundary ending once: %s%s', async (prefix, ending) => {
+    const { client, channel, onDelegation } = await connected();
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: prefix,
+      start_ms: 0,
+      end_ms: 900,
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: ending,
+      start_ms: 1000,
+      end_ms: 1200,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'boundary-ending', target: 'client' },
+    });
+    // All these events share Date.now(). Arrival order, not clock equality,
+    // distinguishes the owned ending from speech received after delegation.
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Acum arată Faro.',
+      start_ms: 1000,
+      end_ms: 1500,
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledExactlyOnceWith({
+      text: prefix + ending,
+      delegationId: 'live_test:boundary-ending',
+      context: '',
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'after-boundary-ending', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
+    expect(onDelegation).toHaveBeenLastCalledWith({
+      text: 'Acum arată Faro.',
+      delegationId: 'live_test:after-boundary-ending',
+      context: `user: ${prefix}${ending}`,
+    });
+    await end(client, channel);
+  });
+
+  it('does not widen the cutoff to already received future speech or replay a reserved ending', async () => {
+    const { client, channel, onDelegation } = await connected();
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Cauza este',
+      start_ms: 0,
+      end_ms: 900,
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: ' furtuna.',
+      start_ms: 1000,
+      end_ms: 1200,
+    });
+    channel.emit({
+      type: 'session.input_transcript.delta',
+      delta: 'Alege devierea.',
+      start_ms: 1300,
+      end_ms: 1900,
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 1000,
+      delegation: { id: 'known-boundary', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledExactlyOnceWith({
+      text: 'Cauza este furtuna.',
+      delegationId: 'live_test:known-boundary',
+      context: '',
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 2000,
+      delegation: { id: 'future-speech', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
+    expect(onDelegation).toHaveBeenLastCalledWith({
+      text: 'Alege devierea.',
+      delegationId: 'live_test:future-speech',
+      context: 'user: Cauza este furtuna.',
+    });
+    channel.emit({
+      type: 'session.delegation.created',
+      offset_ms: 3000,
+      delegation: { id: 'empty-after-boundary', target: 'client' },
+    });
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(onDelegation).toHaveBeenCalledTimes(2);
     await end(client, channel);
   });
 

@@ -23,6 +23,7 @@ interface Props {
   onLog: () => void;
   onHelp: () => void;
   onStartRecovery?: () => void;
+  onNewScenario?: () => void;
 }
 
 export default function WorkspaceHeader(props: Props) {
@@ -46,6 +47,17 @@ export default function WorkspaceHeader(props: Props) {
         <strong>{props.locationLabel}</strong>
       </div>
       <div className="header-actions">
+        {props.mode === 'simulation' && props.onNewScenario && (
+          <button
+            className="primary-button start-recovery-header"
+            onClick={props.onNewScenario}
+            aria-label="New scenario"
+            title="New scenario"
+          >
+            <Plus size={15} />
+            <span>New scenario</span>
+          </button>
+        )}
         {props.mode === 'live' && props.onStartRecovery && (
           <button
             className="primary-button start-recovery-header"

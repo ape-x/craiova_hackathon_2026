@@ -31,6 +31,7 @@ import Timeline from './Timeline';
 import WorkspaceHeader from './WorkspaceHeader';
 import WorkspaceSummary from './WorkspaceSummary';
 import ScenarioDialog from './ScenarioDialog';
+import NewScenarioDialog from './NewScenarioDialog';
 import LiveDataDialog from './LiveDataDialog';
 import RecoveryCaseDialog from './RecoveryCaseDialog';
 import RecoveryCases from './RecoveryCases';
@@ -55,6 +56,7 @@ import CommandDraft from './CommandDraft';
 import {
   beginVoiceRequestReview,
   observeVoiceRequestOutcome,
+  reconcileVoiceRequestReview,
   settleVoiceRequestReview,
   voiceReviewDraftText,
 } from './voiceRequestReview';
@@ -164,6 +166,7 @@ function Operations() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [modal, setModal] = useState<
     | 'scenario'
+    | 'new-scenario'
     | 'settings'
     | 'search'
     | 'help'
@@ -196,6 +199,7 @@ function Operations() {
     setCommand(text);
   }, []);
   const [lastCommand, setLastCommand] = useState('');
+  const [newScenarioGuidance, setNewScenarioGuidance] = useState(false);
   const [commandReply, setCommandReply] = useState<{ scenarioId: string; text: string } | null>(
     null,
   );
@@ -417,6 +421,7 @@ function Operations() {
       onOutcome?: (outcome: VoiceReviewOutcome) => void,
     ) => {
       if (!text.trim() || !worldRef.current) return null;
+      setNewScenarioGuidance(false);
       setLastCommand(text);
       if (!delegationId) updateCommandDraft('');
       const previousWorld = worldRef.current;
@@ -522,6 +527,7 @@ function Operations() {
           delegation,
           scenarioId,
           ++voiceReviewSequence.current,
+          worldRef.current ?? undefined,
         );
         latestVoiceReview.current = attempt;
         setVoiceReview(attempt);
@@ -567,6 +573,25 @@ function Operations() {
       setVoiceState('error');
     }
   };
+  const describeNewScenario = (input: 'voice' | 'text') => {
+    if (
+      worldRef.current?.mode !== 'simulation' ||
+      running.current ||
+      ['connecting', 'working', 'closing'].includes(voiceStateRef.current)
+    )
+      return;
+    setNewScenarioGuidance(true);
+    closeModal();
+    if (input === 'text') {
+      requestAnimationFrame(() => commandInput.current?.focus());
+    } else if (voice.current) {
+      // The user is continuing the current session, not toggling it off.
+      voice.current.setMuted(false);
+      setVoiceMuted(false);
+    } else {
+      void toggleVoice();
+    }
+  };
   useEffect(
     () => () => {
       latestVoiceReview.current = null;
@@ -578,10 +603,11 @@ function Operations() {
     if (authRequired) voice.current?.dispose();
   }, [authRequired]);
   useEffect(() => {
-    if (latestVoiceReview.current?.scenarioId !== world?.scenario_id) {
-      latestVoiceReview.current = null;
-      setVoiceReview(null);
-      setModal((current) => (current === 'voice-review' ? null : current));
+    const next = reconcileVoiceRequestReview(latestVoiceReview.current, world?.scenario_id);
+    if (next !== latestVoiceReview.current) {
+      latestVoiceReview.current = next;
+      setVoiceReview(next);
+      if (!next) setModal((current) => (current === 'voice-review' ? null : current));
     }
   }, [world?.scenario_id]);
   useEffect(() => {
@@ -656,6 +682,7 @@ function Operations() {
         onSettings={() => setModal('settings')}
         onHelp={() => setModal('help')}
         onStartRecovery={() => openRecoveryCase(null)}
+        onNewScenario={() => setModal('new-scenario')}
         onLog={() => {
           setShowLog((value) => !value);
           setMobilePanel('inspector');
@@ -721,11 +748,8 @@ function Operations() {
                       Describe an airport, flight and disruption by voice or text. The agent will
                       create the simulation and compare recovery options.
                     </p>
-                    <button
-                      className="primary-button"
-                      onClick={() => commandInput.current?.focus()}
-                    >
-                      Describe a scenario <ArrowRight size={14} />
+                    <button className="primary-button" onClick={() => setModal('new-scenario')}>
+                      Create a new scenario <ArrowRight size={14} />
                     </button>
                   </div>
                 </div>
@@ -964,13 +988,15 @@ function Operations() {
             aria-describedby={lastReply ? 'command-reply' : undefined}
             ref={commandInput}
             placeholder={
-              isVoiceActive
-                ? live
-                  ? 'Listening. Describe a recovery request…'
-                  : 'Listening. Tell me what has changed…'
-                : live
-                  ? 'Review passengers and verified offers…'
-                  : 'What changed? Describe a scenario…'
+              !live && newScenarioGuidance
+                ? 'Creează un scenariu nou în care…'
+                : isVoiceActive
+                  ? live
+                    ? 'Listening. Describe a recovery request…'
+                    : 'Listening. Tell me what has changed…'
+                  : live
+                    ? 'Review passengers and verified offers…'
+                    : 'What changed? Describe a scenario…'
             }
             value={command}
             onChange={(event) => updateCommandDraft(event.target.value)}
@@ -986,16 +1012,18 @@ function Operations() {
           >
             {busy
               ? operation
-              : lastReply
-                ? lastReply
-                : isVoiceActive
-                  ? voiceTranscript || 'OpenAI voice session active'
-                  : lastCommand ||
-                    (config.ai_configured
-                      ? 'Describe it in English or Romanian. Every plan is validated before it is applied.'
-                      : live
-                        ? 'Text & voice need OpenAI access. Operation data and solver are available.'
-                        : 'Text & voice need OpenAI access. Scenario controls and solver are available.')}
+              : !live && newScenarioGuidance
+                ? 'Începe cu „Creează un scenariu nou…”, apoi descrie aeroportul, zborul și problema.'
+                : lastReply
+                  ? lastReply
+                  : isVoiceActive
+                    ? voiceTranscript || 'OpenAI voice session active'
+                    : lastCommand ||
+                      (config.ai_configured
+                        ? 'Describe it in English or Romanian. Every plan is validated before it is applied.'
+                        : live
+                          ? 'Text & voice need OpenAI access. Operation data and solver are available.'
+                          : 'Text & voice need OpenAI access. Scenario controls and solver are available.')}
           </output>
           <button
             className="send-command"
@@ -1242,6 +1270,16 @@ function Operations() {
           }}
         />
       )}
+      {modal === 'new-scenario' && !live && (
+        <NewScenarioDialog
+          voiceState={voiceState}
+          voiceAvailable={Boolean(config.voice_configured)}
+          busy={busy}
+          onClose={closeModal}
+          onVoice={() => describeNewScenario('voice')}
+          onText={() => describeNewScenario('text')}
+        />
+      )}
       {modal === 'reset' && !live && (
         <Modal title="Start a new simulation" onClose={closeModal}>
           <p className="modal-copy">
@@ -1296,8 +1334,11 @@ function Operations() {
           <div className="demo-steps">
             <div>
               <span>01</span>
-              <h3>Start with an incident</h3>
-              <p>“Autocarul B12 s-a defectat. Păstrează familiile împreună.”</p>
+              <h3>Create your own scenario</h3>
+              <p>
+                Choose New scenario, start voice and say “Creează un scenariu nou…” followed by the
+                situation you want to test.
+              </p>
             </div>
             <div>
               <span>02</span>
@@ -1331,8 +1372,8 @@ function Operations() {
             <span>
               <kbd>⌘ K</kbd> Search <kbd>/</kbd> Command <kbd>Esc</kbd> Clear
             </span>
-            <button className="primary-button" onClick={closeModal}>
-              Let’s begin
+            <button className="primary-button" onClick={() => setModal('new-scenario')}>
+              Create a new scenario
               <ArrowRight size={15} />
             </button>
           </div>

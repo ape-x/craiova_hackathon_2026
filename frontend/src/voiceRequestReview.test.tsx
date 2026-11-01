@@ -7,6 +7,7 @@ import VoiceRequestReviewDialog from './VoiceRequestReviewDialog';
 import {
   beginVoiceRequestReview,
   observeVoiceRequestOutcome,
+  reconcileVoiceRequestReview,
   settleVoiceRequestReview,
   voiceReviewCanCorrect,
   voiceReviewDraftIssue,
@@ -328,6 +329,227 @@ describe('draft and asynchronous scope gates', () => {
         result: reply({ replayed: true }),
       }),
     ).toBe(newer);
+  });
+});
+
+describe('voice-created scene replacement receipts', () => {
+  const source = { scenario_id: 'old-scene', version: 10, mode: 'simulation' } as World;
+  const sceneRequest = {
+    text: 'Creează un scenariu nou: un avion spre Lisabona și o furtună.',
+    delegationId: 'session:new-scene',
+    context: '',
+  };
+  const start = () => beginVoiceRequestReview(sceneRequest, source.scenario_id, 1, source);
+  const created = (): MutationResult => ({
+    world: {
+      ...source,
+      scenario_id: 'new-scene',
+      version: 11,
+      events: [
+        {
+          id: 'reset-new-scene',
+          type: 'scenario_reset',
+          version: 11,
+          timestamp: '',
+          target_id: null,
+          description: 'Started a new scene.',
+          data: { source: 'simulation', value: 'empty' },
+        },
+      ],
+    } as World,
+    applied: true,
+    explanation: 'Noul scenariu de la Lisabona a fost creat.',
+  });
+
+  it('retains its own receipt when HTTP completes before the new scene is rendered', () => {
+    const attempt = start();
+    const result = created();
+    const review = settleVoiceRequestReview(attempt, attempt, source.scenario_id, {
+      kind: 'response',
+      result,
+    })!;
+    expect(review).toMatchObject({
+      scenarioId: 'new-scene',
+      sourceScenarioId: 'old-scene',
+      sourceVersion: 10,
+      sourceMode: 'simulation',
+      status: 'applied',
+      text: sceneRequest.text,
+    });
+    expect(reconcileVoiceRequestReview(review, 'new-scene')).toBe(review);
+    expect(review.detail).toContain('Noul scenariu de la Lisabona');
+    expect(voiceReviewCanCorrect(review)).toBe(false);
+    expect(Object.isFrozen(review)).toBe(true);
+  });
+
+  it('retains an unresolved request across SSE so its matching HTTP reset can settle', () => {
+    const attempt = start();
+    const pending = reconcileVoiceRequestReview(attempt, 'new-scene');
+    expect(pending).toBe(attempt);
+    // It remains hidden until its returned receipt proves this is its own scene.
+    expect(pending?.scenarioId).not.toBe('new-scene');
+    const review = settleVoiceRequestReview(pending, attempt, 'new-scene', {
+      kind: 'response',
+      result: created(),
+    })!;
+    expect(review.scenarioId).toBe('new-scene');
+    expect(review.status).toBe('applied');
+  });
+
+  it('recognizes a reset followed by a verified recovery decision without an applied flag', () => {
+    const attempt = start();
+    const result = created();
+    delete result.applied;
+    result.decision = {
+      source_version: 10,
+      applied_version: 11,
+      explanation: 'Recovery ready.',
+    } as MutationResult['decision'];
+    const review = settleVoiceRequestReview(attempt, attempt, 'new-scene', {
+      kind: 'response',
+      result,
+    })!;
+    expect(review.status).toBe('applied');
+  });
+
+  it('can recover the same uncertain reset after SSE without starting another identity', () => {
+    const attempt = start();
+    const uncertain = settleVoiceRequestReview(attempt, attempt, 'new-scene', {
+      kind: 'failure',
+      cause: unknownError(),
+    })!;
+    expect(uncertain.status).toBe('unknown');
+    expect(reconcileVoiceRequestReview(uncertain, 'new-scene')).toBe(uncertain);
+    const result = { ...created(), replayed: true };
+    const recovered = settleVoiceRequestReview(uncertain, attempt, 'new-scene', {
+      kind: 'response',
+      result,
+    })!;
+    expect(recovered).toMatchObject({
+      scenarioId: 'new-scene',
+      status: 'applied',
+      delegationId: attempt.delegationId,
+    });
+    expect(
+      voiceReviewDraftText(recovered, recovered, { ...context, scenarioId: 'new-scene' }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [
+      'non-applied',
+      (result: MutationResult) => {
+        result.applied = false;
+      },
+    ],
+    [
+      'unverified',
+      (result: MutationResult) => {
+        delete result.applied;
+      },
+    ],
+    [
+      'missing audit',
+      (result: MutationResult) => {
+        result.world.events = [];
+      },
+    ],
+    [
+      'old audit',
+      (result: MutationResult) => {
+        result.world.events[0].version = 10;
+      },
+    ],
+    [
+      'old version',
+      (result: MutationResult) => {
+        result.world.version = 9;
+      },
+    ],
+    [
+      'later version',
+      (result: MutationResult) => {
+        result.world.version = 12;
+      },
+    ],
+    [
+      'live receipt',
+      (result: MutationResult) => {
+        result.world.mode = 'live';
+      },
+    ],
+  ] as const)('does not adopt a %s scene replacement', (_, mutate) => {
+    const attempt = start();
+    const result = created();
+    mutate(result);
+    expect(
+      settleVoiceRequestReview(attempt, attempt, source.scenario_id, {
+        kind: 'response',
+        result,
+      }),
+    ).toBeNull();
+    expect(
+      settleVoiceRequestReview(attempt, attempt, 'new-scene', {
+        kind: 'response',
+        result,
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects unrelated replacements, old-scene replays and newer request overwrites', () => {
+    const attempt = start();
+    const result = { ...created(), replayed: true };
+    expect(
+      settleVoiceRequestReview(attempt, attempt, 'unrelated-scene', {
+        kind: 'response',
+        result,
+      }),
+    ).toBeNull();
+    expect(
+      settleVoiceRequestReview(null, attempt, 'new-scene', {
+        kind: 'response',
+        result,
+      }),
+    ).toBeNull();
+    const latest = beginVoiceRequestReview(
+      { ...sceneRequest, delegationId: 'session:followup' },
+      'new-scene',
+      2,
+      result.world,
+    );
+    expect(
+      settleVoiceRequestReview(latest, attempt, 'new-scene', {
+        kind: 'response',
+        result,
+      }),
+    ).toBe(latest);
+    const applied = settleVoiceRequestReview(attempt, attempt, 'new-scene', {
+      kind: 'response',
+      result,
+    })!;
+    expect(reconcileVoiceRequestReview(applied, 'unrelated-scene')).toBeNull();
+    expect(reconcileVoiceRequestReview(attempt, undefined)).toBeNull();
+  });
+
+  it('clears definitive rejection after an unrelated scene switch and preserves live isolation', () => {
+    const attempt = start();
+    expect(
+      settleVoiceRequestReview(attempt, attempt, 'unrelated-scene', {
+        kind: 'failure',
+        cause: new ApiError(409, 'The scene changed.'),
+      }),
+    ).toBeNull();
+    const live = beginVoiceRequestReview(sceneRequest, source.scenario_id, 1, {
+      version: 10,
+      mode: 'live',
+    });
+    expect(reconcileVoiceRequestReview(live, 'new-scene')).toBeNull();
+    expect(
+      settleVoiceRequestReview(live, live, source.scenario_id, {
+        kind: 'response',
+        result: created(),
+      }),
+    ).toBeNull();
   });
 });
 
