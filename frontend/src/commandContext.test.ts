@@ -11,8 +11,52 @@ import {
 } from './commandContext';
 import type { CommandExchange } from './commandContext';
 import type { AuditEvent, MutationResult, RecoveryJob, World } from './types';
+import { resourceArrivalReceipt } from './resourceArrivalReceipt.testSupport';
+import { UNCONFIRMED_COMBINED_REPORT } from './combinedReports';
 
 describe('conversation context for scenario authoring', () => {
+  it('remembers both recorded service/arrival facts once, with the exact arrival case and blocked search', () => {
+    const result = resourceArrivalReceipt();
+    result.recovery_blocked = {
+      code: 'airport_transfer_setup_required',
+      explanation: 'Review the explicit pickup and luggage inputs.',
+    };
+    const detail = verifiedCommandResult(result);
+    expect(detail).toContain('serviciul BUS1 raportat indisponibil pentru planificare');
+    expect(detail).toContain('grupurile G1 raportate la OTP');
+    expect(detail).toContain('pentru 2 grupuri, posibil din alte cazuri');
+    expect(detail).toContain(
+      'Căutarea nu a pornit: Review the explicit pickup and luggage inputs.',
+    );
+    const history = rememberCommand([], 'BUS1 unavailable; G1 ready at OTP; recalculate.', detail);
+    const saved = commandContext(history, 'BUS1');
+    expect(history).toHaveLength(1);
+    expect(saved.match(/verified_backend/g)).toHaveLength(1);
+    expect(saved).toContain('serviciul BUS1 raportat indisponibil');
+    expect(saved).toContain('grupurile G1 raportate la OTP');
+    expect(keepCommandReplyVisible(result)).toBe(true);
+    expect(recoveryCaseForResult(result, result.world)).toBe('CASE1');
+    expect(recoveryCaseForResult(result, { ...result.world, scenario_id: 'NEW' })).toBeNull();
+  });
+  it('keeps a replayed queued search historical and a malformed plural result unconfirmed in later context', () => {
+    const result = resourceArrivalReceipt();
+    result.replayed = true;
+    result.recovery_job = {
+      id: 'JOB1',
+      incident_id: 'CASE1',
+      group_ids: ['G1'],
+      status: 'queued',
+    } as RecoveryJob;
+    expect(verifiedCommandResult(result)).toContain('era deja înregistrată în acest răspuns');
+    result.world.resources[0].available = true;
+    const detail = verifiedCommandResult(result);
+    expect(detail).toBe(UNCONFIRMED_COMBINED_REPORT);
+    const history = rememberCommand([], 'A single combined request.', detail);
+    expect(history[0].outcome).toBe('unconfirmed');
+    expect(commandContext(history, null)).toContain('unconfirmed_outcome');
+    expect(commandContext(history, null)).not.toContain('verified_backend');
+    expect(recoveryCaseForResult(result, result.world)).toBeNull();
+  });
   it('retains typed clarification details after a rejected request without labeling them applied', () => {
     const pending = rememberCommand(
       [],

@@ -23,6 +23,18 @@ Use a dedicated key restricted to the permitted HTTP referrer origins and Maps
 JavaScript API. Enable the required API and billing in the team's Google Cloud
 project. Do not put server OpenAI or FR24 credentials in this field.
 
+The browser credential and `GOOGLE_MAPS_SERVER_API_KEY` must be separate: their
+application/API restrictions serve different callers. Follow Google's
+[API-key restrictions guidance](https://developers.google.com/maps/documentation/javascript/get-api-key#restrict_key)
+and verify both callers after changing credentials. A local audit on 1 November
+2026 found that the configured browser and server values were identical. No key
+values were included in the audit or changed. Google Cloud Console did not load
+its administration view; its DOM reported a `gstatic.com` JavaScript loading
+failure and its visible shell remained on the loading logo. Billing health and
+actual account restrictions therefore remain unverified. The shared key must be
+replaced with separate restricted credentials before closing this production
+gate; successful terrain rendering alone does not close it.
+
 The component catches script failures, authentication failure, `gmp-error` and
 a render timeout. It reports ready only after the map's `gmp-steadychange` event
 has `isSteady=true`. A successful library load alone does not prove that tiles

@@ -208,12 +208,24 @@ function combinedReportAcknowledgement(
   result: MutationResult,
   bundle: Extract<CombinedReportCheck, { state: 'combined' }>,
 ): string {
-  const { restriction, arrival } = bundle;
-  const operations = restriction.operations
-    .map((operation) => (operation === 'arrivals' ? 'aterizări' : 'decolări'))
-    .join(' și ');
+  const { arrival } = bundle;
+  let operation: string;
+  if (bundle.kind === 'resource_and_arrival') {
+    // Keep a short ID whole. Long IDs remain exact in the visible receipt;
+    // truncating one in speech could identify a different service.
+    const id = bundle.resource.resource_id;
+    const service =
+      new TextEncoder().encode(id).byteLength <= 40 ? `serviciul ${id}` : 'serviciul indicat';
+    operation = `${service} raportat indisponibil pentru planificare`;
+  } else {
+    const { restriction } = bundle;
+    const operations = restriction.operations
+      .map((item) => (item === 'arrivals' ? 'aterizări' : 'decolări'))
+      .join(' și ');
+    operation = `${restriction.airport_code}, ${operations}, restricție ${restriction.action === 'restrict' ? 'aplicată' : 'eliminată'} în caz`;
+  }
   const count = arrival.group_ids.length;
-  const facts = `Rapoarte ${result.replayed ? 'deja ' : ''}înregistrate: ${restriction.airport_code}, ${operations}, restricție ${restriction.action === 'restrict' ? 'aplicată' : 'eliminată'} în caz; ${count} ${count === 1 ? 'grup' : 'grupuri'} la ${arrival.airport_code}, ${count === 1 ? 'pregătit' : 'pregătite'} de la ${reportedReadinessForSpeech(arrival.ready_at)}.`;
+  const facts = `Rapoarte ${result.replayed ? 'deja ' : ''}înregistrate: ${operation}; ${count} ${count === 1 ? 'grup' : 'grupuri'} la ${arrival.airport_code}, ${count === 1 ? 'pregătit' : 'pregătite'} de la ${reportedReadinessForSpeech(arrival.ready_at)}.`;
   const job = result.recovery_job;
   const blocked = result.recovery_blocked;
   let status: string;
@@ -263,12 +275,16 @@ function combinedReportAcknowledgement(
     status = `Căutarea nu a pornit: ${reasons[blocked.code] ?? 'verifică motivul în panou'}.`;
   } else status = 'Nu am pornit o căutare.';
   const conflict =
-    restriction.manual_review_required || result.manual_review_required
+    (bundle.kind === 'airport_and_arrival' && bundle.restriction.manual_review_required) ||
+    result.manual_review_required
       ? 'Rezervări în conflict; intervenție necesară.'
       : '';
-  const qualification = 'Date raportate; nu confirmă aterizarea, permisiuni de zbor sau rezervări.';
+  const qualification =
+    bundle.kind === 'resource_and_arrival'
+      ? 'Date raportate; nu confirmă aterizarea, disponibilitatea la furnizor sau rezervări.'
+      : 'Date raportate; nu confirmă aterizarea, permisiuni de zbor sau rezervări.';
   const required = [facts, status, conflict, qualification].filter(Boolean).join(' ');
-  // The bounded airport codes/group counts and fixed status vocabulary preserve
+  // Bounded whole service IDs/airport codes/group counts and fixed vocabulary preserve
   // both reports. The optional limit never displaces either report or status.
   const limit =
     (job || blocked) &&

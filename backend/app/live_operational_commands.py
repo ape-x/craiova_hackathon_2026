@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import re
+import unicodedata
 
 from pydantic import ValidationError
 
@@ -357,17 +358,137 @@ def _unsupported_airport_change(text, *, allow_diversion_background=False):
     return False
 
 
+def _service_airport_guard_text(text, resource):
+    """Hide only the outage predicate attached to this known service subject.
+
+    'Q1 is unavailable at SBZ' reports Q1, not SBZ. Retain every airport name
+    and every other predicate so 'SBZ is unavailable' cannot disappear inside
+    the selected service's quote. This view never authorizes the report itself.
+    """
+    from .airport_mentions import literal_airport_ids
+    from .live_airport_reports import has_airport_restriction_claim
+
+    literal = "".join(char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char))
+    value, result = literal.lower(), list(literal)
+    for identifier in (resource.id, resource.name):
+        if lookup_airport(identifier):
+            continue  # An airport-code collision is not an unambiguous service.
+        pattern = _reference_pattern(identifier)
+        if not pattern:
+            continue
+        for reference in pattern.finditer(value):
+            tail = re.split(r"[.;!?\n]", value[reference.end():], maxsplit=1)[0]
+            state = re.match(r"\s*(?:(?:is|has become|became|remains|este|e|a devenit|ramane)\s+)?(?P<state>unavailable|indisponibil\w*)\b", tail)
+            if state is None:
+                state = re.match(r"\s+(?:at|in|la)\s+(?P<place>.+?)\s+(?:is|este|e)\s+(?P<state>unavailable|indisponibil\w*)\b", tail)
+                if state:
+                    place = literal[reference.end() + state.start("place"):reference.end() + state.end("place")]
+                    if len(literal_airport_ids(place)) != 1 or has_airport_restriction_claim(place):
+                        state = None
+            if state:
+                start, end = reference.end() + state.start("state"), reference.end() + state.end("state")
+                result[start:end] = " " * (end - start)
+    return "".join(result)
+
+
+_PASSENGER_SUBJECT = re.compile(r"\b(?:g\d+|groups?|grup(?:ul|urile)?|passengers?|pasager(?:i|ii)?|they|ei|ele)\b")
+_STATE_PREFIX = r"\s*(?:(?:is|are|was|were|has|have|had|will|would|could|might|may|be|been|not|never|now|currently|already|just|isn't|aren't|wasn't|weren't|won't|sunt|este|e|era|erau|au|a|vor|ar|fi|fie|nu|poate|sa|acum|deja)\s+)*"
+_PASSENGER_READY = re.compile(_STATE_PREFIX + r"(?:ready|readiness|pregatit\w*|gata|disponibili)\b")
+_PASSENGER_ARRIVAL = re.compile(_STATE_PREFIX + r"(?:arrived|arriving|reached|landed|sosit|sositi|ajuns|ajunsi|aterizat)\b")
+_PASSENGER_LOCATION = re.compile(_STATE_PREFIX + r"(?:(?:located|waiting|staying)\s+)?(?:at|in|la|se afla(?:\s+la)?|asteapta\s+la)\s+(.+)")
+_SERVICE_OUTAGE = re.compile(r"\b(?:unavailable|broken|broke|failed|out of service|not (?:working|running|operational)|defect\w*|stricat\w*|indisponibil\w*|nu (?:mai )?(?:functioneaza|circula|poate (?:functiona|circula))|cannot operate)\b")
+_SERVICE_SUBJECT = re.compile(r"\b(?:bus(?:es)?|coaches?|hotel\w*|autobuz\w*|autocar\w*|transfers?|transferul|services?|servici\w*|flights?|zbor(?:ul|uri|urile)?)\b")
+
+
+def has_passenger_position_claim(world, text):
+    """Reject-only detector for omitted passenger facts, never an arrival parser.
+
+    Require a passenger/group subject and its own state predicate. A bus merely
+    located at SBZ and a request to search via SBZ are not passenger positions.
+    Negated/conditional extra assertions still require clarification; they must
+    not disappear while a different positive report is committed.
+    """
+    from .airport_mentions import literal_airport_ids
+
+    literal = "".join(char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char))
+    value = literal.lower()
+    subjects = list(_PASSENGER_SUBJECT.finditer(value))
+    for group in world.groups:
+        for identifier in (group.id, group.name):
+            pattern = _reference_pattern(identifier)
+            if pattern:
+                subjects.extend(pattern.finditer(value))
+    for subject in subjects:
+        tail = re.split(r"[.;!?\n]", value[subject.end():], maxsplit=1)[0]
+        # An explicitly named flight can qualify generic 'passengers', but its
+        # aircraft arrival/ETA alone never becomes passenger readiness.
+        if _PASSENGER_SUBJECT.fullmatch(subject.group()):
+            tail = re.sub(r"^\s*(?:(?:from|of|on|din|ai|zborului)\s+)?(?:(?:flight|zborul)\s+)?[a-z]{2,3}\s*\d{1,5}\b", lambda match: " " * len(match.group()), tail)
+        arrival = _PASSENGER_ARRIVAL.match(tail)
+        if arrival and re.match(r"\s*arriving\b", tail):
+            boundary = max(value.rfind(char, 0, subject.start()) for char in ".;!?\n") + 1
+            prefix = value[boundary:subject.start()]
+            # A requested flight arriving at an airport is a future service
+            # criterion, unlike 'G1 is/has arrived' or a stated readiness.
+            if (re.search(r"\b(?:find|search|cauta|gaseste)\b", prefix)
+                    and re.search(r"\b(?:flights?|zbor\w*|bus(?:es)?|coach(?:es)?|transfers?|autobuz\w*|autocar\w*)\b", prefix)):
+                arrival = None
+        if _PASSENGER_READY.match(tail) or arrival:
+            return True
+        location = _PASSENGER_LOCATION.match(tail)
+        if location and (re.search(r"\b(?:airport\w*|aeroport\w*|terminal\w*)\b", location[1])
+                         or literal_airport_ids(literal[subject.end() + location.start(1):subject.end() + location.end(1)])):
+            return True
+    return False
+
+
+def _has_service_unavailability_claim(world, text):
+    value = normalized(text)
+    # Protect literal names containing punctuation or state words: their name
+    # is a subject, not an outage predicate, and its dot is not a new sentence.
+    identifiers = sorted({item for resource in world.resources for item in (resource.id, resource.name)}, key=len, reverse=True)
+    for identifier in identifiers:
+        pattern = _reference_pattern(identifier)
+        if pattern:
+            value = pattern.sub(" known_service_reference ", value)
+    for clause in re.split(r"[.;!?\n]", value):
+        if not _SERVICE_OUTAGE.search(clause):
+            continue
+        if _SERVICE_SUBJECT.search(clause) or "known_service_reference" in clause:
+            return True
+    return False
+
+
+def has_unrepresented_operational_claim(world, text):
+    """A remaining literal passenger/service assertion cannot be silently dropped."""
+    return has_passenger_position_claim(world, text) or _has_service_unavailability_claim(world, text)
+
+
+def _require_complete_primitive_report(world, text, report):
+    claim, start = _fragment(text, report.report_reference)
+    remainder = text[:start] + " " * len(claim) + text[start + len(claim):]
+    other_kind_inside = ((report.type != "arrival_report" and has_passenger_position_claim(world, claim))
+                         or (report.type != "resource_unavailability" and _has_service_unavailability_claim(world, claim)))
+    if other_kind_inside or has_unrepresented_operational_claim(world, remainder):
+        raise Clarification("Declarația mai conține o poziție/pregătire a pasagerilor sau o indisponibilitate de serviciu care nu este reprezentată separat. Cere înregistrarea ambelor rapoarte cu aceleași grupuri și caz; nu pornesc recuperarea din poziția veche și nu aplic doar o parte.")
+
+
 def route_operational_report(commands, request, world, interpreted):
     raw = interpreted.get("operational_report")  # older durable records omit it
     if isinstance(raw, dict) and raw.get("type") == "airport_restriction_and_arrival":
         from .live_diversion_commands import route_diversion_reports
         return route_diversion_reports(commands, request, world, interpreted)
+    if isinstance(raw, dict) and raw.get("type") == "resource_unavailability_and_arrival":
+        from .live_service_arrival_commands import route_service_arrival_reports
+        return route_service_arrival_reports(commands, request, world, interpreted)
     # Only the explicitly retained airport assertion can change case conditions.
     # A dropped second assertion must not queue recovery on partly changed facts.
     guard_text = request.text
     airport_report = isinstance(raw, dict) and raw.get("type") == "airport_restriction"
     if isinstance(raw, dict) and raw.get("type") == "resource_unavailability":
         resource = next((item for item in world.resources if item.id == raw.get("resource_id")), None)
+        if resource is not None:
+            guard_text = _service_airport_guard_text(guard_text, resource)
         if resource is not None and len(resource.id) > 4 and "-" in resource.id:
             # A selected compound service ID can contain an airport code (for
             # example CAB-<receipt>). Mask only that exact existing reference,
@@ -384,8 +505,8 @@ def route_operational_report(commands, request, world, interpreted):
         return commands._reply(request, world, "Situația aeroportului sau avionului nu este reprezentată complet de un raport explicit valid. Numește cazul, aeroportul și restricția pentru aterizări/decolări sau eliminarea ei. Devierea și poziția/pregătirea pasagerilor sunt acțiuni distincte. Nu am aplicat schimbări sau pornit recuperarea pe condițiile vechi. Interpretarea a folosit 1 apel.")
     if raw is None:
         # A dropped report must not become a global event/plan for other groups.
-        if (interpreted.get("events") or interpreted.get("strategies") or interpreted.get("recovery")) and re.search(
-            r"\b(?:arrived|readiness|unavailable|broken|sosit|ajuns|aterizat|indisponibil\w*|stricat\w*|defect\w*|(?:ready|gata|pregatit(?:a|i|e)?)\s+(?:at|in|la|peste)|nu (?:mai )?(?:functioneaza|circula|poate functiona))\b", normalized(request.text)):
+        if (interpreted.get("events") or interpreted.get("strategies") or interpreted.get("recovery")) and (has_unrepresented_operational_claim(world, request.text) or re.search(
+            r"\b(?:arrived|readiness|unavailable|broken|sosit|ajuns|aterizat|indisponibil\w*|stricat\w*|defect\w*|(?:ready|gata|pregatit(?:a|i|e)?)\s+(?:at|in|la|peste)|nu (?:mai )?(?:functioneaza|circula|poate functiona))\b", normalized(request.text))):
             return commands._reply(request, world, "Cererea conține un posibil raport operațional, dar nu este identificat explicit. Repetă raportul cu serviciul sau cazul/grupurile și pregătirea exactă. Nu am aplicat schimbări ori planuri globale. Interpretarea a folosit 1 apel.")
         return None
     try:
@@ -403,6 +524,7 @@ def route_operational_report(commands, request, world, interpreted):
         from .after_flight_commands import saved_after_flight_instruction
         if _recovery_requested(claim) or saved_after_flight_instruction(claim):
             raise Clarification("Raportul și cererea de căutare trebuie identificate separat; nu omit servicii sau condiții ascunse în citatul raportului.")
+        _require_complete_primitive_report(world, request.text, report)
         case, groups, readiness_basis = None, [], None
         if isinstance(report, LiveAirportRestrictionReport):
             from .live_airport_reports import ground_airport_restriction, _CLOSED, _OPEN, _LIFT, _RESTRICT, _INABILITY

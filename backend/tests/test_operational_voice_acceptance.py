@@ -53,13 +53,20 @@ def add_existing_proposals(store):
 def report_command(world, kind):
     group = next(item for item in world.groups if item.id == "G1")
     ready = datetime.fromisoformat(world.epoch) + timedelta(minutes=group.ready_at)
-    if kind == "arrival":
+    if kind in ("arrival", "outage_and_arrival"):
         ready_reference = ready.strftime("%Y-%m-%d %H:%M UTC")
         statement = f"For case CASE, passengers G1 have arrived at CLJ and are ready at {ready_reference}."
         report = {"type": "arrival_report", "incident_id": "CASE", "group_ids": ["G1"],
             "all_linked_groups": False, "airport_code": "CLJ", "airport_reference": "CLJ",
             "ready_at": ready.isoformat(), "ready_at_reference": ready_reference,
             "report_reference": statement}
+        if kind == "outage_and_arrival":
+            outage = "Service BUS-G1 is unavailable."
+            report = {"type": "resource_unavailability_and_arrival",
+                "unavailability": {"type": "resource_unavailability", "resource_id": "BUS-G1",
+                    "resource_reference": "BUS-G1", "report_reference": outage},
+                "arrival": report}
+            statement = outage + " " + statement
     else:
         statement = "Service BUS-G1 is unavailable."
         report = {"type": "resource_unavailability", "resource_id": "BUS-G1",
@@ -83,7 +90,7 @@ def assert_other_scope_unchanged(before, after):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["arrival", "outage"])
+@pytest.mark.parametrize("kind", ["arrival", "outage", "outage_and_arrival"])
 async def test_report_over_http_then_worker_builds_new_scoped_proposal_and_replays_once(setup, kind):
     settings, store, _, _, travel = setup
     add_existing_proposals(store)
@@ -109,6 +116,10 @@ async def test_report_over_http_then_worker_builds_new_scoped_proposal_and_repla
         assert receipt["recovery_job"]["max_provider_calls"] == 3
         assert receipt["recovery_job"]["source_version"] == before.version + 1
         assert receipt["recovery_job"]["calls_dispatched"] == 0 and not travel.calls
+        if kind == "outage_and_arrival":
+            assert [report["type"] for report in receipt["reports"]] == ["resource_unavailability", "arrival_report"]
+            assert receipt["report"] == receipt["reports"][1]
+            assert receipt["reports"][0]["id"] != receipt["report"]["id"]
         reported = store.read()
         assert reported.version == before.version + 1
         assert next(item for item in reported.offers if item.id == "OLD-G1").status == "invalidated"
@@ -123,11 +134,11 @@ async def test_report_over_http_then_worker_builds_new_scoped_proposal_and_repla
         assert_other_scope_unchanged(before, after)
         proposal = next(item for item in after.offers if item.group_id == "G1" and item.status == "proposed")
         assert proposal.itinerary.legs[0].kind == "flight"
-        expected_origin = "CLJ" if kind == "arrival" else "CRA"
+        expected_origin = "CLJ" if kind in ("arrival", "outage_and_arrival") else "CRA"
         assert travel.calls[0].origin_code == expected_origin
         assert proposal.itinerary.legs[0].origin == expected_origin
         assert next(item for item in after.groups if item.id == "G1").deadline == before.groups[0].deadline
-        if kind == "outage":
+        if kind in ("outage", "outage_and_arrival"):
             unavailable = next(item for item in after.resources if item.id == "BUS-G1")
             assert unavailable.available is False
             assert unavailable.provenance["supplier_schedule"] == "exact original fixture evidence"
@@ -139,17 +150,20 @@ async def test_report_over_http_then_worker_builds_new_scoped_proposal_and_repla
         replay = client.post("/api/commands", json=payload, headers=headers).json()
         assert replay["replayed"] and replay["report"]["id"] == receipt["report"]["id"]
         assert replay["recovery_job"]["id"] == receipt["recovery_job"]["id"]
+        if kind == "outage_and_arrival":
+            assert replay["reports"] == receipt["reports"]
         assert len(ai.interpretations) == len(ai.plans) == len(ai.decisions) == len(travel.calls) == 1
         assert jobs.ledger.claim_next() is None
         assert store.read().version == after.version
 
 
 @pytest.mark.asyncio
-async def test_unknown_supplier_outcome_preserves_report_without_replaying_paid_work(setup):
+@pytest.mark.parametrize("kind", ["outage", "outage_and_arrival"])
+async def test_unknown_supplier_outcome_preserves_report_without_replaying_paid_work(setup, kind):
     settings, store, jobs, _, travel = setup
     add_existing_proposals(store)
     before = store.read()
-    payload, interpreted = report_command(before, "outage")
+    payload, interpreted = report_command(before, kind)
     ai = InterpretingAI(interpreted)
     jobs.ai = jobs.service.ai = ai
     jobs.service.live_commands = LiveCommands(store, jobs)
@@ -167,10 +181,16 @@ async def test_unknown_supplier_outcome_preserves_report_without_replaying_paid_
     assert after.version == before.version + 1
     assert_other_scope_unchanged(before, after)
     assert next(item for item in after.resources if item.id == "BUS-G1").available is False
+    if kind == "outage_and_arrival":
+        assert after.groups[0].origin == "CLJ"
+        assert travel.calls[0].origin_code == "CLJ"
+        assert receipt["report"] == receipt["reports"][1]
     assert not any(item.status == "proposed" and item.group_id == "G1" for item in after.offers)
     jobs.service.live_commands = LiveCommands(store, jobs)
     replay = await jobs.service.command(request)
     assert replay["replayed"] and replay["report"]["id"] == receipt["report"]["id"]
+    if kind == "outage_and_arrival":
+        assert replay["reports"] == receipt["reports"]
     assert jobs.ledger.claim_next() is None
     assert len(ai.interpretations) == len(ai.plans) == len(travel.calls) == 1
     assert not ai.decisions

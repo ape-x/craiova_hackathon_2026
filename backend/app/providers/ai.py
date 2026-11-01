@@ -97,10 +97,16 @@ class LiveAirportRestrictionAndArrival(StrictModel):
     arrival: LiveArrivalReport
 
 
+class LiveResourceUnavailabilityAndArrival(StrictModel):
+    type: Literal["resource_unavailability_and_arrival"]
+    unavailability: LiveResourceUnavailability
+    arrival: LiveArrivalReport
+
+
 class LiveInterpretation(Interpretation):
     recovery: LiveRecoveryIntent | None
     # Nested anyOf is supported by Structured Outputs; no discriminator/oneOf.
-    operational_report: LiveArrivalReport | LiveResourceUnavailability | LiveAirportRestrictionReport | LiveAirportRestrictionAndArrival | None
+    operational_report: LiveArrivalReport | LiveResourceUnavailability | LiveAirportRestrictionReport | LiveAirportRestrictionAndArrival | LiveResourceUnavailabilityAndArrival | None
 
 
 LIVE_COMMAND_PROMPT = """Interpret Romanian or English operator requests for real passenger recovery.
@@ -169,6 +175,22 @@ The backend records both reports together or neither. Optional recovery must use
 exactly the arrival's groups, after both changes, with one interpretation included
 in the original total call cap. Use the ordinary single-report type when only one
 assertion is present. Never fabricate a second assertion to enable this bundle.
+For exactly ONE existing service unavailability AND ONE explicit passenger
+position/readiness assertion, use resource_unavailability_and_arrival with
+nested unavailability and arrival objects. Each report_reference must quote its
+own complete current assertion verbatim, without overlap or omitted qualifiers.
+The arrival binds one existing case and its explicitly named linked groups;
+optional recovery must separately name that same case and exactly those groups.
+The service is identified by its exact existing ID or unique name. Its outage
+applies to every dependent pending proposal, even outside the selected case;
+this never widens passenger relocation or recovery scope. Do not infer passenger
+location or readiness from a broken bus, a service route, flight ETA or diversion.
+Both reports commit together or neither; confirmed booking conflicts require
+operator review. A missing recovery setup can preserve both valid reports
+without searching. One interpretation remains inside the original total cap.
+Shared conditions/negation, extra service outages, extra passenger positions or
+an airport restriction require clarification, not a partial two-report bundle.
+Never retain only the outage or only the arrival from a compound request.
 Report requests always have EMPTY events/strategies and focus_id=null. recovery
 is null for report-only. Only if the CURRENT request ALSO explicitly asks to
 search/recover, include recovery.action=start with the same explicit case/groups.

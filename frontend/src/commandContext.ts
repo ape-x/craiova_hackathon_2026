@@ -23,9 +23,11 @@ export function rememberCommand(
   result: string,
   outcome: CommandExchange['outcome'] = 'verified',
 ): CommandExchange[] {
-  return [...history, { request: head(request, 4000), result: head(result, 1600), outcome }].slice(
-    -8,
-  );
+  const recordedOutcome = result === UNCONFIRMED_COMBINED_REPORT ? 'unconfirmed' : outcome;
+  return [
+    ...history,
+    { request: head(request, 4000), result: head(result, 1600), outcome: recordedOutcome },
+  ].slice(-8);
 }
 
 export function rememberFailedCommand(
@@ -97,8 +99,14 @@ export function commandContext(
 export function verifiedCommandResult(result: MutationResult): string {
   const bundle = combinedReports(result);
   if (bundle.state === 'invalid') return UNCONFIRMED_COMBINED_REPORT;
-  if (bundle.state === 'combined')
-    return `${combinedReportDetails(bundle, result.replayed)}${result.explanation ? ` ${result.explanation}` : ''} Versiunea ${result.world.version}.`;
+  if (bundle.state === 'combined') {
+    const search = result.recovery_job
+      ? `Cererea de recuperare ${result.recovery_job.id} ${result.replayed ? 'era deja' : 'este'} înregistrată în acest răspuns; verifică progresul actual în caz.`
+      : result.recovery_blocked
+        ? `Căutarea nu a pornit: ${result.recovery_blocked.explanation}`
+        : 'Această comandă nu a pornit o căutare.';
+    return `${combinedReportDetails(bundle, result.replayed)} ${search}${result.explanation ? ` ${result.explanation}` : ''} Versiunea ${result.world.version}.`;
+  }
   if (result.incident_id && result.recovery_job) {
     // This is a receipt/status snapshot, not evidence that a journey was found
     // or accepted. The case panel fetches the current job's progress separately.

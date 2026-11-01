@@ -13,6 +13,7 @@ import {
   voiceReviewDraftText,
 } from './voiceRequestReview';
 import type { VoiceRequestReview, VoiceReviewDraftContext } from './voiceRequestReview';
+import { resourceArrivalReceipt } from './resourceArrivalReceipt.testSupport';
 
 const delegation: DelegationRequest = {
   text: '  Recalculează pentru Aeroportul Londra Heathrow.\nPăstrează grupul G1 împreună.  ',
@@ -52,6 +53,46 @@ afterEach(() => {
 });
 
 describe('exact voice delegation review', () => {
+  it('observes one combined response without resubmitting or reducing it to the primary arrival', async () => {
+    const result = resourceArrivalReceipt();
+    const original = '  Autobuzul BUS1 este indisponibil.\nG1 este pregătit la OTP la 12:30.  ';
+    const attempt = beginVoiceRequestReview({ ...delegation, text: original }, 'OP1', 1);
+    let review: VoiceRequestReview | null = attempt;
+    const submit = vi.fn().mockResolvedValue(result);
+    await observeVoiceRequestOutcome(submit, (outcome) => {
+      review = settleVoiceRequestReview(review, attempt, 'OP1', outcome);
+    });
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(review!.text).toBe(original);
+    expect(review!.status).toBe('reports_recorded');
+    expect(review!.detail).toContain('serviciul BUS1 raportat indisponibil');
+    expect(review!.detail).toContain('grupurile G1 raportate la OTP');
+    expect(voiceReviewCanCorrect(review!)).toBe(false);
+    expect(voiceReviewDraftText(review, attempt, { ...context, scenarioId: 'OP1' })).toBeNull();
+    const html = renderReview(review!, { scenarioId: 'OP1' });
+    expect(html).toContain('Operational reports recorded');
+    expect(html).not.toContain('Copy to command draft');
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+  it('keeps a malformed combined receipt unknown and leaves newer/scenario-scoped reviews intact', () => {
+    const result = resourceArrivalReceipt();
+    const attempt = beginVoiceRequestReview(delegation, 'OP1', 1);
+    result.world.events[0].version -= 1;
+    const review = settleVoiceRequestReview(attempt, attempt, 'OP1', { kind: 'response', result })!;
+    expect(review.status).toBe('unknown');
+    expect(voiceReviewCanCorrect(review)).toBe(false);
+    const html = renderReview(review, { scenarioId: 'OP1' });
+    expect(html).toContain('Outcome unconfirmed');
+    expect(html).toContain('Recover request');
+    expect(html).not.toContain('Copy to command draft');
+    const newer = beginVoiceRequestReview({ ...delegation, delegationId: 'second' }, 'OP1', 2);
+    expect(settleVoiceRequestReview(newer, attempt, 'OP1', { kind: 'response', result })).toBe(
+      newer,
+    );
+    expect(
+      settleVoiceRequestReview(attempt, attempt, 'NEW', { kind: 'response', result }),
+    ).toBeNull();
+  });
   it('freezes only the exact delegated text and original scope, without normalization or cumulative context', () => {
     const mutable = { ...delegation };
     const attempt = beginVoiceRequestReview(mutable, world.scenario_id, 7);

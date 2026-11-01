@@ -7,6 +7,7 @@ import {
 } from './commandContext';
 import { reportedArrivalFocus } from './arrivalFocus';
 import { voiceCommandAcknowledgement } from './liveVoice';
+import { resourceArrivalReceipt } from './resourceArrivalReceipt.testSupport';
 import {
   beginVoiceRequestReview,
   settleVoiceRequestReview,
@@ -531,5 +532,434 @@ describe('correlated atomic operational report receipts', () => {
     delete result.reports;
     expect(combinedReports(result)).toEqual({ state: 'none' });
     expect(voiceCommandAcknowledgement(result)).toContain('Raport înregistrat: 1 grup la OTP');
+  });
+});
+
+describe('atomic service unavailability and passenger arrival receipts', () => {
+  const withJob = (result = resourceArrivalReceipt()) => {
+    if (result.report?.type !== 'arrival_report') throw new Error('Invalid fixture');
+    result.recovery_job = {
+      id: 'JOB1',
+      incident_id: 'CASE1',
+      group_ids: [...result.report.group_ids],
+      status: 'queued',
+      stage: 'queued',
+      calls_dispatched: 0,
+    } as RecoveryJob;
+    result.recovery_total_call_limit = 8;
+    return result;
+  };
+  it.each(['bus', 'flight', 'hotel'] as const)(
+    'accepts a recorded %s outage with wider effects than the arrival and recovery scope',
+    (resourceKind) => {
+      const result = withJob(resourceArrivalReceipt({ resourceKind }));
+      expect(combinedReports(result)).toMatchObject({
+        state: 'combined',
+        kind: 'resource_and_arrival',
+        resource: { affected_group_ids: ['G1', 'OTHER-CASE-GROUP'] },
+        arrival: { incident_id: 'CASE1', group_ids: ['G1'] },
+      });
+      expect(recoveryCaseForResult(result, result.world)).toBe('CASE1');
+      expect(reportedArrivalFocus(result, result.world)).toBe('OTP');
+      expect(commandNeedsRegionalView({ ...result.world, events: [] }, result)).toBe(false);
+      expect(result.world.groups.find((group) => group.id === 'OTHER-CASE-GROUP')!.origin).toBe(
+        'CRA',
+      );
+      const speech = voiceCommandAcknowledgement(result);
+      expect(speech).toContain('serviciul BUS1 raportat indisponibil pentru planificare');
+      expect(speech).toContain('1 grup la OTP, pregătit de la 1 noiembrie 2026, ora 10:30 UTC');
+      expect(speech).toContain('Căutare înregistrată; verifică progresul actual');
+      expect(speech).toContain(
+        'nu confirmă aterizarea, disponibilitatea la furnizor sau rezervări',
+      );
+      expect(speech).not.toContain('2 grupuri la OTP');
+    },
+  );
+
+  const invalid: [string, (result: MutationResult) => void][] = [
+    ['reversed children', (r) => r.reports!.reverse()],
+    [
+      'only one child',
+      (r) => {
+        r.reports = [r.report!];
+      },
+    ],
+    [
+      'duplicate report IDs',
+      (r) => {
+        r.reports![0].id = r.report!.id;
+      },
+    ],
+    [
+      'mismatched primary',
+      (r) => {
+        r.report!.description = 'Different report';
+      },
+    ],
+    [
+      'unknown child type',
+      (r) => {
+        Object.assign(r.reports![0], { type: 'other' });
+      },
+    ],
+    [
+      'invalid previous availability',
+      (r) => {
+        Object.assign(r.reports![0], { previous_available: 'true' });
+      },
+    ],
+    [
+      'unrecorded resource',
+      (r) => {
+        r.world.resources = [];
+      },
+    ],
+    [
+      'duplicate resource',
+      (r) => {
+        r.world.resources.push(structuredClone(r.world.resources[0]));
+      },
+    ],
+    [
+      'resource still available',
+      (r) => {
+        r.world.resources[0].available = true;
+      },
+    ],
+    [
+      'missing unavailability history',
+      (r) => {
+        r.world.resources[0].provenance = {};
+      },
+    ],
+    [
+      'different unavailability tail',
+      (r) => {
+        r.world.resources[0].provenance!.unavailability_reports = [
+          { ...r.reports![0], description: 'Different' },
+        ];
+      },
+    ],
+    [
+      'later resource report',
+      (r) => {
+        (r.world.resources[0].provenance!.unavailability_reports as unknown[]).push({
+          ...r.reports![0],
+          id: 'NEWER',
+        });
+      },
+    ],
+    [
+      'missing audit event',
+      (r) => {
+        r.world.events.pop();
+      },
+    ],
+    [
+      'different response revision',
+      (r) => {
+        r.world.version += 1;
+      },
+    ],
+    [
+      'different service revision',
+      (r) => {
+        r.world.events[0].version -= 1;
+      },
+    ],
+    [
+      'different arrival revision',
+      (r) => {
+        r.world.events[1].version -= 1;
+      },
+    ],
+    [
+      'different audit target',
+      (r) => {
+        r.world.events[0].target_id = 'OTHER';
+      },
+    ],
+    [
+      'different audit facts',
+      (r) => {
+        r.world.events[0].data.previous_available = false;
+      },
+    ],
+    [
+      'different audit type',
+      (r) => {
+        r.world.events[0].type = 'operator_arrival_report';
+      },
+    ],
+    [
+      'duplicate audit identity',
+      (r) => {
+        r.world.events[1].id = r.world.events[0].id;
+      },
+    ],
+    [
+      'duplicate matching event',
+      (r) => {
+        r.world.events.push(structuredClone(r.world.events[0]));
+      },
+    ],
+    [
+      'missing arrival case',
+      (r) => {
+        r.world.incidents = r.world.incidents!.filter((item) => item.id !== 'CASE1');
+      },
+    ],
+    [
+      'different case membership',
+      (r) => {
+        r.world.incidents![0].group_ids = ['UNSELECTED'];
+      },
+    ],
+    [
+      'different group case',
+      (r) => {
+        r.world.groups[0].incident_id = 'CASE2';
+      },
+    ],
+    [
+      'different group location',
+      (r) => {
+        r.world.groups[0].origin = 'CRA';
+      },
+    ],
+    [
+      'different group readiness',
+      (r) => {
+        r.world.groups[0].ready_at = 61;
+      },
+    ],
+    [
+      'different original flight',
+      (r) => {
+        r.world.groups[0].original_flight_id = 'OTHER-FLIGHT';
+      },
+    ],
+    [
+      'different scenario binding',
+      (r) => {
+        r.world.scenario_id = 'OTHER';
+      },
+    ],
+    [
+      'different epoch binding',
+      (r) => {
+        r.world.epoch = '2026-11-01T08:00:00Z';
+      },
+    ],
+    [
+      'missing arrival history',
+      (r) => {
+        r.world.groups[0].provenance = {};
+      },
+    ],
+    [
+      'unverified airport node',
+      (r) => {
+        r.world.airports[0].kind = 'station';
+      },
+    ],
+    [
+      'missing airport node',
+      (r) => {
+        r.world.airports = [];
+      },
+    ],
+    [
+      'wrong focus',
+      (r) => {
+        r.focus_id = 'BUS1';
+      },
+    ],
+    [
+      'wrong interpretation count',
+      (r) => {
+        r.command_interpretation_calls = 2;
+      },
+    ],
+    [
+      'wrong response mode',
+      (r) => {
+        delete r.mode;
+      },
+    ],
+    [
+      'wrong total affected scope',
+      (r) => {
+        r.affected_group_ids = ['G1'];
+      },
+    ],
+    [
+      'wrong invalidated offers',
+      (r) => {
+        r.invalidated_offer_ids = [];
+      },
+    ],
+    [
+      'unrelated confirmation conflict',
+      (r) => {
+        r.manual_review_required = true;
+      },
+    ],
+    [
+      'recovery in other case',
+      (r) => {
+        r.recovery_job!.incident_id = 'CASE2';
+      },
+    ],
+    [
+      'recovery widened to service effects',
+      (r) => {
+        r.recovery_job!.group_ids.push('OTHER-CASE-GROUP');
+      },
+    ],
+    [
+      'recovery contradicts blocker',
+      (r) => {
+        r.recovery_blocked = { code: 'recovery_prerequisite_failed', explanation: 'Blocked' };
+      },
+    ],
+  ];
+  it.each(invalid)('rejects %s without falling back to the arrival child', (_label, mutate) => {
+    const result = withJob();
+    mutate(result);
+    expect(combinedReports(result)).toEqual({ state: 'invalid' });
+    expect(voiceCommandAcknowledgement(result)).toBe(UNCONFIRMED_COMBINED_REPORT);
+    expect(verifiedCommandResult(result)).toBe(UNCONFIRMED_COMBINED_REPORT);
+    expect(recoveryCaseForResult(result, result.world)).toBeNull();
+    expect(reportedArrivalFocus(result, result.world)).toBeNull();
+  });
+  it('can record a repeated outage without claiming that it first changed availability', () => {
+    const result = resourceArrivalReceipt();
+    Object.assign(result.reports![0], { previous_available: false });
+    result.world.resources[0].provenance!.unavailability_reports = [
+      structuredClone(result.reports![0]),
+    ];
+    result.world.events[0].data = structuredClone(result.reports![0]);
+    expect(combinedReports(result).state).toBe('combined');
+    expect(voiceCommandAcknowledgement(result)).toContain('Nu am pornit o căutare');
+  });
+  it('allows a disjoint service impact and keeps it out of the arrival selection', () => {
+    const result = withJob();
+    result.reports![0].affected_group_ids = ['OTHER-CASE-GROUP'];
+    result.world.resources[0].provenance!.unavailability_reports = [
+      structuredClone(result.reports![0]),
+    ];
+    result.world.events[0].data = structuredClone(result.reports![0]);
+    result.affected_group_ids = ['OTHER-CASE-GROUP'];
+    expect(combinedReports(result).state).toBe('combined');
+    expect(result.recovery_job!.group_ids).toEqual(['G1']);
+    expect(voiceCommandAcknowledgement(result)).toContain('1 grup la OTP');
+  });
+  it('treats replay as an immutable observation and does not focus a superseded arrival', () => {
+    const result = withJob();
+    result.replayed = true;
+    const current = structuredClone(result.world);
+    current.version += 2;
+    current.resources[0].available = true;
+    current.groups[0].provenance = { arrival_reports: [{ id: 'NEWER' }] };
+    expect(combinedReports(result).state).toBe('combined');
+    expect(reportedArrivalFocus(result, current)).toBeNull();
+    expect(recoveryCaseForResult(result, current)).toBe('CASE1');
+    expect(voiceCommandAcknowledgement(result)).toContain('Rapoarte deja înregistrate');
+    expect(voiceCommandAcknowledgement(result)).toContain('Căutare deja înregistrată');
+    expect(voiceCommandAcknowledgement(result)).not.toMatch(
+      /am pornit|în coadă|rezervat|a aterizat/,
+    );
+  });
+  it('preserves a relative readiness basis in the correlated arrival evidence', () => {
+    const result = resourceArrivalReceipt();
+    const basis = {
+      kind: 'command_relative_minutes',
+      reference: 'command_received_at',
+      command_received_at: result.world.epoch,
+      anchor_at: result.world.epoch,
+      rounding: 'ceil_minute',
+      minutes: 60,
+    };
+    Object.assign(result.report!, { readiness_basis: basis });
+    Object.assign(result.reports![1], { readiness_basis: basis });
+    Object.assign((result.world.groups[0].provenance!.arrival_reports as object[])[0], {
+      readiness_basis: basis,
+    });
+    Object.assign(result.world.events[1].data, { readiness_basis: basis });
+    expect(combinedReports(result).state).toBe('combined');
+    Object.assign(result.world.events[1].data, { readiness_basis: { ...basis, minutes: 30 } });
+    expect(combinedReports(result).state).toBe('invalid');
+  });
+  it('keeps both facts and every job/blocker status below the voice byte cap', () => {
+    const outcomes: ((r: MutationResult) => void)[] = [
+      (r) => {
+        r.recovery_job = null;
+      },
+      (r) => {
+        r.recovery_job!.stage = 'waiting_for_previous';
+      },
+      (r) => {
+        r.recovery_job!.superseded_by_job_id = 'NEWER';
+      },
+      (r) => {
+        r.recovery_job!.status = 'needs_review';
+        r.recovery_job!.blocking_job_ids = ['ANCESTOR'];
+      },
+      ...(
+        [
+          'queued',
+          'running',
+          'completed',
+          'blocked',
+          'failed',
+          'cancelled',
+          'needs_review',
+          'unknown_outcome',
+        ] as const
+      ).map((status) => (r: MutationResult) => {
+        r.recovery_job!.status = status;
+      }),
+      ...(
+        [
+          'insufficient_call_allowance',
+          'hotel_setup_required',
+          'airport_transfer_setup_required',
+          'ai_not_configured',
+          'recovery_service_unavailable',
+          'recovery_prerequisite_failed',
+          'recovery_queue_unavailable',
+        ] as const
+      ).map((code) => (r: MutationResult) => {
+        r.recovery_job = null;
+        r.recovery_blocked = { code, explanation: 'See case' };
+      }),
+    ];
+    for (const resourceId of ['R'.repeat(40), '🚌'.repeat(10), 'R'.repeat(128)]) {
+      for (const mutate of outcomes) {
+        const result = withJob(
+          resourceArrivalReceipt({
+            resourceId,
+            airportCode: 'LROP',
+            groupIds: Array.from({ length: 24 }, (_, index) => `G${index}`),
+            readyAt: '9999-09-30T23:59:00Z',
+          }),
+        );
+        result.replayed = true;
+        result.recovery_total_call_limit = 27;
+        mutate(result);
+        expect(combinedReports(result).state).toBe('combined');
+        const speech = voiceCommandAcknowledgement(result);
+        expect(new TextEncoder().encode(speech).byteLength).toBeLessThanOrEqual(480);
+        expect(speech).toContain('raportat indisponibil pentru planificare');
+        expect(speech).toContain(
+          '24 grupuri la LROP, pregătite de la 30 septembrie 9999, ora 23:59 UTC',
+        );
+        expect(speech).toContain(
+          'Date raportate; nu confirmă aterizarea, disponibilitatea la furnizor sau rezervări.',
+        );
+        expect(speech).not.toContain('…');
+      }
+    }
   });
 });

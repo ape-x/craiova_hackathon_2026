@@ -644,6 +644,9 @@ export interface MutationResult {
   recovery_provider_call_limit?: number;
   report?: OperationalReportReceipt;
   reports?: OperationalReportReceipt[];
+  /** Proposal effects can span cases; these are not the arrival/recovery selection. */
+  invalidated_offer_ids?: string[];
+  affected_group_ids?: string[];
   recovery_blocked?: RecoveryBlockedReceipt;
   manual_review_required?: boolean;
   confirmed_conflicts?: AirportRestrictionConflict[];

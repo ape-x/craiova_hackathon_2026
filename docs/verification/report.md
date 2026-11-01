@@ -784,7 +784,7 @@ The local Three.js scene is an interactive architectural illustration with origi
 - Continuous FR24 position display with original timestamps and agreed account usage/retention; the authorized flight lookup/case flow is already verified above.
 - Verified Romanian ground-transport availability and complete physical journeys. The CRA → OTP public-fare adapter now preserves dated adult-party prices, exact stops and original RON/estimated EUR evidence; consumer fare observations alone do not verify seats, luggage or booking expiry. Other Romanian routes remain outside implemented coverage.
 - Replanning already confirmed bookings or completed physical journeys remains unsupported. The repeated-operation inventory/history implementation and its offline capacity tests are recorded above.
-- Determine the cause of Google's billing warning and confirm billing health; configure appropriate key restrictions.
+- Confirm Google billing health and configure separate restricted browser/server credentials. The 1 November local audit found the two configured values identical without exposing either value. Google Cloud Console reported a `gstatic.com` JavaScript loading failure after reload and did not expose billing/key administration. Existing terrain rendering is not proof of the account restrictions. No credentials or billing settings were changed during that audit.
 - Verify surveyed terminal photogrammetry and precise alignment against current airport data; authored GLB rendering/orientation now has browser evidence.
 - Review visual fidelity on the event display.
 - Production host/domain, account budgets and external deployment, if the team chooses to publish.
