@@ -4,7 +4,7 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `e4eeb59` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `622bb0b` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
 
 The subsequent automatic hotel workflow (`b3afa9e`) and scope-bound reusable input profile (`95a0606`) have passed **1,252 backend tests and 273 frontend tests**, strict TypeScript, the production build and formatting. The automatic core passed GitHub Actions on both branches (runs 84/85); the full UI release passed both branch runs 88/89. Actual source-backed automatic acceptance is recorded below. Backend tests include required hotel stays, counted source calls, independent connection/budget validation, chosen-only atomic application, immutable out-of-scope bookings, profile identity before both transfer fingerprints, exact voice reuse and bounded call allowances. Focused counts overlap the full suite and are not added to it. One initial CI run on `95a0606` failed only because the read-derived live minute advanced during a whole-world test comparison. `ca7eea7` excludes that display clock while retaining every operational field and version assertion; both full branch runs 90/91 passed. Application timing and expiry logic were unchanged.
 
@@ -54,6 +54,17 @@ seconds and passed the unchanged XML parser with GBP present. That observation
 proves current source reachability, not successful recovery after the correction.
 
 The follow-up corrections passed **2,236 backend tests and 559 frontend tests**, strict TypeScript, production build and frontend formatting. Existing Starlette/httpx and authored-Scene size warnings remain. These are offline regressions, not another successful spoken or full-provider run.
+
+The exact `622bb0b` archive is installed in both API and web containers on the
+same localhost port 8080; both revision labels match. GitHub Actions passed on
+main (143) and codex (142). A fresh private SQLite backup passed integrity
+checking. Readiness and a complete post-restart and post-browser comparison
+preserved world 52, both groups, 25 resources and every recorded recovery job;
+no job is active, no resource/offer is confirmed, and Flightradar24 remains paused.
+The browser loaded `/assets/index-D8DCHyRN.js`. Selecting the retained CAB quote
+now shows only connection geometry and its own undated source estimate, with a
+separate midpoint annotation and honest stale status. The case panel retains the
+actual failed seven-call job; deployment did not rewrite or retry it.
 
 The attempt lock, approval and original raw evidence remain private and intact.
 The semantic review records failure, not success based on the queued receipt or
