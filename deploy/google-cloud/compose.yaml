@@ -1,0 +1,51 @@
+name: airport-recovery-cloud
+services:
+  api:
+    image: ${API_IMAGE:?Set API_IMAGE to the reviewed revision}
+    env_file:
+      - ${BACKEND_ENV_FILE:?Set the private backend env file}
+    environment:
+      ENVIRONMENT: production
+      OPERATION_MODE: live
+      DATABASE_PATH: /data/recovery.sqlite3
+      PUBLIC_BASE_URL: ${FRONTEND_ORIGIN:?Set the exact HTTPS frontend origin}
+      ALLOWED_HOSTS: ${API_DOMAIN:?Set API_DOMAIN},${FRONTEND_HOST:?Set FRONTEND_HOST},localhost,127.0.0.1,api
+      CORS_ORIGINS: ${FRONTEND_ORIGIN}
+    # Never import app.main against an absent/empty database: Store can initialize it.
+    command: [sh, -ec, "python /opt/persistence_guard.py database /data/recovery.sqlite3 && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log --timeout-graceful-shutdown 30 --proxy-headers --forwarded-allow-ips '*'"]
+    volumes:
+      - type: bind
+        source: /mnt/airport-recovery/data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./persistence_guard.py
+        target: /opt/persistence_guard.py
+        read_only: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  proxy:
+    image: caddy:2-alpine
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /mnt/airport-recovery/caddy-data:/data
+      - /mnt/airport-recovery/caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
