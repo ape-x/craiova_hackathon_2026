@@ -45,7 +45,7 @@ def commit_existing(state, identity, status, selected_resource=None):
     offer = Offer(id="O-" + identity, group_id=identity, itinerary=itinerary([selected_resource]),
         status=status, expires_at=expiry(), created_version=state.version,
         confirmed_at=expiry() if status == "confirmed" else None,
-        external_bookings=[{"provider": "fixture_supplier", "reference": "fixture-confirmed"}] if status == "confirmed" else [])
+        external_bookings=[{"provider": "fixture_supplier", "resource_id": selected_resource.id, "reference": "fixture-confirmed"}] if status == "confirmed" else [])
     state.offers.append(offer)
     state.reservations.append(Reservation(id="R-" + identity, offer_id=offer.id, group_id=identity,
         resource_id=selected_resource.id, quantity=2, status=status, expires_at=offer.expires_at))

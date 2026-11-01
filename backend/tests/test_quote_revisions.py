@@ -59,7 +59,7 @@ async def test_fresh_same_id_repricing_never_reuses_old_fare_or_changes_other_gr
             world.groups[1].status = "confirmed"
             world.resources[0].booking_status = "confirmed"
             offer.confirmed_at = datetime.now(timezone.utc).isoformat()
-            offer.external_bookings = [{"confirmation_reference": "FIXTURE-OTHER-BOOKING"}]
+            offer.external_bookings = [{"resource_id": world.resources[0].id, "confirmation_reference": "FIXTURE-OTHER-BOOKING"}]
 
     store.mutate("other-group-state", {}, store.read().version, set_other_status)
     jobs.start("CASE", request(store))

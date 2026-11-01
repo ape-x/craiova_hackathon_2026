@@ -426,7 +426,7 @@ async def test_unrelated_confirmed_booking_and_reservation_remain_exact(package)
         world.resources.append(resource)
         itinerary=Itinerary(legs=[Leg(resource_id=resource.id,kind="flight",origin=resource.origin,destination=resource.destination,departure=resource.departure,arrival=resource.arrival,cost=100)],total_cost=100,arrival=resource.arrival)
         world.offers.append(Offer(id="FOREIGN-OFFER",group_id=group.id,itinerary=itinerary,status="confirmed",expires_at="2090-01-01T00:00:00Z",created_version=world.version,
-            external_bookings=[{"confirmation_reference":"fixture-existing-booking"}]))
+            external_bookings=[{"resource_id":resource.id,"confirmation_reference":"fixture-existing-booking"}]))
         world.reservations.append(Reservation(id="FOREIGN-RESERVATION",offer_id="FOREIGN-OFFER",group_id=group.id,resource_id=resource.id,quantity=1,status="confirmed",expires_at="2090-01-01T00:00:00Z"))
     store.mutate("foreign-booking",{},store.read().version,foreign)
     before=world_snapshot(store)

@@ -26,6 +26,9 @@ import './recoveryCase.css';
 import RecoveryJobPanel from './RecoveryJobPanel';
 import { ArrivalReportPanel } from './OperationalReportForms';
 import { AirportRestrictionPanel } from './AirportRestrictionPanel';
+import type { RecoveryDataContext } from './recoveryDataContext';
+import { initialRecoverySelection } from './recoveryNavigation';
+import { cloneRecoveryFormDraft, type RecoveryFormDraft } from './recoveryFormDraft';
 
 type ActionKind = 'create' | 'bind' | 'refresh';
 export default function RecoveryCaseDialog({
@@ -35,16 +38,26 @@ export default function RecoveryCaseDialog({
   onRefresh,
   onClose,
   onManageData,
+  initialSelection,
+  setupGroupId,
 }: {
   world: World;
   incidentId: string | null;
   onApplied: (result: MutationResult) => void;
   onRefresh: () => Promise<unknown>;
   onClose: () => void;
-  onManageData: (incidentId: string | null) => void;
+  onManageData: (context: RecoveryDataContext) => void;
+  initialSelection?: RecoveryDataContext;
+  setupGroupId?: string;
 }) {
   const [activeId, setActiveId] = useState(incidentId);
   const incident = (world.incidents ?? []).find((item) => item.id === activeId);
+  const [initialRecoveryGroups] = useState(() =>
+    incident ? initialRecoverySelection(world, incident, initialSelection).groupIds : [],
+  );
+  const selectedRecoveryGroups = useRef(initialRecoveryGroups);
+  const searchDraft = useRef<RecoveryFormDraft | undefined>(initialSelection?.searchDraft);
+  const setupGroup = world.groups.find((group) => group.id === setupGroupId);
   const [query, setQuery] = useState({
     flight_number: '',
     date_utc: new Date().toISOString().slice(0, 10),
@@ -312,8 +325,27 @@ export default function RecoveryCaseDialog({
       )}
     </section>
   );
+  if (
+    initialSelection &&
+    (initialSelection.scenarioId !== world.scenario_id || initialSelection.incidentId !== activeId)
+  ) {
+    return (
+      <Modal title="Recovery case" onClose={close}>
+        <p className="case-source-warning" role="alert">
+          The operation or recovery case changed. Close this view and open the intended case again.
+        </p>
+      </Modal>
+    );
+  }
   return (
     <Modal title={activeId ? 'Recovery case' : 'Start recovery'} onClose={close} wide>
+      {setupGroup && (
+        <p className="case-source-warning">
+          Requested passenger group: <strong>{setupGroup.name}</strong>. Choose the matching flight
+          case and explicitly link this group's requirements before selecting it for a supplier
+          search.
+        </p>
+      )}
       {activeId ? (
         incident ? (
           <>
@@ -357,6 +389,14 @@ export default function RecoveryCaseDialog({
               onMutationPending={setJobSubmissionPending}
               refreshSignal={arrivalRefresh}
               receivedJob={arrivalJob}
+              initialSelection={initialSelection}
+              onSelectionChange={(ids) => {
+                selectedRecoveryGroups.current = ids;
+              }}
+              onDraftChange={(draft) => {
+                searchDraft.current = cloneRecoveryFormDraft(draft);
+                selectedRecoveryGroups.current = [...draft.groupIds];
+              }}
             />
             <div className="case-actions">
               <button
@@ -373,7 +413,16 @@ export default function RecoveryCaseDialog({
               <button
                 className="secondary-button"
                 disabled={locked}
-                onClick={() => onManageData(incident.id)}
+                onClick={() =>
+                  onManageData({
+                    scenarioId: world.scenario_id,
+                    incidentId: incident.id,
+                    groupIds: [...selectedRecoveryGroups.current],
+                    ...(searchDraft.current
+                      ? { searchDraft: cloneRecoveryFormDraft(searchDraft.current) }
+                      : {}),
+                  })
+                }
               >
                 Manage passenger requirements &amp; services
               </button>

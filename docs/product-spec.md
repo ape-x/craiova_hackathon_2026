@@ -8,6 +8,12 @@
 
 **Promisiunea produsului:** un operator pornește de la un zbor identificat și un incident, precizează persoanele afectate și primește alternative bazate pe surse reale, cu verificări explicite și lipsuri vizibile. Aplicația asistă planificarea; nu cumpără bilete, nu rezervă camere și nu comandă vehicule.
 
+Intrarea principală live conduce la alegerea explicită a cazului. Din inspector, un grup legat reciproc de un singur caz deschide căutarea cu numai acel grup selectat. Confirmările existente conduc la revizuire; lipsa sau contradicția legăturii conduce la configurare. Contextul FR24 expirat nu șterge cazul și nu interzice căutarea de oferte noi. Deschiderea acestor formulare nu consumă apeluri către furnizori.
+
+Trecerea în **Operation data** și întoarcerea explicită în caz păstrează selecția și întregul formular netrimis, inclusiv limita de apeluri și valorile încă incomplete. Orele nu sunt avansate. Dacă identitatea operațiunii, cazului sau selecției nu mai corespunde, formularul cere revizuire; o configurație nouă cu limita implicită necesită o acțiune explicită. Cererile cu rezultat necunoscut păstrează cheia și corpul original și blochează această navigare până la clarificarea rezultatului.
+
+Capacitatea rezervată se calculează din itinerarele fixe validate, fără dublarea rândurilor de rezervare. Confirmările care nu pot fi asociate unui grup, unor segmente și unor resurse consistente opresc recalcularea live pentru revizuire înainte de apeluri noi sau de înlocuirea propunerilor. Confirmările canonice, inclusiv servicii partajate între grupuri, rămân în plan.
+
 ## 1. Utilizatori și scop
 
 Clientul comercial propus este compania aeriană, iar utilizatorul principal este coordonatorul operațional sau echipa de handling. Pasagerul primește o propunere individuală și își poate comunica preferința. Aeroportul oferă context și poate fi partener operațional; nu presupunem că deține inventarul comercial al companiilor aeriene.

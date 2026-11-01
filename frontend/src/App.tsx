@@ -33,6 +33,10 @@ import WorkspaceSummary from './WorkspaceSummary';
 import ScenarioDialog from './ScenarioDialog';
 import LiveDataDialog from './LiveDataDialog';
 import RecoveryCaseDialog from './RecoveryCaseDialog';
+import RecoveryCases from './RecoveryCases';
+import { groupRecoveryEntry, type GroupRecoveryIntent } from './groupRecoveryEntry';
+import { currentGroupRecoveryIntent } from './recoveryNavigation';
+import { resolveRecoveryDataContext, type RecoveryDataContext } from './recoveryDataContext';
 import { locationKindLabel } from './locationNodes';
 import { geographicContext } from './resourceLabels';
 import { WeatherNetworkOverlay } from './WeatherStatus';
@@ -159,10 +163,14 @@ function Operations() {
     | 'reset'
     | 'live-data'
     | 'recovery-case'
+    | 'recovery-picker'
     | 'voice-review'
     | null
   >(null);
   const [recoveryCaseId, setRecoveryCaseId] = useState<string | null>(null);
+  const [recoverySelection, setRecoverySelection] = useState<RecoveryDataContext>();
+  const [recoveryDataContext, setRecoveryDataContext] = useState<RecoveryDataContext>();
+  const [recoverySetup, setRecoverySetup] = useState<GroupRecoveryIntent | null>(null);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const [operation, setOperation] = useState('');
@@ -219,21 +227,62 @@ function Operations() {
   const commandInput = useRef<HTMLTextAreaElement>(null);
   const [mobilePanel, setMobilePanel] = useState<'map' | 'resources' | 'inspector'>('map');
   const [plannerMode, setPlannerMode] = useState<'ai' | 'solver' | null>(null);
-  const closeModal = useCallback(() => setModal(null), []);
-  const openRecoveryCase = useCallback((id: string | null) => {
-    setRecoveryCaseId(id);
-    setModal('recovery-case');
+  const closeModal = useCallback(() => {
+    setModal(null);
+    setRecoveryDataContext(undefined);
   }, []);
+  const openRecoveryCase = useCallback(
+    (id: string | null) => {
+      setRecoveryCaseId(id);
+      setRecoverySelection(
+        id && worldRef.current
+          ? { scenarioId: worldRef.current.scenario_id, incidentId: id, groupIds: [] }
+          : undefined,
+      );
+      setRecoveryDataContext(undefined);
+      setRecoverySetup(null);
+      setModal('recovery-case');
+    },
+    [worldRef],
+  );
+  const openGroupRecovery = useCallback(
+    (requested: GroupRecoveryIntent) => {
+      const current = worldRef.current;
+      const intent = current && currentGroupRecoveryIntent(current, requested);
+      if (!current || !intent) {
+        setNotice({
+          text: 'The passenger or case context changed. Select the group again to review its current recovery options.',
+          error: true,
+        });
+        return;
+      }
+      setRecoveryDataContext(undefined);
+      if (intent.kind === 'setup') {
+        setRecoverySetup(intent);
+        setModal('recovery-picker');
+        return;
+      }
+      setRecoverySetup(null);
+      setRecoveryCaseId(intent.incidentId);
+      setRecoverySelection({
+        scenarioId: intent.scenarioId,
+        incidentId: intent.incidentId,
+        groupIds: intent.kind === 'recover' ? [intent.groupId] : [],
+      });
+      setModal('recovery-case');
+    },
+    [worldRef],
+  );
   const chosenMode = plannerMode ?? (config.ai_configured ? 'ai' : 'solver');
   const select = useCallback((id: string) => {
     setSelectedId(id);
     setShowLog(false);
     setMobilePanel('inspector');
   }, []);
-  const showScenario = useCallback(
-    () => setModal(worldRef.current?.mode === 'live' ? 'live-data' : 'scenario'),
-    [worldRef],
-  );
+  const showScenario = useCallback(() => {
+    setRecoveryDataContext(undefined);
+    setModal(worldRef.current?.mode === 'live' ? 'live-data' : 'scenario');
+  }, [worldRef]);
   const applyResult = useCallback(
     (result: MutationResult) => {
       const replaced = worldRef.current?.scenario_id !== result.world.scenario_id;
@@ -255,6 +304,13 @@ function Operations() {
       const recoveryCase = recoveryCaseForResult(result, worldRef.current ?? result.world);
       if (recoveryCase) {
         setRecoveryCaseId(recoveryCase);
+        setRecoverySelection((previous) =>
+          previous?.scenarioId === result.world.scenario_id && previous.incidentId === recoveryCase
+            ? previous
+            : { scenarioId: result.world.scenario_id, incidentId: recoveryCase, groupIds: [] },
+        );
+        setRecoveryDataContext(undefined);
+        setRecoverySetup(null);
         setModal('recovery-case');
       }
       return result;
@@ -304,7 +360,12 @@ function Operations() {
     [applyResult, refresh],
   );
   const replan = useCallback(async () => {
-    if (!worldRef.current) return;
+    if (!worldRef.current || running.current) return;
+    if (worldRef.current.mode === 'live') {
+      setRecoverySetup(null);
+      setModal('recovery-picker');
+      return;
+    }
     try {
       await execute(
         chosenMode === 'ai'
@@ -778,13 +839,14 @@ function Operations() {
               </button>
               <button
                 className="primary-button"
-                disabled={busy || (live && (!world.groups.length || !world.resources.length))}
+                disabled={busy}
                 onClick={() => {
                   void replan();
                 }}
               >
-                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}Find
-                recovery <span>{chosenMode === 'ai' ? 'AI' : 'SOLVER'}</span>
+                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+                {live ? 'Find sourced alternatives' : 'Find recovery'}{' '}
+                <span>{live ? 'LIVE SOURCES' : chosenMode === 'ai' ? 'AI' : 'SOLVER'}</span>
               </button>
             </div>
           </div>
@@ -798,6 +860,7 @@ function Operations() {
           onReplan={() => {
             void replan();
           }}
+          onGroupRecovery={openGroupRecovery}
           onScenario={showScenario}
           onApplied={applyResult}
           onRefresh={refresh}
@@ -978,7 +1041,51 @@ function Operations() {
         </div>
       )}
       {modal === 'live-data' && (
-        <LiveDataDialog world={world} onClose={closeModal} onApplied={applyResult} />
+        <LiveDataDialog
+          world={world}
+          onClose={closeModal}
+          onApplied={applyResult}
+          recoveryContext={recoveryDataContext}
+          onReturnToCase={() => {
+            const current = worldRef.current;
+            const context = current && resolveRecoveryDataContext(current, recoveryDataContext);
+            if (!recoveryDataContext || context?.kind !== 'ready') {
+              setNotice({
+                text: 'The original case context changed. Reopen the intended case from the workspace.',
+                error: true,
+              });
+              return;
+            }
+            setRecoveryCaseId(recoveryDataContext.incidentId);
+            setRecoverySelection({
+              ...recoveryDataContext,
+              groupIds: [...recoveryDataContext.groupIds],
+            });
+            setRecoverySetup(null);
+            setModal('recovery-case');
+          }}
+        />
+      )}
+      {modal === 'recovery-picker' && live && (
+        <Modal title="Choose recovery case" onClose={closeModal} wide>
+          <p className="field-hint">
+            Select the incident to review its passenger groups and search current flight, hotel and
+            transfer offers.
+          </p>
+          {recoverySetup?.scenarioId === world.scenario_id && (
+            <p className="case-source-warning">
+              {groupRecoveryEntry(world, recoverySetup.groupId)?.detail}
+            </p>
+          )}
+          <RecoveryCases
+            world={world}
+            onOpen={(id) => {
+              const setup = recoverySetup;
+              openRecoveryCase(id);
+              if (setup?.scenarioId === worldRef.current?.scenario_id) setRecoverySetup(setup);
+            }}
+          />
+        </Modal>
       )}
       {modal === 'voice-review' && currentVoiceReview && (
         <VoiceRequestReviewDialog
@@ -1011,11 +1118,16 @@ function Operations() {
           key={`${world.scenario_id}:${recoveryCaseId ?? 'new'}`}
           world={world}
           incidentId={recoveryCaseId}
+          initialSelection={recoverySelection}
+          setupGroupId={
+            recoverySetup?.scenarioId === world.scenario_id ? recoverySetup.groupId : undefined
+          }
           onApplied={applyResult}
           onRefresh={refresh}
           onClose={closeModal}
-          onManageData={(id) => {
-            setRecoveryCaseId(id);
+          onManageData={(context) => {
+            setRecoveryCaseId(context.incidentId);
+            setRecoveryDataContext({ ...context, groupIds: [...context.groupIds] });
             setModal('live-data');
           }}
         />

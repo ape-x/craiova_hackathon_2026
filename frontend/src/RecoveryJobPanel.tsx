@@ -3,14 +3,20 @@ import AirportTransferRecoveryFields, {
   AirportTransferRequestDetails,
 } from './AirportTransferRecoveryFields';
 import { airportTransferInputs } from './airportTransferRecovery';
-import type { AirportTransferDraft } from './airportTransferRecovery';
 import AirportTransferQuoteObservations from './AirportTransferQuoteObservations';
 import SavedAirportTransferInputs from './SavedAirportTransferInputs';
 import SavedAfterFlightInputs from './SavedAfterFlightInputs';
 import AfterFlightTransferFields, {
   AfterFlightTransferRequestDetails,
 } from './AfterFlightTransferFields';
-import { afterFlightTransferInput, type AfterFlightTransferDraft } from './afterFlightTransfer';
+import { afterFlightTransferInput } from './afterFlightTransfer';
+import {
+  cloneRecoveryFormDraft,
+  restoreRecoveryFormDraft,
+  type RecoveryFormDraft,
+} from './recoveryFormDraft';
+import { initialRecoverySelection, recoveryGroupSelectionIssue } from './recoveryNavigation';
+import type { RecoveryDataContext } from './recoveryDataContext';
 import { Loader2, RefreshCw, Square } from 'lucide-react';
 import { api, ApiError, TransportError } from './api';
 import type {
@@ -449,6 +455,9 @@ export default function RecoveryJobPanel({
   onMutationPending,
   refreshSignal = 0,
   receivedJob,
+  initialSelection,
+  onSelectionChange,
+  onDraftChange,
 }: {
   world: World;
   incident: RecoveryIncident;
@@ -457,6 +466,9 @@ export default function RecoveryJobPanel({
   onMutationPending: (value: boolean) => void;
   refreshSignal?: number;
   receivedJob?: RecoveryJob | null;
+  initialSelection?: RecoveryDataContext;
+  onSelectionChange?: (groupIds: string[]) => void;
+  onDraftChange?: (draft: RecoveryFormDraft) => void;
 }) {
   const [jobs, setJobs] = useState<RecoveryJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -465,24 +477,94 @@ export default function RecoveryJobPanel({
   const [refresh, setRefresh] = useState(0);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState<TransportError | null>(null);
-  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
-  const [objective, setObjective] = useState<RecoveryJobInput['objective']>('balanced');
-  const [modes, setModes] = useState<RecoveryJobInput['modes']>(['flight']);
-  const [limit, setLimit] = useState('8');
-  const [instructions, setInstructions] = useState('');
-  const [hotelMode, setHotelMode] = useState(false);
-  const [hotelFields, setHotelFields] = useState(emptyHotelRecoveryForm);
-  const [airportTransfers, setAirportTransfers] = useState<AirportTransferDraft[]>([]);
-  const [afterFlightTransfer, setAfterFlightTransfer] = useState<AfterFlightTransferDraft | null>(
-    null,
+  const [selectionSeed] = useState(() =>
+    initialRecoverySelection(world, incident, initialSelection),
   );
+  const [selectionWarning, setSelectionWarning] = useState(selectionSeed.issue);
+  const [restoredDraft] = useState(() =>
+    restoreRecoveryFormDraft(world, incident, initialSelection),
+  );
+  const [draftIssue, setDraftIssue] = useState(restoredDraft.issue);
+  const newDraft = (groupIds: string[] = []): RecoveryFormDraft => ({
+    groupIds,
+    objective: 'balanced',
+    modes: ['flight'],
+    limit: '8',
+    instructions: '',
+    hotelMode: false,
+    hotelFields: emptyHotelRecoveryForm(),
+    airportTransfers: [],
+    afterFlightTransfer: null,
+  });
+  const [draft, setDraft] = useState<RecoveryFormDraft>(
+    () => restoredDraft.draft ?? newDraft(restoredDraft.issue ? [] : selectionSeed.groupIds),
+  );
+  const draftRef = useRef(draft);
+  function updateDraft<K extends keyof RecoveryFormDraft>(
+    key: K,
+    value: RecoveryFormDraft[K] | ((previous: RecoveryFormDraft[K]) => RecoveryFormDraft[K]),
+  ) {
+    const previous = draftRef.current;
+    const next = {
+      ...previous,
+      [key]:
+        typeof value === 'function'
+          ? (value as (previous: RecoveryFormDraft[K]) => RecoveryFormDraft[K])(previous[key])
+          : value,
+    };
+    draftRef.current = next;
+    setDraft(next);
+    if (key === 'groupIds') {
+      setSelectionWarning(null);
+      onSelectionChange?.([...next.groupIds]);
+    }
+    onDraftChange?.(cloneRecoveryFormDraft(next));
+  }
+  const {
+    groupIds: selectedGroups,
+    objective,
+    modes,
+    limit,
+    instructions,
+    hotelMode,
+    hotelFields,
+    airportTransfers,
+    afterFlightTransfer,
+  } = draft;
+  const setSelectedGroups = (
+    value:
+      | RecoveryFormDraft['groupIds']
+      | ((previous: RecoveryFormDraft['groupIds']) => RecoveryFormDraft['groupIds']),
+  ) => updateDraft('groupIds', value);
+  const setObjective = (value: RecoveryFormDraft['objective']) => updateDraft('objective', value);
+  const setModes = (
+    value:
+      | RecoveryFormDraft['modes']
+      | ((previous: RecoveryFormDraft['modes']) => RecoveryFormDraft['modes']),
+  ) => updateDraft('modes', value);
+  const setLimit = (value: string) => updateDraft('limit', value);
+  const setInstructions = (value: string) => updateDraft('instructions', value);
+  const setHotelMode = (value: boolean) => updateDraft('hotelMode', value);
+  const setHotelFields = (
+    value:
+      | RecoveryFormDraft['hotelFields']
+      | ((previous: RecoveryFormDraft['hotelFields']) => RecoveryFormDraft['hotelFields']),
+  ) => updateDraft('hotelFields', value);
+  const setAirportTransfers = (value: RecoveryFormDraft['airportTransfers']) =>
+    updateDraft('airportTransfers', value);
+  const setAfterFlightTransfer = (value: RecoveryFormDraft['afterFlightTransfer']) =>
+    updateDraft('afterFlightTransfer', value);
   const running = useRef(false);
   const mounted = useRef(true);
   const current = useRef({ world, onRefresh, onMutationPending });
   current.current = { world, onRefresh, onMutationPending };
   const refreshedVersion = useRef(0);
   const groups = world.groups.filter((group) => incident.group_ids.includes(group.id));
-  const eligible = groups.filter((group) => group.status !== 'confirmed');
+  const groupIssues = new Map(
+    groups.map((group) => [group.id, recoveryGroupSelectionIssue(world, incident, [group.id])]),
+  );
+  const eligible = groups.filter((group) => !groupIssues.get(group.id));
+  const selectionIssue = recoveryGroupSelectionIssue(world, incident, selectedGroups);
   const hotelGroupCandidate =
     selectedGroups.length === 1
       ? eligible.find((group) => group.id === selectedGroups[0])
@@ -579,6 +661,41 @@ export default function RecoveryJobPanel({
   return (
     <section className="case-job-panel" aria-label="Source recovery alternatives">
       <h3>Find sourced alternatives</h3>
+      {draftIssue && (
+        <div className="case-source-warning" role="alert">
+          <p>
+            The saved search draft needs review: {draftIssue} No replacement inputs or call
+            allowance have been accepted.
+          </p>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={locked}
+            onClick={() => {
+              const fresh = newDraft();
+              draftRef.current = fresh;
+              setDraft(fresh);
+              setDraftIssue(null);
+              setSelectionWarning(null);
+              onSelectionChange?.([]);
+              onDraftChange?.(cloneRecoveryFormDraft(fresh));
+            }}
+          >
+            Discard saved draft and start again · default 8 calls
+          </button>
+        </div>
+      )}
+      {selectionWarning && (
+        <p className="case-source-warning">
+          Requested selection could not be restored: {selectionWarning} Choose the groups explicitly
+          below.
+        </p>
+      )}
+      {selectionIssue && (
+        <p className="case-source-warning" role="alert">
+          {selectionIssue}
+        </p>
+      )}
       <p className="field-hint">
         Search suppliers for explicitly selected groups in this case. Calls can incur provider
         charges. Results are proposals; this action does not book or pay for travel. Existing
@@ -629,8 +746,9 @@ export default function RecoveryJobPanel({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (locked || active || loading || loadError) return;
+            if (locked || active || loading || loadError || draftIssue) return;
             if (
+              selectionIssue ||
               !selectedGroups.length ||
               selectedGroups.length > 24 ||
               selectedGroups.some((id) => !eligible.some((group) => group.id === id))
@@ -700,7 +818,10 @@ export default function RecoveryJobPanel({
             );
           }}
         >
-          <fieldset className="case-fieldset" disabled={locked || active || loading}>
+          <fieldset
+            className="case-fieldset"
+            disabled={locked || active || loading || Boolean(draftIssue)}
+          >
             <legend className="field-hint">Groups to search for</legend>
             {world.mode === 'live' && (
               <fieldset className="case-job-modes hotel-recovery-choice">
@@ -743,7 +864,7 @@ export default function RecoveryJobPanel({
                         selectedGroups.includes(group.id) &&
                         (!hotelMode || (selectedGroups.length === 1 && !hotelIssue))
                       }
-                      disabled={group.status === 'confirmed' || Boolean(hotelIssue)}
+                      disabled={Boolean(groupIssues.get(group.id)) || Boolean(hotelIssue)}
                       onChange={(event) => {
                         if (hotelMode) {
                           setSelectedGroups([group.id]);
@@ -767,9 +888,7 @@ export default function RecoveryJobPanel({
                       </strong>
                       <small>
                         {passengerSourceLabel(group.source)} ·{' '}
-                        {group.status === 'confirmed'
-                          ? 'Already supplier confirmed; excluded'
-                          : `${group.origin} → ${group.destination}`}
+                        {groupIssues.get(group.id) ?? `${group.origin} → ${group.destination}`}
                       </small>
                       {hotelIssue && <small>{hotelIssue}</small>}
                     </span>
@@ -935,6 +1054,7 @@ export default function RecoveryJobPanel({
             <button
               className="primary-button"
               disabled={
+                Boolean(selectionIssue) ||
                 !selectedGroups.length ||
                 selectedGroups.length > 24 ||
                 (hotelMode ? !hotelGroup : !modes.length) ||

@@ -11,6 +11,8 @@ import './liveData.css';
 import LiveTravelSearch from './LiveTravelSearch';
 import PlanningTransfers from './PlanningTransfers';
 import { isAirportNode, locationKindLabel } from './locationNodes';
+import { recoveryDataReturnIssue, resolveRecoveryDataContext } from './recoveryDataContext';
+import type { RecoveryDataContext } from './recoveryDataContext';
 
 type Tab =
   'search' | 'planning_transfer' | 'generate' | 'passengers' | 'transport' | 'hotels' | 'confirm';
@@ -89,10 +91,14 @@ export default function LiveDataDialog({
   world,
   onClose,
   onApplied,
+  recoveryContext,
+  onReturnToCase,
 }: {
   world: World;
   onClose: () => void;
   onApplied: (result: MutationResult) => void;
+  recoveryContext?: RecoveryDataContext;
+  onReturnToCase?: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('passengers');
   const [csv, setCsv] = useState('');
@@ -147,6 +153,16 @@ export default function LiveDataDialog({
   const [travelPending, setTravelPending] = useState(false);
   const pending = useRef(false);
   pending.current = busy || Boolean(uncertain) || travelPending;
+  const recovery = resolveRecoveryDataContext(world, recoveryContext);
+  const returnIssue = recoveryDataReturnIssue(world, recoveryContext, pending.current);
+  function returnToCase() {
+    const issue = recoveryDataReturnIssue(world, recoveryContext, pending.current);
+    if (issue) {
+      setError(issue);
+      return;
+    }
+    onReturnToCase?.();
+  }
   const close = useCallback(() => {
     if (pending.current) {
       setError('Finish or recover the pending submission before closing this dialog.');
@@ -302,6 +318,45 @@ export default function LiveDataDialog({
   }
   return createPortal(
     <Modal title="Operation data" onClose={close} wide>
+      {recovery.kind !== 'general' && (
+        <section className="case-saved-summary" aria-label="Recovery case context">
+          {recovery.kind === 'ready' ? (
+            <>
+              <strong>
+                Recovery case {recovery.incident.id} · {recovery.incident.requested_flight_number}
+              </strong>
+              <p>
+                {recovery.groups.length
+                  ? `Selected groups: ${recovery.groups.map((group) => `${group.name} (${group.id})`).join(', ')}`
+                  : 'No passenger groups selected for recovery.'}
+              </p>
+              <p className="field-hint">
+                Operation data remains available for all groups. Returning opens this case for
+                review; it does not link passengers or start a provider search.
+              </p>
+            </>
+          ) : (
+            <p className="form-error" role="status">
+              {recovery.reason}
+            </p>
+          )}
+          {onReturnToCase && (
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={Boolean(returnIssue)}
+              onClick={returnToCase}
+            >
+              Return to recovery case
+            </button>
+          )}
+          {pending.current && (
+            <p className="field-hint" role="status">
+              Finish or recover the pending submission before returning to the recovery case.
+            </p>
+          )}
+        </section>
+      )}
       <p className="live-dialog-intro">
         Import a passenger manifest or enter explicitly labeled planning assumptions. Transport and
         accommodation must come from live supplier quotes or documented operator verification.

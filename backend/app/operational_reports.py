@@ -14,6 +14,7 @@ from .hotel_recovery import HotelRecoveryInputs, validate_hotel_job
 from .airport_cab_recovery import AirportCabRecoveryInput, validate_airport_transfer_job
 from .after_flight_inputs import AfterFlightTransferInput
 from .after_flight_recovery import validate_after_flight_job
+from .confirmed_allocations import has_confirmed_groups
 from .live_data import _known_airport_code, _new_airports, aware, relative_minute
 from .live_service import _find, _invalidate_pending, _live
 from .models import Model, Mutation, World
@@ -113,9 +114,7 @@ def _history(provenance, key):
 
 
 def _confirmed_groups(world, group_ids):
-    return (any(group.id in group_ids and group.status == "confirmed" for group in world.groups)
-        or any(offer.group_id in group_ids and (offer.status == "confirmed" or offer.external_bookings) for offer in world.offers)
-        or any(item.group_id in group_ids and item.status == "confirmed" for item in world.reservations))
+    return has_confirmed_groups(world, group_ids)
 
 
 def _confirmed_service(world, resource):

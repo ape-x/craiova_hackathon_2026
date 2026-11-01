@@ -18,6 +18,7 @@ from .airport_cab_profile import AirportCabProfiles
 from .after_flight_inputs import AfterFlightTransferInput
 from .after_flight_profile import AfterFlightProfiles
 from .after_flight_recovery import run_after_flight_recovery, validate_after_flight_job
+from .confirmed_allocations import confirmed_group_ids, require_consistent_confirmations
 from .hotel_location import coordinate_timezone, property_zone
 from .hotel_recovery import HotelRecoveryInputs, _rates, _restore_rates, run_hotel_recovery, validate_hotel_job
 from .live_data import identifier
@@ -82,12 +83,13 @@ def scope_fingerprint(world,incident_id,group_ids):
     incident=next((item for item in world.incidents if item.id==incident_id),None)
     if incident is None:
         raise DomainError(404,"Recovery incident not found")
+    protected = confirmed_group_ids(world)
     selected=[]
     for group_id in group_ids:
         group=next((item for item in world.groups if item.id==group_id),None)
         if group is None or group.incident_id!=incident.id or group_id not in incident.group_ids:
             raise DomainError(409,"Every selected passenger group must be explicitly bound to this incident")
-        if group.status=="confirmed" or any(offer.group_id==group_id and offer.status=="confirmed" for offer in world.offers):
+        if group_id in protected:
             raise DomainError(409,"Supplier-confirmed groups require separate operator handling; this job cannot replace their bookings")
         selected.append(group.model_dump(exclude={"token","members","name"}))
     context=incident.model_dump(exclude={"flight","flight_context_state","flight_ref"})
@@ -342,6 +344,7 @@ class RecoveryJobs:
         current=await asyncio.to_thread(self.store.read)
         if current.version!=job["_planning_version"] or scope_fingerprint(current,job["incident_id"],job["group_ids"])!=job["_scope_hash"]:
             raise DomainError(409,"Operation changed while sourcing; no further provider call was issued. Review the recorded results before a new attempt.")
+        require_consistent_confirmations(current)
         step=await asyncio.to_thread(self.ledger.dispatch,job["id"],owner,stage,provider,query,group_ids,expected_version=job["_planning_version"])
         try:
             async with asyncio.timeout(self.settings.request_timeout_seconds):
@@ -480,6 +483,7 @@ class RecoveryJobs:
                     sorted({item["group_id"] for item in conflicts}))])
             return
         groups=[item for item in world.groups if item.id in job["group_ids"]]
+        require_consistent_confirmations(world)
         gaps=[]
         if not self.ai or not self.ai.configured:
             await self._update(job,owner,status="blocked",stage="finished",message="Real AI is unavailable; no scripted planning fallback was used.",gaps=[gap("ai_not_configured","Connect the real Responses and Decisions provider.",job["group_ids"])])

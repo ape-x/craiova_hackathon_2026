@@ -129,6 +129,7 @@ export default function RecoveryCases({
               <small>
                 {activeCaseRestrictions(incident).length} active airport directions restricted
               </small>
+              <small>{incident.date_utc} UTC</small>
               <small>
                 {incident.status === 'needs_passenger_data'
                   ? 'Needs passenger data'

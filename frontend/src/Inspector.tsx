@@ -44,6 +44,7 @@ import { unavailabilityIssue } from './operationalReports';
 import { AirportArrivalDetails, SupplierMeetingInstructions } from './TransferEvidence';
 import { AirportCabFareDetails, isAirportCab } from './airportCabPresentation';
 import PostflightConnectionDetails from './PostflightConnectionDetails';
+import { groupRecoveryEntry, type GroupRecoveryIntent } from './groupRecoveryEntry';
 import {
   costPresentation,
   EstimatedCostNote,
@@ -857,12 +858,46 @@ function LatencySummary({ decisions }: { decisions: Decision[] }) {
   );
 }
 
+export function GroupRecoveryAction({
+  world,
+  groupId,
+  busy,
+  onGroupRecovery,
+}: {
+  world: World;
+  groupId: string;
+  busy: boolean;
+  onGroupRecovery?: (intent: GroupRecoveryIntent) => void;
+}) {
+  const entry = groupRecoveryEntry(world, groupId);
+  if (!entry) return null;
+  return (
+    <div className="inspector-section" aria-label="Passenger group recovery">
+      <p className="field-hint">{entry.detail}</p>
+      <button
+        type="button"
+        className="primary-button"
+        disabled={busy || !onGroupRecovery}
+        onClick={() => {
+          if (!busy) onGroupRecovery?.(entry.intent);
+        }}
+      >
+        {entry.label} <ArrowRight size={15} />
+      </button>
+      {!onGroupRecovery && (
+        <p className="field-hint">Open Recovery cases in the network panel to continue.</p>
+      )}
+    </div>
+  );
+}
+
 export default function Inspector({
   world,
   selectedId,
   onSelect,
   onClose,
   onReplan,
+  onGroupRecovery,
   onScenario,
   onApplied,
   onRefresh,
@@ -875,6 +910,7 @@ export default function Inspector({
   onSelect: (id: string) => void;
   onClose: () => void;
   onReplan: () => void;
+  onGroupRecovery?: (intent: GroupRecoveryIntent) => void;
   onScenario: () => void;
   onApplied?: (result: MutationResult) => void;
   onRefresh?: () => Promise<unknown>;
@@ -1015,16 +1051,35 @@ export default function Inspector({
             ) : (
               <div className="empty-detail">
                 <ClipboardList size={30} />
-                <h3>Finding a way forward</h3>
+                <h3>
+                  {world.mode === 'live' ? 'No current recovery proposal' : 'Finding a way forward'}
+                </h3>
                 <p>
-                  {group.status === 'exception'
-                    ? 'No complete itinerary was allocated. Add verified inventory or review the constraints.'
-                    : 'Run the recovery planner to create a complete itinerary.'}
+                  {world.mode === 'live'
+                    ? 'Review this group’s case and requirements to find a complete journey using current supplier quotes.'
+                    : group.status === 'exception'
+                      ? 'No complete itinerary was allocated. Add verified inventory or review the constraints.'
+                      : 'Run the recovery planner to create a complete itinerary.'}
                 </p>
-                <button className="primary-button" disabled={busy} onClick={onReplan}>
-                  Calculate recovery <ArrowRight size={15} />
-                </button>
+                {world.mode !== 'live' && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={busy}
+                    onClick={onReplan}
+                  >
+                    Calculate recovery <ArrowRight size={15} />
+                  </button>
+                )}
               </div>
+            )}
+            {world.mode === 'live' && (
+              <GroupRecoveryAction
+                world={world}
+                groupId={group.id}
+                busy={busy}
+                onGroupRecovery={onGroupRecovery}
+              />
             )}
             <ShareOffer group={group} config={config} />
           </>

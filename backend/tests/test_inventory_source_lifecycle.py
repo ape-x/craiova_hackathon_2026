@@ -5,8 +5,9 @@ from datetime import timedelta
 import pytest
 
 from app.inventory_lifecycle import archive_resources, archived_location, ensure_inventory_capacity, resource_history
+from app.confirmed_allocations import confirmation_accounting_issues
 from app.live_travel import append_travel_quote, retire_travel_quotes
-from app.models import Airport, Resource
+from app.models import Airport, Itinerary, Leg, Offer, Reservation, Resource
 from app.scenario_schema import MAX_AIRPORTS, MAX_RESOURCES
 from app.store import DomainError, utcnow
 from test_live_travel import live, quote, search
@@ -26,6 +27,34 @@ def filler(world, identity):
     return Resource(id=identity, kind="bus", name="Retired fixture quote", origin=world.groups[0].origin,
         destination=world.groups[0].destination, departure=world.sim_time+60, arrival=world.sim_time+120,
         capacity=2, cost_per_person=1, available=False, source="fixture supplier")
+
+
+def confirmed_filler(world, identity):
+    """Retain a complete independent booking, not an orphan booked flag."""
+    group = world.groups[1].model_copy(deep=True)
+    group.id, group.name, group.token = "GROUP-"+identity, "Booked fixture "+identity, "offline-"+identity
+    group.status, group.incident_id = "confirmed", None
+    group.original_flight_id = "ORIGINAL-"+identity
+    group.size = group.adult_count = 1
+    group.members = ["Independent fixture passenger "+identity]
+    group.provenance = {}
+    resource = Resource(id=identity, kind="bus", name="Confirmed independent fixture service",
+        origin=group.origin, destination=group.destination, departure=group.ready_at+60,
+        arrival=group.ready_at+120, capacity=1, cost_per_person=1, source="fixture supplier",
+        booking_status="confirmed", eligible_group_ids=[group.id],
+        valid_until=(utcnow()-timedelta(hours=1)).isoformat())
+    expiry = (utcnow()+timedelta(hours=1)).isoformat()
+    offer = Offer(id="OFFER-"+identity, group_id=group.id, status="confirmed", expires_at=expiry,
+        confirmed_at=utcnow().isoformat(), created_version=world.version,
+        external_bookings=[{"resource_id": resource.id, "confirmation_reference": "OFFLINE-"+identity}],
+        itinerary=Itinerary(legs=[Leg(resource_id=resource.id, kind="bus", origin=resource.origin,
+            destination=resource.destination, departure=resource.departure, arrival=resource.arrival, cost=1)],
+            total_cost=1, arrival=resource.arrival))
+    world.groups.append(group)
+    world.resources.append(resource)
+    world.offers.append(offer)
+    world.reservations.append(Reservation(id="RESERVATION-"+identity, offer_id=offer.id, group_id=group.id,
+        resource_id=resource.id, quantity=1, status="confirmed", expires_at=expiry))
 
 
 def test_more_than_lifetime_limit_revisions_preserve_exact_history_and_never_restore_old_fare(live):
@@ -238,15 +267,15 @@ async def test_protected_resource_capacity_failure_keeps_world_and_source_histor
     store,jobs,ai,travel,sources,fx,inputs = package
     def fill(world):
         for number in range(MAX_RESOURCES):
-            resource = filler(world, f"BOOKED-{number}")
-            resource.booking_status = "confirmed"
-            world.resources.append(resource)
+            confirmed_filler(world, f"BOOKED-{number}")
     store.mutate("fully-booked-inventory", {}, store.read().version, fill)
+    assert confirmation_accounting_issues(store.read()) == []
     before = world_snapshot(store)
     jobs.start("CASE", package_request(store, inputs))
     result = await run_next(jobs)
     assert result["status"] == "needs_review", result
     assert "Active inventory capacity is full" in result["message"]
+    assert result["calls_dispatched"] > 0 and sources.calls
     assert world_snapshot(store) == before
     assert len(resource_history(store.read())) == MAX_RESOURCES
 
@@ -259,10 +288,12 @@ async def test_capacity_blocked_first_offer_does_not_hide_later_existing_feasibl
     existing = copy.deepcopy(store.read().resources[0].provenance)
     def fill(world):
         while len(world.resources) < MAX_RESOURCES:
-            resource = filler(world, f"RETAINED-{len(world.resources)}")
-            resource.booking_status = "confirmed"
-            world.resources.append(resource)
+            confirmed_filler(world, f"RETAINED-{len(world.resources)}")
     store.mutate("protected-candidate-limit", {}, store.read().version, fill)
+    assert confirmation_accounting_issues(store.read()) == []
+    before = world_snapshot(store)
+    protected = {field: [item for item in before[field] if "RETAINED-" in item["id"]]
+        for field in ("groups", "resources", "offers", "reservations")}
     async def alternatives(query):
         newer = {**copy.deepcopy(existing), "id": "NEW-NEEDS-SPACE", "provider_offer_id": "NEW-NEEDS-SPACE"}
         return {"state": "ready", "source": "fixture-supplier", "items": [newer, copy.deepcopy(existing)]}
@@ -271,6 +302,10 @@ async def test_capacity_blocked_first_offer_does_not_hide_later_existing_feasibl
     result = await run_next(jobs)
     assert result["status"] == "completed", result
     assert result["result"]["recovered_passengers"] == 1
+    assert result["calls_dispatched"] == 3 and len(travel.calls) == 2
     assert any(item["code"] == "inventory_capacity_exhausted" for item in result["gaps"])
     assert len(store.read().resources) == MAX_RESOURCES
     assert not any(item.external_offer_id == "NEW-NEEDS-SPACE" for item in store.read().resources)
+    after = world_snapshot(store)
+    assert protected == {field: [item for item in after[field] if "RETAINED-" in item["id"]]
+        for field in protected}

@@ -353,12 +353,24 @@ def build_candidate(world: World, strategy: Strategy, scope_group_ids: set[str] 
             options[g.id], invalid_stays[g.id] = [], str(exc)
     resources = {r.id:r for r in projected.resources}
     fixed = fixed_offers(projected,scope_group_ids)
-    fixed_ids = {offer.id for offer in fixed}
+    group_by_id = {group.id:group for group in projected.groups}
+    # Match the independent validator's fixed itinerary accounting. Reservation
+    # rows mirror these allocations; adding them would double-count passengers,
+    # while relying on them alone loses capacity/vehicle occupancy for legacy
+    # itineraries with missing rows. No persistent reservation is reconstructed.
+    initial_used = Counter()
+    for offer in fixed:
+        group = group_by_id.get(offer.group_id)
+        if group is None:
+            continue  # The final independent check rejects missing references.
+        for leg in offer.itinerary.legs:
+            resource = resources.get(leg.resource_id)
+            if resource is not None:
+                initial_used[resource.id] += units(resource,group)
     # The fleet uncertainty policy follows fixed itinerary legs even when a
     # legacy/local reservation row is absent. It is not source stock of one.
     fixed_cab_ids = {leg.resource_id for offer in fixed for leg in offer.itinerary.legs
         if leg.resource_id in resources and resources[leg.resource_id].source == AIRPORT_CAB_SOURCE}
-    initial_used = Counter({r.id: sum(item.quantity for item in projected.reservations if item.resource_id==r.id and item.offer_id in fixed_ids and item.status in ("held","proposed","accepted","confirmed")) for r in projected.resources})
     initial_cost = sum(o.itinerary.total_cost for o in fixed)
     weights={k:max(0,min(100,float(strategy.weights.get(k,1)))) for k in ("arrival","cost","stability")}
     old_routes={o.group_id:tuple(l.resource_id for l in o.itinerary.legs) for o in active_offers(projected) if o.status=="held"}

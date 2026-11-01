@@ -8,6 +8,7 @@ import sqlite3
 from datetime import timedelta
 from pydantic import ValidationError
 from .config import Settings
+from .confirmed_allocations import require_consistent_confirmations
 from .models import Allocation, Decision, Offer, Reservation, ScenarioChange, Strategy, World, canonical_id
 from .scenario_authoring import add_airport, add_passengers, add_resource, airport_reference, validate_route, validate_schedule
 from .scenario_schema import MAX_COMMAND_EVENTS, WeatherDefinition
@@ -361,6 +362,7 @@ class RecoveryService:
             lambda world:apply_change(world,ScenarioChange(type=request.type,target_id=request.target_id,value=request.value)))
 
     def _hold_plan(self,world,plan,mode,request,provider,explanation,candidates,latency,focus_id=None,timings=None,apply_started=None,candidate_counts=None,scope_group_ids=None):
+        require_consistent_confirmations(world)
         apply_started=apply_started if apply_started is not None else time.perf_counter()
         if scope_group_ids is not None and (plan.scenario_changes or any(item.get("group_id") not in scope_group_ids for item in plan.exceptions)):
             raise DomainError(409,"A scoped recovery plan cannot change the scenario or unrelated passenger groups")
@@ -423,6 +425,7 @@ class RecoveryService:
         world=self.store.read()
         if world.version!=request.expected_version:
             raise DomainError(409,"World changed; refresh before planning",{"current_version":world.version})
+        require_consistent_confirmations(world)
         solver_started=time.perf_counter()
         candidates=[build_candidate(world,s) for s in default_strategies(world) or [Strategy()]]
         computed_count=len(candidates)
