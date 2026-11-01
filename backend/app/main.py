@@ -10,7 +10,6 @@ import secrets
 import time
 import sqlite3
 from contextlib import asynccontextmanager, suppress
-from collections import defaultdict, deque
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -20,6 +19,7 @@ from pydantic import Field, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import Settings
+from .passwords import verify_password
 from .models import AcceptRequest, CommandRequest, ConstraintRequest, EventRequest, LoginRequest, Model, Mutation, ReplanRequest, World
 from .providers import AIProvider, FlightProvider, ProviderError, VoiceProvider
 from .real_data import RealDataRequest, RealDataService
@@ -121,7 +121,11 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     operational_reports=OperationalReports(store,jobs)
     airport_restrictions=AirportRestrictions(store,jobs)
     notifications=NotificationService(settings,store)
-    login_attempts=defaultdict(deque)
+    with store.connect() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS login_limits (client TEXT PRIMARY KEY, expires REAL NOT NULL, attempts INTEGER NOT NULL)")
+    # Rotating either credential invalidates browser sessions on every worker.
+    session_key=hashlib.sha256(json.dumps([settings.operator_token,settings.operator_username,
+        settings.operator_password_hash.get_secret_value()]).encode()).digest()
     # Reserve worst-case credit cost in the persistent shared request ledger;
     # restarting or adding a worker cannot replenish the paid provider budget.
     poll_request_limit=settings.fr24_max_requests
@@ -185,7 +189,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
 
     def session_cookie():
         payload=f"{int(time.time())}.{secrets.token_hex(12)}"
-        digest=hmac.new(settings.operator_token.encode(),payload.encode(),hashlib.sha256).hexdigest()
+        digest=hmac.new(session_key,payload.encode(),hashlib.sha256).hexdigest()
         store.set_control("session:"+digest,int(time.time())+settings.session_ttl_seconds)
         return payload+"."+digest
 
@@ -193,16 +197,16 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         try:
             issued,nonce,digest=value.split(".")
             age=time.time()-int(issued)
-            expected=hmac.new(settings.operator_token.encode(),f"{issued}.{nonce}".encode(),hashlib.sha256).hexdigest()
-            return 0<=age<=settings.session_ttl_seconds and hmac.compare_digest(digest.encode(),expected.encode()) and bool(store.control("session:"+digest,False))
+            expected=hmac.new(session_key,f"{issued}.{nonce}".encode(),hashlib.sha256).hexdigest()
+            return 0<=age<=settings.session_ttl_seconds and hmac.compare_digest(digest.encode(),expected.encode()) and store.control("session:"+digest,0)>time.time()
         except (ValueError,AttributeError,TypeError):
             return False
 
     def authenticated(request: Request):
-        if not settings.operator_token:
+        if not settings.auth_required:
             return True
         bearer=request.headers.get("authorization","")
-        if bearer.startswith("Bearer ") and secrets.compare_digest(bearer[7:].encode(),settings.operator_token.encode()):
+        if settings.operator_token and bearer.startswith("Bearer ") and secrets.compare_digest(bearer[7:].encode(),settings.operator_token.encode()):
             return True
         return valid_session(request.cookies.get("recovery_session",""))
 
@@ -281,7 +285,8 @@ def create_app(settings: Settings | None=None) -> FastAPI:
 
     @app.get("/api/config")
     def config(request: Request):
-        return {"environment":settings.environment,"auth_required":bool(settings.operator_token),"authenticated":authenticated(request),
+        return {"environment":settings.environment,"auth_required":settings.auth_required,"authenticated":authenticated(request),
+            "login_method":"password" if settings.password_auth else "token" if settings.operator_token else None,
             "ai_configured":ai.configured,"voice_configured":voice.configured,"fr24_configured":flights.configured,
             "notification_provider":settings.notification_email_provider,
             "notification_email_provider":settings.notification_email_provider,"notification_sms_provider":"brevo",
@@ -315,15 +320,26 @@ def create_app(settings: Settings | None=None) -> FastAPI:
 
     @app.post("/api/auth/login")
     def login(body: LoginRequest,request: Request,response: Response):
+        if not settings.auth_required:
+            raise DomainError(503,"Operator login is not configured on this server")
         ip=request.client.host if request.client else "unknown"
-        attempts=login_attempts[ip]
-        now=time.monotonic()
-        while attempts and attempts[0]<now-60:
-            attempts.popleft()
-        if len(attempts)>=10:
-            raise DomainError(429,"Too many login attempts; wait one minute")
-        attempts.append(now)
-        if settings.operator_token and not secrets.compare_digest(body.token.encode(),settings.operator_token.encode()):
+        now=time.time()
+        # Atomic and shared by workers/restarts; client addresses are not stored.
+        with store.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DELETE FROM login_limits WHERE expires<=?",(now,))
+            client_hash=hashlib.sha256(ip.encode()).hexdigest()
+            row=conn.execute("SELECT attempts FROM login_limits WHERE client=?",(client_hash,)).fetchone()
+            if row and row[0]>=10:
+                raise DomainError(429,"Too many login attempts; wait one minute")
+            conn.execute("INSERT INTO login_limits VALUES(?,?,1) ON CONFLICT(client) DO UPDATE SET attempts=attempts+1",(client_hash,now+60))
+        if settings.password_auth:
+            # Always derive the password hash, even for an unknown username.
+            password_ok=verify_password(body.password or "",settings.operator_password_hash.get_secret_value())
+            username_ok=secrets.compare_digest((body.username or "").encode(),settings.operator_username.encode())
+            if not (password_ok and username_ok):
+                raise DomainError(401,"Invalid username or password")
+        elif not secrets.compare_digest((body.token or "").encode(),settings.operator_token.encode()):
             raise DomainError(401,"Invalid operator token")
         response.set_cookie("recovery_session",session_cookie(),httponly=True,secure=settings.production,samesite="strict",max_age=settings.session_ttl_seconds,path="/api")
         return {"authenticated":True}
@@ -333,7 +349,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         cookie=request.cookies.get("recovery_session","")
         if valid_session(cookie):
             store.set_control("session:"+cookie.split(".")[-1],None)
-        response.delete_cookie("recovery_session",path="/api")
+        response.delete_cookie("recovery_session",path="/api",httponly=True,secure=settings.production,samesite="strict")
         return {"authenticated":False}
 
     def world_response():

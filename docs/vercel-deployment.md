@@ -122,8 +122,17 @@ Later calls omit that flag. The UUID is retained in `/etc/fstab`.
 Prepare the private runtime file from the current backend settings, with
 [`backend.env.example`](../deploy/google-cloud/backend.env.example) as a checklist.
 Keep all current provider environment selections, models and request/credit
-limits. The operator token must be a literal URL-safe value of at least 32
-characters, without quotes or variable expansion. Do not put secrets in source
+limits. Configure the operator username and password hash in that private file
+before uploading it:
+
+```sh
+python3 backend/scripts/configure_operator.py --env-file /path/to/backend.env --username operator --generate
+```
+
+Save the generated password privately. Keep the script's single quotes around
+the hash so Compose preserves its `$` separators. A separate API bearer token is
+optional; if set, it must be a literal URL-safe value of at least 32 characters,
+without quotes or variable expansion. Do not put secrets in source
 archives, shell command arguments, startup metadata, Vercel frontend variables or
 chat. Upload the file through SSH/SCP and install it as:
 
@@ -198,7 +207,7 @@ sudo bash "/opt/airport-recovery/releases/$REVISION/deploy/google-cloud/deploy.s
 The optional fourth argument is the exact frontend origin, if the final hostname
 differs. The script verifies the installed source manifest before building or
 reusing an image labelled with that revision, validates
-the private token and restored database, and installs a systemd unit. Caddy obtains
+the private operator credentials and restored database, and installs a systemd unit. Caddy obtains
 and renews TLS certificates. The database and Caddy state are on the separate
 persistent disk. No application container starts against a missing database.
 SQLite checks run as the API user to avoid root-owned WAL sidecars.

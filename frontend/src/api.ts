@@ -117,7 +117,8 @@ export const api = {
     }),
   config: (signal?: AbortSignal) => request<AppConfig>('/config', undefined, signal),
   world: (signal?: AbortSignal) => request<World>('/world', undefined, signal),
-  login: (token: string) => request('/auth/login', { token }),
+  login: (username: string, password: string) => request('/auth/login', { username, password }),
+  loginWithToken: (token: string) => request('/auth/login', { token }),
   logout: () => request('/auth/logout', {}),
   planningTransferQuote: (world: World, input: PlanningTransferInput) =>
     request<PlanningTransferQuote>('/transfers/planning-quotes', {

@@ -68,6 +68,7 @@ Configurează credențialele în `backend/.env`, fără a le publica în Git sau
 ```bash
 test -f backend/.env || cp backend/.env.example backend/.env
 chmod 600 backend/.env
+python3 backend/scripts/configure_operator.py --username operator --generate
 docker compose up -d --build
 curl --fail http://127.0.0.1:8080/api/ready
 ```
@@ -75,6 +76,14 @@ curl --fail http://127.0.0.1:8080/api/ready
 Aplicația este disponibilă la **http://localhost:8080**. Backendul este accesibil prin același proxy, iar SQLite rămâne în volumul Docker. Actualizările folosesc aceeași comandă și aceeași instanță. `docker compose down` oprește serviciile; nu folosi `-v` dacă vrei să păstrezi datele.
 
 Pentru dezvoltare și verificări locale sunt necesare Python 3.12 și Node.js 22.12+. [Instrucțiuni backend](docs/backend.md#run-locally).
+
+### Autentificare cu utilizator și parolă
+
+Comanda `configure_operator.py` creează contul unic al operatorului și afișează parola aleatoare o singură dată. Salveaz-o într-un manager de parole. Fișierul privat `backend/.env` păstrează numai `OPERATOR_USERNAME` și `OPERATOR_PASSWORD_HASH` (PBKDF2-SHA256, sare aleatoare, 600.000 de iterații); celelalte configurații sunt păstrate. Fără `--generate`, comanda cere o parolă de minimum 12 caractere, fără afișare în terminal. Rulează comanda numai la configurare sau pentru schimbarea parolei, apoi repornește/recreează API-ul.
+
+Interfața cere **Username** și **Password**. Sesiunea folosește un cookie HttpOnly, SameSite Strict, cu expirare implicită de opt ore și Secure în producție. **Connections → Sign out** revocă sesiunea pe server. Schimbarea utilizatorului sau hashului invalidează sesiunile existente după repornire. Sunt admise maximum zece încercări pe minut per adresă, limita fiind comună workerilor și păstrată la restart.
+
+În producție, contul este obligatoriu. În dezvoltare, lipsa ambelor credențiale și a tokenului lasă accesul local deschis. `OPERATOR_TOKEN` rămâne opțional pentru clienți API cu Bearer; dacă numai acest token este configurat într-o instalare locală mai veche, rămâne disponibil formularul de token. Linkurile pasagerilor își păstrează autorizarea individuală.
 
 ## Integrări
 
@@ -90,7 +99,9 @@ Pentru dezvoltare și verificări locale sunt necesare Python 3.12 și Node.js 2
 | `DUFFEL_ACCESS_TOKEN`, `DUFFEL_ENVIRONMENT=live`        | Furnizor alternativ pentru zboruri                                                                      |
 | `DISTRIBUSION_API_KEY`, `DISTRIBUSION_ENVIRONMENT=live` | Autocare; necesită și activarea fluxului Offers                                                         |
 | `APL_API_KEY`                                           | Cotații Airport Pickups London în GBP per vehicul și import manual aeroport–hotel sau hotel–aeroport; fără rezervare |
-| `PUBLIC_BASE_URL`, `OPERATOR_TOKEN`                     | URL accesibil pasagerilor și autentificarea operatorilor                                                |
+| `PUBLIC_BASE_URL`                                       | URL accesibil pasagerilor                                                                               |
+| `OPERATOR_USERNAME`, `OPERATOR_PASSWORD_HASH`           | Contul operatorului; configurat cu `backend/scripts/configure_operator.py`                               |
+| `OPERATOR_TOKEN`                                        | Token Bearer opțional pentru API                                                                        |
 
 Prezența unei chei înseamnă configurare, nu acces verificat. Conturile sandbox nu furnizează inventar live. Căutările nu efectuează plăți sau rezervări. [Configurare și limite](docs/live-mode.md), [date geografice și hoteliere](docs/real-data.md), [cereri către furnizori](backend/app/providers/README.md).
 
@@ -232,7 +243,7 @@ backend/.venv/bin/python backend/scripts/benchmark.py --samples 12 --passengers 
 Pentru un server cu domeniu și HTTPS:
 
 1. Creează configurația privată fără a suprascrie una existentă: `test -f .env.production || cp .env.production.example .env.production`, apoi `chmod 600 .env.production`.
-2. Setează `APP_DOMAIN`, un `OPERATOR_TOKEN` aleator de minimum 32 de caractere și cheile disponibile. Nu folosi valorile de exemplu drept credențiale.
+2. Setează `APP_DOMAIN` și cheile disponibile. Configurează contul cu `python3 backend/scripts/configure_operator.py --env-file .env.production --username operator --generate`. Dacă ai nevoie de acces API prin Bearer, setează separat un `OPERATOR_TOKEN` aleator de minimum 32 de caractere.
 3. Configurează DNS-ul spre server și accesul la porturile 80/443.
 4. Rulează:
 
@@ -240,7 +251,7 @@ Pentru un server cu domeniu și HTTPS:
 docker compose --env-file .env.production -f compose.production.yaml up -d --build
 ```
 
-Caddy gestionează TLS și proxy-ul. Backendul refuză configurația de producție fără token suficient de lung, URL HTTPS și origini/hosturi explicite. Linkurile pasagerilor sunt capabilități individuale, cu token în fragmentul URL al paginii; nu sunt publicate în exportul de audit. Logurile de acces sunt dezactivate în container pentru a nu înregistra tokenurile din endpointurile API.
+Caddy gestionează TLS și proxy-ul. Backendul refuză configurația de producție fără utilizator și hash valid de parolă, URL HTTPS și origini/hosturi explicite. Linkurile pasagerilor sunt capabilități individuale, cu token în fragmentul URL al paginii; nu sunt publicate în exportul de audit. Logurile de acces sunt dezactivate în container pentru a nu înregistra tokenurile din endpointurile API.
 
 [Lista de verificare a deployului](docs/deploy-checklist.md) include validarea configurației fără afișarea secretelor, readiness, autentificarea și testul de pe telefon. Nu expune direct portul API: configurația Uvicorn are încredere în headerele proxy deoarece numai rețeaua internă Caddy/API îl poate accesa.
 

@@ -29,7 +29,13 @@ export function useWorld() {
       onWorld: receive,
       onConnection: setConnection,
       onError: setError,
-      onAuthRequired: setAuthRequired,
+      onAuthRequired: (required) => {
+        setAuthRequired(required);
+        if (required) {
+          worldRef.current = null;
+          setWorld(null);
+        }
+      },
     });
     transport.current = current;
     return () => {

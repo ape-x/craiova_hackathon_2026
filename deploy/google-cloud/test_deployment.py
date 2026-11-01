@@ -152,16 +152,32 @@ class DeploymentTests(unittest.TestCase):
             database(self.target)
         self.assertFalse(self.target.exists())
 
-    def test_env_requires_private_literal_strong_operator_token(self):
+    def test_env_requires_private_password_account_and_optional_strong_api_token(self):
         path = self.root / "backend.env"
-        path.write_text("OPERATOR_TOKEN=" + "x" * 64 + "\n")
+        account = "OPERATOR_USERNAME='operator'\nOPERATOR_PASSWORD_HASH='pbkdf2_sha256$600000$" + "a" * 32 + "$" + "b" * 64 + "'\n"
+        path.write_text(account)
         path.chmod(0o600)
         environment(path)
-        for value in ("", "short", "${TOKEN_FROM_SHELL}", '"' + "x" * 64 + '"'):
-            path.write_text("OPERATOR_TOKEN=" + value + "\n")
+        path.write_text(account + "OPERATOR_TOKEN=\n")
+        environment(path)
+        path.write_text(account + "OPERATOR_TOKEN=" + "x" * 64 + "\n")
+        environment(path)
+        for value in ("short", "${TOKEN_FROM_SHELL}", '"' + "x" * 64 + '"'):
+            path.write_text(account + "OPERATOR_TOKEN=" + value + "\n")
             with self.subTest(value=value[:5]), self.assertRaises(ValueError):
                 environment(path)
-        path.write_text("OPERATOR_TOKEN=" + "x" * 64 + "\n")
+        for invalid in (
+            "OPERATOR_TOKEN=" + "x" * 64 + "\n",
+            account.replace("OPERATOR_USERNAME='operator'\n", ""),
+            account.replace("OPERATOR_PASSWORD_HASH='", "OPERATOR_PASSWORD_HASH=", 1),
+            account.replace("600000", "1000"),
+            account + "OPERATOR_USERNAME='duplicate'\n",
+            account + "OPERATOR_PASSWORD_HASH='duplicate'\n",
+        ):
+            path.write_text(invalid)
+            with self.assertRaises(ValueError):
+                environment(path)
+        path.write_text(account)
         path.chmod(0o644)
         with self.assertRaisesRegex(ValueError, "0600"):
             environment(path)

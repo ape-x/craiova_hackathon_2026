@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import sqlite3
 import sys
 
@@ -71,15 +72,26 @@ def environment(path: Path) -> None:
         raise ValueError("The private backend env file must be a regular file with mode 0600 or 0400.")
     if path.stat().st_size > 100_000:
         raise ValueError("Unexpected env file size.")
-    tokens = []
+    credentials = {}
     for line in path.read_text().splitlines():
         key, separator, value = line.partition("=")
-        if separator and key.strip() == "OPERATOR_TOKEN":
-            tokens.append(value.strip())
-    # Deliberately require a literal URL-safe token, avoiding dotenv expansion.
-    if (len(tokens) != 1 or len(tokens[0]) < 32
-            or not all(char.isascii() and (char.isalnum() or char in "-_") for char in tokens[0])):
-        raise ValueError("Set one literal URL-safe OPERATOR_TOKEN of at least 32 characters; its value is never printed.")
+        key = key.strip()
+        if separator and key in {"OPERATOR_USERNAME", "OPERATOR_PASSWORD_HASH", "OPERATOR_TOKEN"}:
+            if key in credentials:
+                raise ValueError("Operator credentials must have exactly one definition each.")
+            credentials[key] = value.strip()
+    username = credentials.get("OPERATOR_USERNAME", "")
+    if username.startswith("'") and username.endswith("'"):
+        username = username[1:-1]
+    # Match configure_operator.py's output. Single quotes keep '$' in hashes
+    # literal when Compose reads the private env file; no app imports are needed.
+    if (not re.fullmatch(r"[A-Za-z0-9_.@-]{1,128}", username)
+            or not re.fullmatch(r"'pbkdf2_sha256\$600000\$[0-9a-f]{32}\$[0-9a-f]{64}'",
+                                credentials.get("OPERATOR_PASSWORD_HASH", ""))):
+        raise ValueError("Configure OPERATOR_USERNAME and a single-quoted OPERATOR_PASSWORD_HASH with backend/scripts/configure_operator.py.")
+    token = credentials.get("OPERATOR_TOKEN", "")
+    if token and not re.fullmatch(r"[A-Za-z0-9_-]{32,}", token):
+        raise ValueError("Optional OPERATOR_TOKEN must be a literal URL-safe value of at least 32 characters; its value is never printed.")
 
 
 def main() -> None:

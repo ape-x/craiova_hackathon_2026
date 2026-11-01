@@ -13,7 +13,7 @@ def isolated_settings(tmp_path):
     module_file.parent.mkdir(parents=True)
     module_file.write_text(Path(config.__file__).read_text())
     (backend / '.env').write_text('OPENAI_API_KEY=fixture-backend-key\n')
-    spec = importlib.util.spec_from_file_location('isolated_config', module_file)
+    spec = importlib.util.spec_from_file_location('app.isolated_config', module_file)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.Settings, backend
