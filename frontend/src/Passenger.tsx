@@ -26,6 +26,7 @@ import {
 } from './passengerDeadline';
 
 interface PassengerState {
+  demo?: boolean;
   version: number;
   epoch: string;
   sim_time: number;
@@ -225,7 +226,11 @@ function PassengerJourney({ token }: { token: string }) {
         ) : (
           <>
             <div className="passenger-greeting">
-              <span className="eyebrow">YOUR JOURNEY, RECONNECTED</span>
+              <span className="eyebrow">
+                {state.demo
+                  ? 'FICTIONAL PASSENGER · REAL SUPPLIER DATA'
+                  : 'YOUR JOURNEY, RECONNECTED'}
+              </span>
               <h1>
                 {confirmed
                   ? live

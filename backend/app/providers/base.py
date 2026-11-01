@@ -23,6 +23,8 @@ class HTTPProvider:
             await self.client.aclose()
 
     async def request(self, method: str, url: str, *, provider: str, **kwargs: Any) -> dict:
+        from ..provider_budget import consume_call
+        consume_call(provider)
         try:
             response = await self.client.request(method, url, timeout=self.timeout, **kwargs)
             response.raise_for_status()

@@ -14,6 +14,7 @@ import type { World } from './types';
 interface Props {
   locationLabel: string;
   mode: World['mode'];
+  demo?: boolean;
   connected: boolean;
   sidebarOpen: boolean;
   showLog: boolean;
@@ -24,6 +25,7 @@ interface Props {
   onHelp: () => void;
   onStartRecovery?: () => void;
   onNewScenario?: () => void;
+  onDemoSetup?: () => void;
 }
 
 export default function WorkspaceHeader(props: Props) {
@@ -47,6 +49,17 @@ export default function WorkspaceHeader(props: Props) {
         <strong>{props.locationLabel}</strong>
       </div>
       <div className="header-actions">
+        {props.demo && props.onDemoSetup && (
+          <button
+            className="primary-button start-recovery-header"
+            onClick={props.onDemoSetup}
+            aria-label="New test case"
+            title="Create fictional passengers for a real supplier search"
+          >
+            <Plus size={15} />
+            <span>New test case</span>
+          </button>
+        )}
         {props.mode === 'simulation' && props.onNewScenario && (
           <button
             className="primary-button start-recovery-header"
@@ -58,7 +71,7 @@ export default function WorkspaceHeader(props: Props) {
             <span>New scenario</span>
           </button>
         )}
-        {props.mode === 'live' && props.onStartRecovery && (
+        {props.mode === 'live' && !props.demo && props.onStartRecovery && (
           <button
             className="primary-button start-recovery-header"
             onClick={props.onStartRecovery}
@@ -75,7 +88,12 @@ export default function WorkspaceHeader(props: Props) {
           {props.connected ? 'Connected' : 'Reconnecting'}
         </span>
         <button className="mode-selector" onClick={props.onSettings}>
-          {props.mode === 'live' ? 'Live · assisted' : 'Simulation'} <ChevronDown size={13} />
+          {props.demo
+            ? 'Simulation · live data'
+            : props.mode === 'live'
+              ? 'Live · assisted'
+              : 'Simulation'}{' '}
+          <ChevronDown size={13} />
         </button>
         <button
           className="icon-button"
@@ -97,7 +115,9 @@ export default function WorkspaceHeader(props: Props) {
         <button
           className="icon-button header-help"
           onClick={props.onHelp}
-          aria-label={props.mode === 'live' ? 'Operation guide' : 'Simulation guide'}
+          aria-label={
+            props.demo || props.mode === 'simulation' ? 'Simulation guide' : 'Operation guide'
+          }
           title="Guide"
         >
           <HelpCircle size={18} />

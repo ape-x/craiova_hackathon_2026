@@ -281,6 +281,8 @@ class RealDataProvider:
                 await asyncio.sleep(max(0, 1 - (time.monotonic() - self._public_last)))
                 self._public_last = time.monotonic()
         headers = {"User-Agent": USER_AGENT, "Accept": "application/json", **kwargs.pop("headers", {})}
+        from ..provider_budget import consume_call
+        consume_call(source)
         try:
             # timeout() bounds the whole transfer, not only idle time between chunks.
             async with asyncio.timeout(self.timeout):

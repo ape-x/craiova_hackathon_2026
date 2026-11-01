@@ -1,0 +1,166 @@
+.passenger-notifications {
+  margin-top: 12px;
+  border: 1px solid var(--border, #30434c);
+  border-radius: 8px;
+  background: var(--panel, transparent);
+  font-size: 12px;
+  min-width: 0;
+}
+.passenger-notifications summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.passenger-notifications summary::after {
+  content: "+";
+  margin-left: auto;
+}
+.passenger-notifications[open] summary::after {
+  content: "−";
+}
+.passenger-notifications summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.passenger-notifications-body {
+  padding: 0 12px 12px;
+  min-width: 0;
+}
+.passenger-notifications p {
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+.passenger-notifications fieldset {
+  padding: 0;
+  margin: 0 0 10px;
+  border: 0;
+  min-width: 0;
+}
+.passenger-notifications legend {
+  font-size: 11px;
+  font-weight: 600;
+  margin: 0 0 7px;
+}
+.passenger-notifications-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+.passenger-notifications-channels label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.passenger-notifications-channels input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent, #73d8c8);
+}
+.passenger-notifications-channels small {
+  font-size: 9px;
+  opacity: 0.7;
+}
+.passenger-notifications-recipient {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.passenger-notifications input[type="email"],
+.passenger-notifications input[type="tel"] {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--border, #30434c);
+  border-radius: 5px;
+  padding: 8px;
+  color: inherit;
+  background: var(--input-bg, transparent);
+  font: inherit;
+}
+.passenger-notifications .passenger-notifications-help {
+  margin-top: 7px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+.passenger-notifications button {
+  min-height: 34px;
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.4;
+}
+.passenger-notifications button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.passenger-notifications-error {
+  color: var(--danger, #e16b60);
+  margin-top: 10px !important;
+}
+.passenger-notifications-receipt {
+  display: grid;
+  gap: 5px;
+  border-left: 2px solid var(--accent, #73d8c8);
+  padding: 8px 10px;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.passenger-notifications-receipt.status-unknown,
+.passenger-notifications-receipt.status-sending {
+  border-color: #c19a50;
+}
+.passenger-notifications-receipt.status-failed {
+  border-color: var(--danger, #e16b60);
+}
+.passenger-notifications-receipt p {
+  margin: 2px 0 0;
+  font-size: 11px;
+}
+.passenger-notifications-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 16px;
+}
+.passenger-notifications-history-heading h4 {
+  font-size: 11px;
+  margin: 0;
+}
+.passenger-notifications-history-heading button {
+  font-size: 10px;
+  padding: 4px 7px;
+}
+.passenger-notifications-history {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  max-height: 220px;
+  overflow: auto;
+}
+.passenger-notifications-history li {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid var(--border, #30434c);
+  padding: 9px 0;
+  overflow-wrap: anywhere;
+}
+.passenger-notifications-history li > div {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.passenger-notifications-history time {
+  font-size: 10px;
+  opacity: 0.65;
+}

@@ -9,6 +9,7 @@ export LITEAPI_API_KEY="" LITEAPI_ENVIRONMENT="sandbox" HOTEL_OFFERS_PROVIDER="a
 export DUFFEL_ACCESS_TOKEN="" DUFFEL_ENVIRONMENT="sandbox"
 export DISTRIBUSION_API_KEY="" DISTRIBUSION_ENVIRONMENT="sandbox" DISTRIBUSION_OFFERS_ENABLED="false"
 export APL_API_KEY=""
+export BREVO_API_KEY="" RESEND_API_KEY="" NOTIFICATION_EMAIL_PROVIDER="resend" NOTIFICATION_EMAIL_FROM="" NOTIFICATIONS_ALLOW_SIMULATION="false"
 export FLIGHT_OFFERS_PROVIDER="auto" OPERATION_MODE="simulation"
 (cd "$project_dir/backend" && .venv/bin/python -m pytest -q)
 (cd "$project_dir/frontend" && npm test && npm run build)

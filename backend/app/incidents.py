@@ -98,7 +98,7 @@ class IncidentService:
 
     async def lookup(self, request: FlightLookupRequest):
         request = FlightLookupRequest.model_validate(request.model_dump())
-        if self.settings.operation_mode != "live":
+        if self.settings.operation_mode not in ("live", "demo"):
             raise DomainError(409, "Real flight lookup requires the live operation")
         payload = request.model_dump(mode="json")
         query_key = Store.fingerprint(payload)
@@ -218,7 +218,10 @@ class IncidentService:
                 # Binding an existing case does not select a new flight or
                 # assert fresh tracking state. Retained source aliases remain
                 # useful after the initial five-minute selection window.
-                _, match = self.store.selected_flight(incident.flight_ref.lookup_id, incident.flight_ref.selection_id, fresh=False)
+                if incident.flight_ref is None:
+                    match = {}
+                else:
+                    _, match = self.store.selected_flight(incident.flight_ref.lookup_id, incident.flight_ref.selection_id, fresh=False)
             except DomainError as exc:
                 if exc.status != 409:
                     raise
@@ -235,6 +238,8 @@ class IncidentService:
         def apply(world):
             self._live(world)
             incident = self._find(world, incident_id)
+            if incident.flight_ref is None:
+                raise DomainError(409, "This fictional incident has no tracked flight to refresh. Its travel alternatives are sourced separately.")
             lookup, match = self.store.selected_flight(request.lookup_id, request.selection_id)
             if request.selection_id != incident.flight_ref.selection_id or lookup["flight_number"] != incident.requested_flight_number or lookup["date_utc"] != incident.date_utc:
                 raise DomainError(409, "Refresh must identify the same exact flight leg and UTC date; this incident was not changed")

@@ -183,6 +183,8 @@ class LiveOperations:
     def _import(self, namespace, request, prepare, description):
         def apply(world):
             _live(world)
+            if world.demo and namespace != "live-test-passengers":
+                raise DomainError(409, "Demo passengers are fictional; transport and hotels must be imported from integrated suppliers.")
             additions = prepare(world, request)
             # These imports append new identities; they do not replace an existing
             # group's constraints or allocated services. Preserve its proposals.

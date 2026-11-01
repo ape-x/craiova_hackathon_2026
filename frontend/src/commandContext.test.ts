@@ -339,3 +339,43 @@ describe('scoped live recovery receipts', () => {
     ).toContain('Rezultat confirmat de aplicație.');
   });
 });
+
+describe('platform action acknowledgements', () => {
+  it('speaks actual UI results rather than a proposed success message', () => {
+    const result: MutationResult = {
+      world: { mode: 'live', version: 3 } as World,
+      explanation: 'Opened hotels successfully',
+      ui_actions: [{ name: 'ui.open', arguments: { screen: 'live-data', tab: 'hotels' } }],
+      ui_action_results: [
+        {
+          name: 'ui.open',
+          status: 'failed',
+          message: 'Panoul nu a fost deschis: o cerere este încă în curs.',
+        },
+      ],
+    };
+    expect(verifiedCommandResult(result)).toBe(
+      'Panoul nu a fost deschis: o cerere este încă în curs.',
+    );
+  });
+  it('does not confirm a UI action that has not executed in the browser', () => {
+    const result: MutationResult = {
+      world: { mode: 'live', version: 3 } as World,
+      ui_actions: [{ name: 'ui.export', arguments: {} }],
+    };
+    expect(verifiedCommandResult(result)).toContain('nu au un rezultat confirmat');
+  });
+  it('retains the backend partial result and the actual navigation outcome', () => {
+    const result: MutationResult = {
+      world: { mode: 'live', version: 4 } as World,
+      explanation: 'Caz creat. Căutarea nu a pornit: limita este insuficientă.',
+      platform_results: [
+        { name: 'demo.create_case', status: 'succeeded' },
+        { name: 'recovery.start', status: 'failed' },
+      ],
+      ui_action_results: [{ name: 'ui.open', status: 'succeeded', message: 'Cazul este deschis.' }],
+    };
+    expect(verifiedCommandResult(result)).toContain('Căutarea nu a pornit');
+    expect(verifiedCommandResult(result)).toContain('Cazul este deschis.');
+  });
+});

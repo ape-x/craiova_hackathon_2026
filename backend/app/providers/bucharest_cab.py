@@ -360,6 +360,8 @@ class BucharestCabProvider:
             headers={"Accept": "text/html" if html else "application/json", "User-Agent": "AirportRecoveryLive/0.1 consumer-quote-search",
                 "Referer": SOURCE_URL, "X-Requested-With": "XMLHttpRequest"},
             extensions={"timeout": {key: self.timeout for key in ("connect", "read", "write", "pool")}})
+        from ..provider_budget import consume_call
+        consume_call(SOURCE)
         response = await self.client.send(request, stream=True, auth=None, follow_redirects=False)
         try:
             if response.status_code != 200:

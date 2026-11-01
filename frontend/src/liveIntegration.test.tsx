@@ -171,7 +171,9 @@ describe('integrated live and simulation presentation', () => {
       />,
     );
     expect(html).toContain('Craiova');
-    expect(html).toContain('UNKNOWN');
+    expect(html).toContain('REFERENCE');
+    expect(html).toContain('operational status not verified');
+    expect(html).not.toContain('UNKNOWN');
     expect(html).toContain('Supplier coach stop');
     expect(html).toContain('STATION');
     expect(html).toContain('Real hotels &amp; routes');

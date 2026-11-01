@@ -23,15 +23,24 @@ import {
   Zap,
 } from 'lucide-react';
 import { api, ApiError, TransportError, downloadSession, request } from './api';
-import type { AppConfig, MutationResult, SceneMode, World } from './types';
+import type {
+  AppConfig,
+  MutationResult,
+  PlatformActionResult,
+  PlatformUiActionResult,
+  RecoveryJob,
+  SceneMode,
+  World,
+} from './types';
 import { useWorld } from './useWorld';
 import ResourceRail from './ResourceRail';
-import Inspector from './Inspector';
+import Inspector, { ShareOffer } from './Inspector';
 import Timeline from './Timeline';
 import WorkspaceHeader from './WorkspaceHeader';
 import WorkspaceSummary from './WorkspaceSummary';
 import ScenarioDialog from './ScenarioDialog';
 import NewScenarioDialog from './NewScenarioDialog';
+import DemoSetupDialog, { DemoNotice } from './DemoSetupDialog';
 import LiveDataDialog from './LiveDataDialog';
 import RecoveryCaseDialog from './RecoveryCaseDialog';
 import RecoveryCases from './RecoveryCases';
@@ -50,6 +59,16 @@ import { geographicContext } from './resourceLabels';
 import { WeatherNetworkOverlay } from './WeatherStatus';
 import { Brand, Dot, Modal, Tag } from './ui';
 import ThemeToggle from './ThemeToggle';
+import { toggleTheme } from './theme';
+import {
+  platformCommandScope,
+  validatePlatformAction,
+  type LiveDataNavigation,
+  type ResourceNavigation,
+  type SectionNavigation,
+  type TimelineNavigation,
+} from './platformActions';
+import PlatformResultsDialog from './PlatformResultsDialog';
 import { LiveVoiceClient } from './liveVoice';
 import VoiceRequestReviewDialog from './VoiceRequestReviewDialog';
 import CommandDraft from './CommandDraft';
@@ -63,6 +82,7 @@ import {
 import type { VoiceRequestReview, VoiceReviewOutcome } from './voiceRequestReview';
 import { voiceStartupScope } from './voiceScope';
 import { reportedArrivalFocus } from './arrivalFocus';
+import { commandView } from './commandView';
 import {
   commandContext,
   recoveryCaseForResult,
@@ -159,6 +179,7 @@ function Operations() {
     useWorld();
   const [mode, setMode] = useState<SceneMode>('airport');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [focusRequest, setFocusRequest] = useState(0);
   const [mapStyle, setMapStyle] = useState<'architectural' | 'geographic'>('architectural');
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
@@ -167,6 +188,7 @@ function Operations() {
   const [modal, setModal] = useState<
     | 'scenario'
     | 'new-scenario'
+    | 'demo-setup'
     | 'settings'
     | 'search'
     | 'help'
@@ -175,9 +197,37 @@ function Operations() {
     | 'recovery-case'
     | 'recovery-picker'
     | 'voice-review'
+    | 'platform-results'
+    | 'passenger-link'
     | null
   >(null);
   const [recoveryCaseId, setRecoveryCaseId] = useState<string | null>(null);
+  const applicationScope = useRef({ caseId: recoveryCaseId, caseOpen: false });
+  applicationScope.current = { caseId: recoveryCaseId, caseOpen: modal === 'recovery-case' };
+  const uiNavigationSequence = useRef(0);
+  const [liveDataNavigation, setLiveDataNavigation] = useState<LiveDataNavigation>();
+  const [resourceNavigation, setResourceNavigation] = useState<ResourceNavigation>();
+  const [sectionNavigation, setSectionNavigation] = useState<SectionNavigation>();
+  const [timelineNavigation, setTimelineNavigation] = useState<TimelineNavigation>();
+  const [searchNavigation, setSearchNavigation] = useState<{ request: number; query: string }>();
+  const [platformResults, setPlatformResults] = useState<{
+    scenarioId: string;
+    results: PlatformActionResult[];
+  }>();
+  const latestPlatformResults = useRef(platformResults);
+  latestPlatformResults.current = platformResults;
+  const [passengerLinkGroupId, setPassengerLinkGroupId] = useState<string>();
+  const completedUiRequests = useRef(new Map<string, PlatformUiActionResult[]>());
+  const navigationLocked = useRef(false);
+  const setNavigationLocked = useCallback((locked: boolean) => {
+    navigationLocked.current = locked;
+  }, []);
+  const [followRecoveryJob, setFollowRecoveryJob] = useState<{
+    scenarioId: string;
+    job: RecoveryJob;
+    request: number;
+  } | null>(null);
+  const recoveryFollowSequence = useRef(0);
   const [recoverySelection, setRecoverySelection] = useState<RecoveryDataContext>();
   const [recoveryDataContext, setRecoveryDataContext] = useState<RecoveryDataContext>();
   const [itineraryReview, setItineraryReview] = useState<RecoveryItineraryIntent>();
@@ -242,6 +292,7 @@ function Operations() {
   const [plannerMode, setPlannerMode] = useState<'ai' | 'solver' | null>(null);
   const closeModal = useCallback(() => {
     setModal(null);
+    setFollowRecoveryJob(null);
     if (!itineraryReview || !preservesItineraryReviewOnClose(modal)) {
       setRecoveryDataContext(undefined);
       setItineraryReview(undefined);
@@ -249,6 +300,7 @@ function Operations() {
   }, [itineraryReview, modal]);
   const openRecoveryCase = useCallback(
     (id: string | null) => {
+      setFollowRecoveryJob(null);
       setItineraryReview(undefined);
       setRecoveryCaseId(id);
       setRecoverySelection(
@@ -258,7 +310,7 @@ function Operations() {
       );
       setRecoveryDataContext(undefined);
       setRecoverySetup(null);
-      setModal('recovery-case');
+      setModal(id === null && worldRef.current?.demo ? 'demo-setup' : 'recovery-case');
     },
     [worldRef],
   );
@@ -274,6 +326,7 @@ function Operations() {
         return;
       }
       setRecoveryDataContext(undefined);
+      setFollowRecoveryJob(null);
       setItineraryReview(undefined);
       if (intent.kind === 'setup') {
         setRecoverySetup(intent);
@@ -319,14 +372,24 @@ function Operations() {
     setModal(worldRef.current?.mode === 'live' ? 'live-data' : 'scenario');
   }, [worldRef]);
   const applyResult = useCallback(
-    (result: MutationResult) => {
+    (result: MutationResult, followFrom?: World) => {
       const replaced = worldRef.current?.scenario_id !== result.world.scenario_id;
       receive(result.world);
+      const current = worldRef.current ?? result.world;
+      // receive may reject an obsolete HTTP snapshot after a newer SSE update.
+      if (
+        current.scenario_id !== result.world.scenario_id ||
+        current.version > result.world.version
+      )
+        return result;
+      if (navigationLocked.current) return result;
+      const view = followFrom ? commandView(followFrom, result, current) : null;
       const reportedAirport = reportedArrivalFocus(result, worldRef.current ?? result.world);
-      const focus =
-        result.reports !== undefined ||
-        result.report?.type === 'arrival_report' ||
-        result.report?.type === 'airport_restriction'
+      const focus = followFrom
+        ? view?.selectedId
+        : result.reports !== undefined ||
+            result.report?.type === 'arrival_report' ||
+            result.report?.type === 'airport_restriction'
           ? reportedAirport
           : (result.focus_id ?? result.decision?.focus_id);
       if (replaced && !focus) setSelectedId(null);
@@ -336,13 +399,43 @@ function Operations() {
           setMode(reportedAirport ? 'airport' : 'region');
         if (result.world.groups.some((group) => group.id === focus)) setMode('passenger');
       }
+      if (view) {
+        setSelectedId(view.selectedId);
+        selectedRef.current = view.selectedId;
+        setMode(view.mode);
+        setShowLog(false);
+        setMobilePanel(
+          current.mode === 'live' && !config.google_maps_api_key ? 'inspector' : 'map',
+        );
+        setModal((open) =>
+          open === 'help' || open === 'search' || open === 'voice-review' || open === 'new-scenario'
+            ? null
+            : open,
+        );
+        setRecoveryDataContext(undefined);
+        setItineraryReview(undefined);
+        setFocusRequest((request) => request + 1);
+      }
       const recoveryCase = recoveryCaseForResult(result, worldRef.current ?? result.world);
       if (recoveryCase) {
+        setFollowRecoveryJob(
+          followFrom && result.recovery_job
+            ? {
+                scenarioId: current.scenario_id,
+                job: result.recovery_job,
+                request: ++recoveryFollowSequence.current,
+              }
+            : null,
+        );
         setRecoveryCaseId(recoveryCase);
         setRecoverySelection((previous) =>
           previous?.scenarioId === result.world.scenario_id && previous.incidentId === recoveryCase
             ? previous
-            : { scenarioId: result.world.scenario_id, incidentId: recoveryCase, groupIds: [] },
+            : {
+                scenarioId: result.world.scenario_id,
+                incidentId: recoveryCase,
+                groupIds: followFrom ? (result.recovery_job?.group_ids ?? []) : [],
+              },
         );
         setRecoveryDataContext(undefined);
         setItineraryReview(undefined);
@@ -351,13 +444,281 @@ function Operations() {
       }
       return result;
     },
-    [receive, worldRef],
+    [receive, worldRef, config.google_maps_api_key],
+  );
+  const applyPlatformActions = useCallback(
+    async (result: MutationResult, requestId: string) => {
+      const previous = completedUiRequests.current.get(requestId);
+      if (previous) return { ...result, ui_action_results: previous };
+      const receipts: PlatformUiActionResult[] = [];
+      const requested = result.ui_actions;
+      const current = worldRef.current;
+      const accepted =
+        current?.scenario_id === result.world.scenario_id &&
+        current.version === result.world.version;
+      if (accepted && result.platform_results?.length) {
+        const next = {
+          scenarioId: current.scenario_id,
+          results: result.platform_results.filter((item) => !item.name.startsWith('ui.')),
+        };
+        latestPlatformResults.current = next;
+        setPlatformResults(next);
+      }
+      if (requested !== undefined && (!Array.isArray(requested) || requested.length > 20)) {
+        receipts.push({
+          name: 'ui.actions',
+          status: 'failed',
+          message: 'Invalid application action list.',
+        });
+      } else
+        for (const raw of requested ?? []) {
+          const name = typeof raw?.name === 'string' ? raw.name : 'ui.action';
+          try {
+            const active = worldRef.current;
+            if (
+              !active ||
+              active.scenario_id !== result.world.scenario_id ||
+              active.version !== result.world.version
+            )
+              throw new Error(
+                'The operation changed before this application action arrived. The view was preserved.',
+              );
+            const action = validatePlatformAction(raw, active, config);
+            if (
+              navigationLocked.current &&
+              ['ui.navigate', 'ui.open', 'ui.close'].includes(action.name)
+            )
+              throw new Error(
+                'The current form has an unresolved request. Recover or finish it before leaving this screen.',
+              );
+            const request = ++uiNavigationSequence.current;
+            let message: string;
+            if (action.name === 'ui.navigate') {
+              const args = action.arguments;
+              setModal(null);
+              setFollowRecoveryJob(null);
+              setRecoveryDataContext(undefined);
+              setItineraryReview(undefined);
+              setResourceNavigation({ request, tab: args.tab, query: args.query, realData: false });
+              if (args.map_style) setMapStyle(args.map_style);
+              let target = args.selected_id;
+              if (args.view === 'passenger' && !target)
+                target = active.groups.find((item) => item.id === selectedRef.current)?.id;
+              if (args.view === 'passenger' && !target) {
+                setSelectedId(null);
+                selectedRef.current = null;
+                setResourceNavigation({
+                  request,
+                  tab: 'groups',
+                  query: args.query,
+                  realData: false,
+                });
+                setSidebarOpen(true);
+              }
+              if (!target && ['airport', 'region'].includes(args.view)) {
+                setSelectedId(null);
+                selectedRef.current = null;
+              }
+              if (target) {
+                const targetView = commandView(
+                  active,
+                  { world: active, focus_id: target, applied: false },
+                  active,
+                );
+                setSelectedId(target);
+                selectedRef.current = target;
+                if (targetView) setMode(targetView.mode);
+              }
+              if (['airport', 'region', 'passenger'].includes(args.view))
+                setMode(args.view as SceneMode);
+              if (args.view === 'plan') {
+                setSelectedId(null);
+                selectedRef.current = null;
+              }
+              setShowLog(args.view === 'log');
+              if (args.view === 'resources' || (args.view === 'passenger' && !target)) {
+                setSidebarOpen(true);
+                setMobilePanel('resources');
+              } else if (['inspector', 'plan', 'log'].includes(args.view))
+                setMobilePanel('inspector');
+              else
+                setMobilePanel(
+                  active.mode === 'live' && !config.google_maps_api_key ? 'inspector' : 'map',
+                );
+              setFocusRequest((value) => value + 1);
+              message = `Opened ${args.view}${target ? ` for ${target}` : ''}.`;
+            } else if (action.name === 'ui.open') {
+              const args = action.arguments;
+              const group = active.groups.find(
+                (item) => item.id === (args.group_id ?? selectedRef.current),
+              );
+              const caseId =
+                args.incident_id ?? group?.incident_id ?? applicationScope.current.caseId;
+              const incident = active.incidents?.find((item) => item.id === caseId);
+              if (['arrival', 'restrictions', 'recovery'].includes(args.screen) && !incident)
+                throw new Error('Select a current recovery case before opening this section.');
+              if (args.screen === 'passenger' && !group)
+                throw new Error('Select a passenger group before opening its offer link.');
+              if (args.screen === 'voice-review' && !latestVoiceReview.current)
+                throw new Error('No voice request is available to review.');
+              if (
+                args.screen === 'results' &&
+                latestPlatformResults.current?.scenarioId !== active.scenario_id
+              )
+                throw new Error('No action results are available for this operation.');
+              if (args.group_id) {
+                setSelectedId(args.group_id);
+                selectedRef.current = args.group_id;
+                setMode('passenger');
+                setFocusRequest((value) => value + 1);
+              }
+              setResourceNavigation({ request, realData: args.screen === 'real-data' });
+              if (args.screen === 'real-data') {
+                setModal(null);
+                setSidebarOpen(true);
+                setMobilePanel('resources');
+              } else if (args.screen === 'passenger') {
+                setPassengerLinkGroupId(group!.id);
+                setSelectedId(group!.id);
+                selectedRef.current = group!.id;
+                setMode('passenger');
+                setMobilePanel('inspector');
+                setFocusRequest((value) => value + 1);
+                setModal('passenger-link');
+              } else if (args.screen === 'results') setModal('platform-results');
+              else if (
+                ['recovery-case', 'arrival', 'restrictions', 'recovery'].includes(args.screen)
+              ) {
+                const job =
+                  result.recovery_job?.incident_id === incident?.id
+                    ? result.recovery_job
+                    : undefined;
+                setFollowRecoveryJob(
+                  job
+                    ? {
+                        scenarioId: active.scenario_id,
+                        job,
+                        request: ++recoveryFollowSequence.current,
+                      }
+                    : null,
+                );
+                setItineraryReview(undefined);
+                setRecoveryDataContext(undefined);
+                setRecoverySetup(null);
+                setRecoveryCaseId(incident?.id ?? null);
+                setRecoverySelection(
+                  incident
+                    ? {
+                        scenarioId: active.scenario_id,
+                        incidentId: incident.id,
+                        groupIds:
+                          job?.group_ids ??
+                          (group && incident.group_ids.includes(group.id) ? [group.id] : []),
+                      }
+                    : undefined,
+                );
+                setSectionNavigation(
+                  ['arrival', 'restrictions', 'recovery'].includes(args.screen)
+                    ? { request, section: args.screen as SectionNavigation['section'] }
+                    : undefined,
+                );
+                setModal(!incident && active.demo ? 'demo-setup' : 'recovery-case');
+              } else {
+                if (args.screen === 'search')
+                  setSearchNavigation({ request, query: args.query ?? '' });
+                if (args.screen === 'live-data') {
+                  if (args.tab) setLiveDataNavigation({ request, tab: args.tab });
+                  setRecoveryDataContext(
+                    incident
+                      ? {
+                          scenarioId: active.scenario_id,
+                          incidentId: incident.id,
+                          groupIds:
+                            group && incident.group_ids.includes(group.id) ? [group.id] : [],
+                        }
+                      : undefined,
+                  );
+                  setItineraryReview(undefined);
+                }
+                setModal(
+                  args.screen as
+                    | 'settings'
+                    | 'help'
+                    | 'search'
+                    | 'live-data'
+                    | 'recovery-picker'
+                    | 'scenario'
+                    | 'new-scenario'
+                    | 'demo-setup'
+                    | 'voice-review'
+                    | 'reset',
+                );
+              }
+              message = `Opened ${args.screen}${args.tab ? ` / ${args.tab}` : ''}.`;
+            } else if (action.name === 'ui.close') {
+              setModal(null);
+              setFollowRecoveryJob(null);
+              setRecoveryDataContext(undefined);
+              setItineraryReview(undefined);
+              setResourceNavigation({ request, realData: false });
+              message = 'Closed the open dialog.';
+            } else if (action.name === 'ui.theme') {
+              if (document.documentElement.dataset.theme !== action.arguments.value) toggleTheme();
+              message = `Switched to ${action.arguments.value} mode.`;
+            } else if (action.name === 'ui.planner') {
+              setPlannerMode(action.arguments.value);
+              message = `Selected the ${action.arguments.value === 'ai' ? 'AI' : 'local solver'} planner.`;
+            } else if (action.name === 'ui.timeline') {
+              setTimelineNavigation({ request, action: action.arguments.action });
+              setMobilePanel('map');
+              message = `Updated the resource schedule: ${action.arguments.action.replaceAll('_', ' ')}.`;
+            } else if (action.name === 'ui.export') {
+              downloadSession(active);
+              message = 'Downloaded the operation audit.';
+            } else {
+              await refresh();
+              message = 'Refreshed the operation from the server.';
+            }
+            receipts.push({ name, status: 'succeeded', message });
+          } catch (cause) {
+            receipts.push({
+              name,
+              status: 'failed',
+              message: cause instanceof Error ? cause.message : 'Application action failed.',
+            });
+          }
+        }
+      if (accepted && (result.platform_results?.length || receipts.length)) {
+        const next = {
+          scenarioId: current.scenario_id,
+          results: [
+            ...(result.platform_results ?? []).filter((item) => !item.name.startsWith('ui.')),
+            ...receipts.map((item) => ({
+              name: item.name,
+              status: item.status,
+              summary: item.message,
+            })),
+          ],
+        };
+        latestPlatformResults.current = next;
+        setPlatformResults(next);
+      }
+      if (receipts.length) {
+        completedUiRequests.current.set(requestId, receipts);
+        if (completedUiRequests.current.size > 100)
+          completedUiRequests.current.delete(completedUiRequests.current.keys().next().value!);
+      }
+      return receipts.length ? { ...result, ui_action_results: receipts } : result;
+    },
+    [config, refresh, worldRef],
   );
   const execute = useCallback(
     async (
       label: string,
       action: () => Promise<MutationResult>,
       onOutcome?: (outcome: VoiceReviewOutcome) => void,
+      followFrom?: World,
+      uiRequestId = crypto.randomUUID(),
     ) => {
       if (running.current) throw new Error('An operation is already in progress.');
       running.current = true;
@@ -366,13 +727,18 @@ function Operations() {
       setNotice(null);
       const started = performance.now();
       try {
-        const result = applyResult(await observeVoiceRequestOutcome(action, onOutcome));
+        const result = await observeVoiceRequestOutcome(
+          async () => applyPlatformActions(applyResult(await action(), followFrom), uiRequestId),
+          onOutcome,
+        );
         setNotice({
           persistent: keepCommandReplyVisible(result),
-          text:
-            result.applied === false
+          text: result.ui_action_results?.length
+            ? result.ui_action_results.map((item) => item.message).join(' ')
+            : result.applied === false
               ? (result.explanation ?? 'No operational change applied.')
               : `State updated · v${result.world.version} · ${((performance.now() - started) / 1000).toFixed(2)}s round trip`,
+          error: result.ui_action_results?.some((item) => item.status === 'failed'),
         });
         return result;
       } catch (cause) {
@@ -383,7 +749,14 @@ function Operations() {
           error: true,
           retry:
             cause instanceof TransportError
-              ? () => execute(label, () => cause.retry<MutationResult>(), onOutcome)
+              ? () =>
+                  execute(
+                    label,
+                    () => cause.retry<MutationResult>(),
+                    onOutcome,
+                    followFrom,
+                    uiRequestId,
+                  )
               : undefined,
         });
         throw cause;
@@ -393,7 +766,7 @@ function Operations() {
         setOperation('');
       }
     },
-    [applyResult, refresh],
+    [applyResult, applyPlatformActions, refresh],
   );
   const replan = useCallback(async () => {
     if (!worldRef.current || running.current) return;
@@ -433,6 +806,12 @@ function Operations() {
         selectedRef.current,
         voiceContext,
       );
+      const scope = platformCommandScope(
+        previousWorld,
+        selectedRef.current,
+        applicationScope.current.caseId,
+        applicationScope.current.caseOpen,
+      );
       let result: MutationResult;
       try {
         result = await execute(
@@ -442,11 +821,13 @@ function Operations() {
               ? request<MutationResult>('/commands', {
                   text,
                   context,
+                  scope,
                   expected_version: previousWorld.version,
                   idempotency_key: `voice-${delegationId}`.slice(0, 120),
                 })
-              : api.command(previousWorld, text, context),
+              : api.command(previousWorld, text, context, scope),
           onOutcome,
+          delegationId ? previousWorld : undefined,
         );
       } catch (cause) {
         if (worldRef.current?.scenario_id === scenarioId)
@@ -470,6 +851,8 @@ function Operations() {
         );
       }
       if (
+        !delegationId &&
+        !result.ui_actions?.length &&
         result.report?.type !== 'arrival_report' &&
         commandNeedsRegionalView(previousWorld, result)
       )
@@ -673,6 +1056,8 @@ function Operations() {
     >
       <WorkspaceHeader
         mode={world.mode}
+        demo={world.demo}
+        onDemoSetup={() => setModal('demo-setup')}
         locationLabel={mapContext.locationLabel}
         connected={connection === 'connected'}
         sidebarOpen={sidebarOpen}
@@ -711,6 +1096,8 @@ function Operations() {
       <div className="operations-workspace">
         <ResourceRail
           world={world}
+          navigation={resourceNavigation}
+          onDemoSetup={() => setModal('demo-setup')}
           selectedId={selectedId}
           onSelect={select}
           onMode={setMode}
@@ -720,6 +1107,7 @@ function Operations() {
           onApplied={applyResult}
         />
         <main className="map-workspace" aria-label="Operational 3D view">
+          {world.demo && <DemoNotice onSetup={() => setModal('demo-setup')} />}
           <WorkspaceSummary
             world={world}
             mode={mode}
@@ -758,6 +1146,7 @@ function Operations() {
                   world={mapContext.world}
                   mode={mode}
                   selectedId={mapSelectionId}
+                  focusRequest={focusRequest}
                   onSelect={select}
                   apiKey={config.google_maps_api_key ?? ''}
                   onClose={live ? undefined : () => setMapStyle('architectural')}
@@ -777,7 +1166,13 @@ function Operations() {
                   </div>
                 </div>
               ) : (
-                <Scene world={world} mode={mode} selectedId={selectedId} onSelect={select} />
+                <Scene
+                  world={world}
+                  mode={mode}
+                  selectedId={selectedId}
+                  onSelect={select}
+                  focusRequest={focusRequest}
+                />
               )}
             </Suspense>
             <div className="map-topbar">
@@ -910,7 +1305,7 @@ function Operations() {
               </button>
             </div>
           </div>
-          <Timeline world={world} onSelect={select} />
+          <Timeline world={world} onSelect={select} navigation={timelineNavigation} />
         </main>
         <Inspector
           world={world}
@@ -1116,12 +1511,26 @@ function Operations() {
       {modal === 'live-data' && (
         <LiveDataDialog
           world={world}
+          navigation={liveDataNavigation}
+          onNavigationLockChange={setNavigationLocked}
           onClose={closeModal}
           onApplied={applyResult}
           recoveryContext={recoveryDataContext}
           onReturnToCase={returnToRecoveryCase}
         />
       )}
+      {modal === 'platform-results' && platformResults?.scenarioId === world.scenario_id && (
+        <PlatformResultsDialog results={platformResults.results} onClose={closeModal} />
+      )}
+      {modal === 'passenger-link' &&
+        world.groups.some((item) => item.id === passengerLinkGroupId) && (
+          <Modal title="Passenger offer link" onClose={closeModal}>
+            <ShareOffer
+              group={world.groups.find((item) => item.id === passengerLinkGroupId)!}
+              config={config}
+            />
+          </Modal>
+        )}
       {modal === 'recovery-picker' && live && (
         <Modal title="Choose recovery case" onClose={closeModal} wide>
           <p className="field-hint">
@@ -1173,8 +1582,13 @@ function Operations() {
         <RecoveryCaseDialog
           key={`${world.scenario_id}:${recoveryCaseId ?? 'new'}`}
           world={world}
+          sectionNavigation={sectionNavigation}
+          onNavigationLockChange={setNavigationLocked}
           incidentId={recoveryCaseId}
           initialSelection={recoverySelection}
+          followJob={
+            followRecoveryJob?.scenarioId === world.scenario_id ? followRecoveryJob : undefined
+          }
           setupGroupId={
             recoverySetup?.scenarioId === world.scenario_id ? recoverySetup.groupId : undefined
           }
@@ -1245,6 +1659,7 @@ function Operations() {
       {modal === 'search' && (
         <SearchDialog
           world={world}
+          navigation={searchNavigation}
           onClose={closeModal}
           onSelect={(id) => {
             select(id);
@@ -1267,6 +1682,22 @@ function Operations() {
             voice.current = null;
             await api.logout();
             reconnect();
+          }}
+        />
+      )}
+      {modal === 'demo-setup' && world.demo && (
+        <DemoSetupDialog
+          busy={busy || Boolean(notice?.retry)}
+          onClose={closeModal}
+          onCreate={async (input) => {
+            const current = worldRef.current;
+            if (!current?.demo) throw new Error('This operation is not a live-data simulation.');
+            return execute(
+              'Creating fictional passenger case',
+              () => api.createDemoCase(current, input),
+              undefined,
+              current,
+            );
           }}
         />
       )}
@@ -1313,6 +1744,13 @@ function Operations() {
       )}
       {modal === 'help' && live && (
         <Modal title="Operation guide" onClose={closeModal}>
+          <p className="modal-copy">
+            Use voice or the command box to create cases, manage passenger requirements, search
+            flights, hotels and transfers, review or stop searches, and navigate the workspace. Say
+            “arată pasagerii”, “caută zboruri pentru acest caz”, or “deschide transferurile”. “This
+            case” and “the selected group” use your current selection. In simulation with live data,
+            you can also ask to create fictional passengers.
+          </p>
           <p className="modal-copy">
             Import the affected passenger manifest, or enter clearly labeled planning assumptions
             while passenger details are unavailable. Search connected suppliers and add current
@@ -1387,12 +1825,17 @@ function SearchDialog({
   world,
   onClose,
   onSelect,
+  navigation,
 }: {
   world: World;
   onClose: () => void;
   onSelect: (id: string) => void;
+  navigation?: { request: number; query: string };
 }) {
   const [query, setQuery] = useState('');
+  useEffect(() => {
+    if (navigation) setQuery(navigation.query);
+  }, [navigation]);
   const entities = [
     ...world.airports.map((item) => ({
       id: item.id,
@@ -1489,6 +1932,11 @@ function SettingsDialog({
             name: 'Google Maps 3D',
             caption: 'Geographic 3D · requires an allowed browser key',
             ready: Boolean(config.google_maps_api_key),
+          },
+          {
+            name: config.notification_email_provider === 'brevo' ? 'Brevo email' : 'Resend email',
+            caption: 'Passenger offer links · transactional email',
+            ready: config.notification_email_configured,
           },
         ].map((item) => (
           <div className="connection-row" key={item.name}>

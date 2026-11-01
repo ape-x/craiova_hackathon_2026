@@ -35,6 +35,26 @@ REFERENCE_POLICY = (
     "can establish that an action occurred.\n"
 )
 
+PLATFORM_INSTRUCTIONS = (
+    "\nPlatform actions: Ai acces prin delegare la funcțiile platformei disponibile operatorului, "
+    "inclusiv creare de cazuri și pasageri fictivi în modul demo, căutări de zboruri, hoteluri și "
+    "transferuri, importul ofertelor reale, configurarea recuperării, rapoarte, schimbarea cerințelor, "
+    "pornirea și oprirea căutărilor, consultarea rezultatelor și controlul interfeței. "
+    "Poți cere deschiderea panourilor, selectarea grupurilor și cazurilor, focalizarea hărții, "
+    "schimbarea vizualizării, temei, modului de planificare și exportul sesiunii. "
+    "Deleagă și comenzile de navigare sau configurare prin <|SpawnThinking|>. "
+    "Catalogul backend stabilește funcțiile și parametrii disponibili. Nu trimite operatorul "
+    "să apese un buton pentru o funcție pe care backendul o poate executa. "
+    "Pentru «acest caz», «grupul selectat» sau «aici», delegarea folosește selecția curentă din aplicație; "
+    "nu cere recitarea unui ID dacă referința este unică. Dacă lipsesc date necesare, cere concret "
+    "doar acele date și păstrează detaliile cererii în conversație. "
+    "Confirmă numai operațiunile reușite din rezultatul primit, inclusiv rezultatul acțiunilor UI. "
+    "O acțiune propusă nu este o acțiune executată. Menționează pasul care a eșuat într-o cerere compusă. "
+    "Pornirea microfonului cere acordul browserului. Cheile API și autentificarea rămân în setările "
+    "protejate; accesul la funcții nu autorizează inventarea datelor furnizorilor sau imitarea "
+    "acceptării unui pasager. În demo, pasagerii sunt fictivi și ofertele rămân date reale.\n"
+)
+
 
 LIVE_INSTRUCTIONS = (
     "Ești interfața vocală Recovery Live. Vorbește concis și natural, în română. "
@@ -58,8 +78,8 @@ LIVE_INSTRUCTIONS = (
     "Backend tools: Aplicația verifică cererea în raport cu datele operaționale curente, "
     "actualizează constrângerile explicite ale pasagerilor și prioritățile de recuperare, "
     "calculează și compară propuneri folosind resursele importate și poate focaliza harta. "
-    "Poate porni căutări la furnizori pentru un caz existent, dacă cererea curentă numește explicit "
-    "cazul sau zborul și grupurile sunt deja legate de el; poate verifica progresul acelui caz. "
+    "Poate porni căutări la furnizori pentru un caz existent și grupurile legate de el; "
+    "poate folosi selecția curentă pentru referințe explicite precum «acest caz» și verifica progresul. "
     "Poate înregistra o declarație a operatorului despre poziția și pregătirea unor grupuri, "
     "cu aeroport, dată, oră și fus orar explicite, sau indisponibilitatea unui serviciu identificat exact. "
     "O deviere ori imposibilitatea aterizării nu dovedește că pasagerii au ajuns sau sunt pregătiți. "
@@ -107,7 +127,7 @@ class VoiceProvider(HTTPProvider):
                 "model": getattr(self.settings, "openai_voice_model", "gpt-live-1"),
                 # Live is the safe default; the simulation policy is available
                 # only when the server explicitly selects its internal mode.
-                "instructions": LIVE_INSTRUCTIONS if getattr(self.settings, "operation_mode", "live") != "simulation" else (
+                "instructions": (LIVE_INSTRUCTIONS if getattr(self.settings, "operation_mode", "live") != "simulation" else (
                     "Ești interfața vocală Airport Recovery Live. Vorbește concis și natural, în română. "
                     "Utilizatorul poate construi scenarii proprii, descrise liber; exemplele din interfață nu sunt o listă limitativă. "
                     "Toate modificările, resursele adăugate, ofertele și transportul sunt simulate.\n"
@@ -157,7 +177,8 @@ class VoiceProvider(HTTPProvider):
                     "Dacă aplicația cere clarificări sau raportează o limită, spune concret ce lipsește ori ce nu poate simula. "
                     "Nu înlocui cererea cu cel mai apropiat exemplu prestabilit. "
                     "Nu anunța succesul unei cereri neexecutate și nu repeta o comandă deja executată."
-                ),
+                )) + PLATFORM_INSTRUCTIONS + ("\nSimulation with live data: passengers and recorded demo incidents are fictional. All hotel, flight and transport offers must come from connected real suppliers. Explain the distinction; do not invent inventory, tracked flights, operating permissions or bookings. Delegate new fictional case and passenger creation to the backend's demo capability."
+                       if getattr(self.settings, "operation_mode", "live") == "demo" else ""),
                 "audio": {"output": {"voice": "marin"}},
                 "delegation": {"type": "client", "acknowledgement_delay_ms": 600},
                 "client": {"data_channel": {

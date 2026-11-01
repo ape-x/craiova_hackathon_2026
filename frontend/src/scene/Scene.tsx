@@ -14,6 +14,8 @@ import Region from './Region';
 import Html, { LabelLayer, LabelOverlay, createLabelStore } from './ProjectedHtml';
 import { useSceneAsset } from './lifecycle';
 import { useTheme } from '../theme';
+import { sceneCameraFor } from './actionCamera';
+import { nextCameraFocus, type CameraFocus } from './cameraFocus';
 import './scene.css';
 
 export interface SceneProps {
@@ -22,6 +24,7 @@ export interface SceneProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   googleMapsKey?: string;
+  focusRequest?: number;
 }
 type Vec = [number, number, number];
 const TONES = {
@@ -437,6 +440,7 @@ function CameraRig({
   reset,
   reduced,
   zoom,
+  focusRequest = 0,
 }: {
   mode: SceneMode;
   selectedId: string | null;
@@ -444,6 +448,7 @@ function CameraRig({
   reset: number;
   reduced: boolean;
   zoom: number;
+  focusRequest?: number;
 }) {
   const controls = useRef<OrbitControlsImpl>(null);
   const { camera, invalidate, size } = useThree();
@@ -457,33 +462,23 @@ function CameraRig({
   } | null>(null);
   const lastZoom = useRef(zoom);
   const lastReset = useRef(reset);
+  const lastFocusRequest = useRef<CameraFocus | null>(null);
   useEffect(() => {
     const narrow = Math.max(1, 1.5 / (size.width / size.height));
-    let target: Vec = [0, 0, -15],
-      position: Vec = [250 * narrow, 270 * narrow, 350 * narrow];
-    if (mode === 'region') {
-      target = [0, 0, 10];
-      position = [25 * narrow, 370 * narrow, 360 * narrow];
-    } else if (mode === 'passenger') {
-      const index = Math.max(
-        0,
-        world.groups.findIndex((g) => g.id === selectedId),
-      );
-      const p = groupPosition(index < 26 ? index : 0);
-      target = [p[0], 2, p[2]];
-      position = [p[0] + 30, 26, p[2] + 42];
-    } else if (reset === lastReset.current && selectedId) {
-      const bi = world.resources
-        .filter((r) => r.kind === 'bus' && (r.origin === 'CRA' || r.destination === 'CRA'))
-        .slice(0, 6)
-        .findIndex((r) => r.id === selectedId);
-      if (bi >= 0) {
-        const p = busSpots[bi];
-        target = [p[0], 2, p[2] - 25];
-        position = [p[0] + 96, 92, p[2] + 115];
-      }
-    }
+    const focus = nextCameraFocus(
+      lastFocusRequest.current,
+      focusRequest,
+      JSON.stringify([world.scenario_id, mode, selectedId, reset]),
+    );
+    const { target, position } = sceneCameraFor(
+      world,
+      mode,
+      mode === 'passenger' || reset === lastReset.current ? selectedId : null,
+      narrow,
+      focus.following,
+    );
     lastReset.current = reset;
+    lastFocusRequest.current = focus;
     const now = performance.now();
     animation.current = {
       start: camera.position.clone(),
@@ -494,7 +489,7 @@ function CameraRig({
       duration: reduced ? 0 : 750,
     };
     invalidate();
-  }, [mode, selectedId, reset, size.width, size.height, reduced]);
+  }, [mode, selectedId, reset, focusRequest, world.scenario_id, size.width, size.height, reduced]);
   useEffect(() => {
     if (zoom === lastZoom.current || !controls.current) return;
     const offset = camera.position
@@ -664,6 +659,7 @@ export default function Scene(props: SceneProps) {
               reset={reset}
               reduced={reduced}
               zoom={zoom}
+              focusRequest={props.focusRequest}
             />
           </Canvas>
         </Suspense>

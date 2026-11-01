@@ -41,11 +41,18 @@ from .operational_reports import ArrivalReportInput, OperationalReports, Resourc
 from .airport_restrictions import AirportRestrictionReportInput, AirportRestrictions
 from .airport_cab_planning import AirportCabPlanning, create_airport_cab_router
 from .inventory_history import create_inventory_history_router
+from .notifications import NotificationService, create_notification_router
+from .demo import DemoCaseDefinition, build_demo_case
+from .platform_actions import PlatformActions
 
 
 class VoiceRequest(Model):
     sdp: str = Field(min_length=10,max_length=65536,pattern=r"^v=0\r?\n")
     scope: VoiceScope | None = None
+
+
+class DemoCaseCreate(DemoCaseDefinition, Mutation):
+    pass
 
 
 class RedactAccessPaths(logging.Filter):
@@ -113,6 +120,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     ground_planning=GroundPlanning(store,ground_transfers,real_data.provider)
     operational_reports=OperationalReports(store,jobs)
     airport_restrictions=AirportRestrictions(store,jobs)
+    notifications=NotificationService(settings,store)
     login_attempts=defaultdict(deque)
     # Reserve worst-case credit cost in the persistent shared request ledger;
     # restarting or adding a worker cannot replenish the paid provider budget.
@@ -154,7 +162,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         with suppress(asyncio.CancelledError):
             await task
         await jobs.aclose()
-        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose(),ground_transfers.aclose(),coach_fares.aclose(),airport_cab.aclose(),transfero.aclose())
+        await asyncio.gather(ai.aclose(),flights.aclose(),voice.aclose(),real_data.aclose(),travel_provider.aclose(),ground_transfers.aclose(),coach_fares.aclose(),airport_cab.aclose(),transfero.aclose(),notifications.aclose())
 
     app=FastAPI(title="Airport Recovery Live",version="0.1.0",lifespan=lifespan,docs_url=None if settings.production else "/docs",redoc_url=None,openapi_url=None if settings.production else "/openapi.json")
     app.state.store,app.state.service,app.state.settings=store,service,settings
@@ -170,6 +178,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     app.state.airport_cab=airport_cab
     app.state.operational_reports=operational_reports
     app.state.airport_restrictions=airport_restrictions
+    app.state.notifications=notifications
     app.add_middleware(CORSMiddleware,allow_origins=settings.origins,allow_credentials=True,allow_methods=["GET","POST","DELETE"],allow_headers=["Content-Type","Authorization","Last-Event-ID"])
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=[h.strip() for h in settings.allowed_hosts.split(",")])
     app.add_middleware(BodySizeLimit,max_bytes=settings.max_request_bytes)
@@ -206,6 +215,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     app.include_router(create_planning_transfer_router(ground_planning,operator))
     app.include_router(create_airport_cab_router(airport_cab,operator))
     app.include_router(create_inventory_history_router(store,operator))
+    app.include_router(create_notification_router(notifications,operator))
 
     @app.middleware("http")
     async def security_headers(request,call_next):
@@ -246,7 +256,7 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         # be reflected, and NaN input cannot be serialized by JSONResponse.
         # Unknown property names can also contain credentials, so only expose
         # known schema locations and fixed local descriptions.
-        fields={"body","query","path","header","expected_version","idempotency_key","type","target_id","value","mode","text","token","deadline","accessible","budget","sdp","offer_id"}
+        fields={"body","query","path","header","expected_version","idempotency_key","type","target_id","value","mode","text","token","deadline","accessible","budget","sdp","offer_id","group_id","channel","recipient"}
         errors=[]
         for error in exc.errors():
             location=[part if isinstance(part,int) or part in fields else "unknown_field" for part in error.get("loc",())]
@@ -273,6 +283,11 @@ def create_app(settings: Settings | None=None) -> FastAPI:
     def config(request: Request):
         return {"environment":settings.environment,"auth_required":bool(settings.operator_token),"authenticated":authenticated(request),
             "ai_configured":ai.configured,"voice_configured":voice.configured,"fr24_configured":flights.configured,
+            "notification_provider":settings.notification_email_provider,
+            "notification_email_provider":settings.notification_email_provider,"notification_sms_provider":"brevo",
+            "notification_email_configured":notifications.email_configured,
+            "notification_sms_configured":notifications.sms_configured,"notification_available":notifications.available,
+            "notification_unavailable_reason":notifications.unavailable_reason,
             "google_maps_api_key":settings.google_maps_api_key,"public_base_url":settings.public_base_url,
             "hold_ttl_seconds":settings.hold_ttl_seconds,"models":{"reasoning":settings.openai_model,"decision":settings.openai_decision_model,"voice":settings.openai_voice_model},
             "traffic_running":store.control("traffic_running",False),"traffic_requests_used":store.poll_usage(),"traffic_request_budget":poll_request_limit,
@@ -285,7 +300,18 @@ def create_app(settings: Settings | None=None) -> FastAPI:
                          "hotel_offers_environment":None if real_data.provider.hotel_offer_provider is None else "sandbox" if real_data.provider.hotel_offer_provider == "liteapi" and real_data.provider.liteapi_sandbox else "live"},
             "travel_sources":{"flights":{"source":travel_provider.flight_source,"configured":travel_provider.flight_configured,"environment":travel_provider.flight_environment},
                               "coaches":{"source":"Distribusion","configured":travel_provider.ground_configured,"environment":settings.distribusion_environment}},
-            "simulation_only":settings.operation_mode=="simulation","operation_mode":settings.operation_mode,"solver_optimality":"bounded heuristic; global optimality not proven"}
+            "simulation_only":settings.operation_mode=="simulation","demo":settings.operation_mode=="demo",
+            "operation_mode":settings.operation_mode,"solver_optimality":"bounded heuristic; global optimality not proven"}
+
+    @app.post("/api/demo/cases",dependencies=[Depends(operator)])
+    def create_demo_case(body: DemoCaseCreate):
+        def apply(world):
+            if not world.demo or world.mode != "live":
+                raise DomainError(409,"Fictional test cases require Simulation with live data mode.")
+            result=build_demo_case(world,body)
+            return {**result,"applied":True,"focus_id":next(iter(result["group_ids"]),None),
+                    "explanation":"Fictional passenger case created. Search integrated suppliers for real flights, hotels and transport."}
+        return store.mutate("demo-case:"+body.idempotency_key,body.model_dump(mode="json"),body.expected_version,apply)
 
     @app.post("/api/auth/login")
     def login(body: LoginRequest,request: Request,response: Response):
@@ -516,6 +542,17 @@ def create_app(settings: Settings | None=None) -> FastAPI:
         store.set_control("traffic_running",False)
         return {"running":False,"requests_used":store.poll_usage()}
 
+    def platform_status():
+        # Command authentication already happened. Reuse the public status
+        # calculation without forwarding credentials or authentication fields.
+        value = config(Request({"type": "http", "headers": []}))
+        return {key: item for key, item in value.items()
+            if key not in {"google_maps_api_key", "authenticated", "auth_required"}}
+
+    platform_actions = PlatformActions(store, app, settings, status_provider=platform_status)
+    app.state.platform_actions = platform_actions
+    service.platform_actions = platform_actions
+    ai.platform_actions = platform_actions
     return app
 
 

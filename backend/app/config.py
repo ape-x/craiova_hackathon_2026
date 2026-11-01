@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # Explicit environment variables and Settings(_env_file=...) still override.
     model_config = SettingsConfigDict(env_file=Path(__file__).resolve().parents[1] / ".env", extra="ignore", case_sensitive=False, hide_input_in_errors=True)
     environment: Literal["development","test","production"] = "development"
-    operation_mode: Literal["live", "simulation"] = "live"
+    operation_mode: Literal["live", "simulation", "demo"] = "live"
     database_path: str = "data/recovery.sqlite3"
     operator_token: str = ""
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000"
@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     distribusion_environment: Literal["sandbox", "live"] = "sandbox"
     distribusion_offers_enabled: bool = False
     apl_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
+    brevo_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
+    resend_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
+    notification_email_provider: Literal["resend", "brevo"] = "resend"
+    notification_email_from: str = Field(default="", max_length=254)
+    notification_email_from_name: str = Field(default="AIR", min_length=1, max_length=120)
+    notification_sms_sender: str = Field(default="", max_length=15)
+    notifications_allow_simulation: bool = False
 
     @property
     def production(self):

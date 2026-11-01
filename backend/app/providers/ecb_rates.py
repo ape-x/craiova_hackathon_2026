@@ -48,6 +48,8 @@ class EcbRates:
             return {**result, "cache": "fresh"}
 
     async def _fetch(self):
+        from ..provider_budget import consume_call
+        consume_call("ECB")
         try:
             # Only this constant official HTTPS origin is queried. HTTP redirects
             # and transport retries are disabled; the deadline includes streaming.

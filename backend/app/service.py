@@ -358,6 +358,11 @@ class RecoveryService:
             async with asyncio.timeout(self._planning_timeout_seconds):
                 return await operation(request,started)
         except TimeoutError as exc:
+            platform = getattr(self, "platform_actions", None)
+            partial = platform.replay(request) if namespace == "command" and platform is not None else None
+            if partial:
+                raise DomainError(504, "The command exceeded the server deadline. Completed actions remain recorded; the interrupted action's outcome is unconfirmed. Retry the same request to review saved results without repeating actions.",
+                    details=partial, applied=None) from exc
             raise DomainError(504,"Planning exceeded the server deadline; no scenario changes were applied. Upstream usage may still be billable.") from exc
         finally:
             try:
@@ -475,19 +480,32 @@ class RecoveryService:
         replay=self.store.replay(key,payload)
         if replay:
             return replay
+        platform = getattr(self, "platform_actions", None)
+        if platform is not None:
+            replay = platform.replay(request)
+            if replay is not None:
+                return replay
         if not self.ai:
             raise DomainError(503,"AI is not configured; structured scenario controls and deterministic solver remain available")
         world=self.store.read()
         if world.version!=request.expected_version:
             raise DomainError(409,"World changed; refresh before sending a command",{"current_version":world.version})
         interpretation_started=time.perf_counter()
-        if world.mode=="live" and self.live_commands is not None:
-            interpreted=await self.live_commands.interpret(request,world,self.ai)
-        elif request.context:
-            interpreted=await self.ai.interpret(request.text,world.model_dump(mode="json"),request.context)
-        else:
-            interpreted=await self.ai.interpret(request.text,world.model_dump(mode="json"))
+        from contextlib import nullcontext
+        with platform.context(request, world) if platform is not None else nullcontext():
+            if world.mode=="live" and self.live_commands is not None:
+                interpreted=await self.live_commands.interpret(request,world,self.ai)
+            elif request.context:
+                interpreted=await self.ai.interpret(request.text,world.model_dump(mode="json"),request.context)
+            else:
+                interpreted=await self.ai.interpret(request.text,world.model_dump(mode="json"))
         timings={"interpretation_ms":round((time.perf_counter()-interpretation_started)*1000,2)}
+        if interpreted.get("platform_actions"):
+            if platform is None:
+                raise DomainError(409, "Platform actions are not configured")
+            if any(interpreted.get(field) for field in ("events", "strategies", "recovery", "operational_report")):
+                raise DomainError(422, "Platform actions cannot be mixed with another command workflow")
+            return await platform.execute(request, world, interpreted["platform_actions"])
         if world.mode=="live" and self.live_commands is not None:
             routed=self.live_commands.route(request,world,interpreted)
             if routed is not None:
@@ -645,7 +663,7 @@ class RecoveryService:
             "offer":active.model_dump(mode="json") if active else None,"last_offer":offers[-1].model_dump(mode="json") if offers else None,
             "history_resources":history_resources,"history_airports":list(history_airports.values()),
             "history_archived_resource_ids":archived_ids,
-            "airports":[a.model_dump() for a in world.airports],"resources":[r.model_dump() for r in world.resources if active and r.id in {l.resource_id for l in active.itinerary.legs}],"simulated":world.mode=="simulation","mode":world.mode,"currency":world.currency}
+            "airports":[a.model_dump() for a in world.airports],"resources":[r.model_dump() for r in world.resources if active and r.id in {l.resource_id for l in active.itinerary.legs}],"simulated":world.mode=="simulation","demo":world.demo,"mode":world.mode,"currency":world.currency}
 
     def constraints(self,token,request):
         payload={**request.model_dump(),"token":token}

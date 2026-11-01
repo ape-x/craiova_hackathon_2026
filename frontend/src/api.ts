@@ -1,5 +1,7 @@
 import type {
   AppConfig,
+  CommandScope,
+  DemoCaseInput,
   AirportTransferProfiles,
   AfterFlightTransferProfiles,
   RomanianHotelRecoveryProfile,
@@ -107,6 +109,12 @@ export async function request<T>(path: string, body?: unknown, signal?: AbortSig
 }
 export const key = () => crypto.randomUUID();
 export const api = {
+  createDemoCase: (world: World, input: DemoCaseInput) =>
+    request<IncidentResult>('/demo/cases', {
+      ...input,
+      expected_version: world.version,
+      idempotency_key: key(),
+    }),
   config: (signal?: AbortSignal) => request<AppConfig>('/config', undefined, signal),
   world: (signal?: AbortSignal) => request<World>('/world', undefined, signal),
   login: (token: string) => request('/auth/login', { token }),
@@ -220,10 +228,11 @@ export const api = {
       expected_version: world.version,
       idempotency_key: key(),
     }),
-  command: (world: World, text: string, context = '') =>
+  command: (world: World, text: string, context = '', scope?: CommandScope) =>
     request<MutationResult>('/commands', {
       text,
       context,
+      ...(scope && Object.keys(scope).length ? { scope } : {}),
       expected_version: world.version,
       idempotency_key: key(),
     }),
@@ -294,7 +303,7 @@ export function downloadSession(world: World) {
     incidents: (world.incidents ?? []).map(({ flight: _flight, ...incident }) => ({
       ...incident,
       flight: null,
-      flight_context_state: 'expired',
+      flight_context_state: incident.source === 'demo_scenario' ? 'not_applicable' : 'expired',
     })),
     incident_flight_export: 'Transient provider flight context omitted from portable audit',
     groups: world.groups.map(({ token: _token, ...group }) => group),

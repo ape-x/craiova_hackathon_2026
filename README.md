@@ -37,6 +37,32 @@ Importul hotelier verifică orele șederii față de politica proprietății. O 
 
 ## Rulare locală: o singură aplicație
 
+Pentru prezentarea cu **date complet generate**, folosește modul **Simulation**:
+
+```bash
+docker compose -p air-walkthrough-demo -f compose.yaml -f compose.demo.yaml stop
+docker compose -p airport-recovery-simulation -f compose.yaml -f compose.simulation.yaml up -d --build
+```
+
+Deschide `http://localhost:8081`. Scenariul inițial conține 180 de pasageri fictivi,
+patru aeroporturi și 23 de resurse generate: nouă zboruri, 11 autocare și trei hoteluri.
+Planificarea folosește acest inventar, fără căutări la furnizori; vocea și interpretarea
+AI folosesc în continuare integrarea OpenAI. Ofertele simulate sunt valabile o oră.
+**Connections → New simulation → Start fresh** reîncarcă scenariul inițial.
+Datele modului hibrid rămân în volumul separat.
+
+Pentru demonstrații cu pasageri fictivi și oferte reale, folosește **Simulation · live data**:
+`docker compose -p air-walkthrough-demo -f compose.yaml -f compose.demo.yaml up -d --build`,
+apoi deschide `http://localhost:8081`. `OPERATION_MODE=demo` inițializează un caz cu doi
+adulți fictivi Heathrow–Otopeni și fără inventar fictiv. **New test case** creează alte
+liste de pasageri; căutările de zboruri, hoteluri și transport folosesc integrările
+reale și limitele lor curente. [Fluxul și delimitarea datelor](docs/live-data-simulation.md).
+
+Vocea și bara de comenzi pot accesa funcțiile operaționale și navigarea interfeței,
+inclusiv crearea cazurilor fictive, căutările live, rapoartele și oprirea joburilor.
+Referințele la „acest caz” sau „grupul selectat” folosesc selecția curentă.
+[Comenzi, funcții și limite](docs/platform-voice-control.md).
+
 Configurează credențialele în `backend/.env`, fără a le publica în Git sau în chat. Păstrează fișierul existent dacă este deja configurat.
 
 ```bash
@@ -146,6 +172,8 @@ GPT-Live transmite cererea către backend. Sol Ultrafast interpretează cerințe
 
 Solverul folosește o căutare limitată: validează constrângerile, fără a demonstra optimalitatea globală. Microfonul necesită HTTPS sau localhost. Confirmarea vocală de pornire anunță numai cererea înregistrată; progresul și propunerile apar în cazul corespunzător. Limita implicită a comenzii este de opt apeluri în total, incluzând interpretarea; formularul cazului permite implicit opt apeluri ale căutării. Interpretarea cu rezultat necunoscut nu este repetată automat. Erorile AI nu sunt înlocuite cu răspunsuri prestabilite.
 
+După un rezultat vocal confirmat, interfața urmărește aeroportul, resursa sau grupul vizat, selectează vederea potrivită și repoziționează camera chiar dacă ținta era deja selectată. Pe mobil aduce harta în față; în live, fără o cheie Maps configurată, arată inspectorul. Recuperările aduc în vedere încercarea exactă din cazul corespunzător, păstrând formularele netrimise. Clarificările și rezultatele depășite nu mută vederea. Urmărirea folosește răspunsul backend și evenimentele operațiunii, nu interpretarea locală a transcrierii.
+
 Restricția unui aeroport și poziția/pregătirea pasagerilor pot fi declarate împreună pentru același caz: „Pentru RO321, OTP nu mai permite aterizarea. G1 este la CRA, pregătit în 30 de minute. Recalculează zboruri pentru G1, maximum patru apeluri.” Folosește zborul și grupurile existente în operațiune. Backendul verifică ambele declarații și le salvează atomic înaintea unei singure căutări pentru exact acele grupuri. Vocea confirmă ambele rapoarte și starea reală a cererii; FR24 nu este modificat, iar devierea aeronavei nu stabilește automat poziția pasagerilor. Acest flux combinat are verificări offline; o nouă probă vocală plătită rămâne de autorizat separat.
 
 ## Structura proiectului
@@ -243,3 +271,7 @@ Feedul FR24 are un cache separat: `OBSERVATION_RETENTION_SECONDS=3600` implicit.
 - Profilul vizual pe ecranul/proiectorul evenimentului și fidelitatea față de mockupurile fotorealiste.
 
 Aceste verificări nu pot fi înlocuite de teste cu răspunsuri simulate sau de simpla prezență a unei chei.
+
+### Email pentru pasageri
+
+Trimiterea explicită a linkului ofertei din fișa grupului folosește **Resend**. Formularul permite doar email. Configurare, stări de trimitere și API: [notificări pentru pasageri](docs/notifications.md).

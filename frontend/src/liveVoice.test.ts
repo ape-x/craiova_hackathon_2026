@@ -1737,3 +1737,18 @@ describe('GPT-Live lifecycle with mocked browser resources', () => {
     expect(stream.track.stop).toHaveBeenCalledOnce();
   });
 });
+
+describe('bounded platform voice results', () => {
+  it('keeps the failed step audible even after many successful operations', () => {
+    const result: MutationResult = {
+      world: { version: 3, mode: 'live' } as World,
+      explanation: 'Earlier steps completed. '.repeat(100),
+      platform_results: [
+        { name: 'demo.create_case', status: 'succeeded' },
+        { name: 'recovery.start', status: 'failed', error: 'Supplier allowance exhausted' },
+      ],
+    };
+    expect(voiceCommandAcknowledgement(result)).toContain('Supplier allowance exhausted');
+    expect(voiceCommandAcknowledgement(result)).toContain('Cererea s-a oprit');
+  });
+});
