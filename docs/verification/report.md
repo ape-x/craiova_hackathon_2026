@@ -4,7 +4,56 @@ This report separates executed tests, bounded real-provider checks and remaining
 
 ## Current live assisted release — 1 November 2026
 
-API and frontend `98397d2` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+API and frontend `e726929` are deployed to the sole active application at `http://localhost:8080`. Manual source-backed APL airport–hotel transfers in both directions were verified on API `aad839e` / frontend `8781b5c`, preserving exact supplier GBP, explicit ECB EUR estimates and dated Google driving evidence. A return binds one sourced onward flight, the reported airport drop-off and an explicit operator processing allowance; its departure terminal remains unknown. The two manual imports and onward flight advanced world 44 → 47, with zero confirmed resources/offers and no changes to either passenger group.
+
+### Atomic service outage and passenger arrival — 1 November 2026
+
+Release `e726929` handles one explicit service outage and one explicit passenger
+arrival in the same command. Previously, a model result could retain the outage
+and start recovery while silently omitting the stated new location/readiness.
+The new pair records both facts atomically and hands the post-report world to the
+bounded recovery job. Resource dependencies may affect other cases, but passenger
+relocation and recovery remain limited to the exact named case/groups. Confirmed
+travel is checked against the original world before outage invalidation.
+
+Literal completeness guards reject omitted facts, extra independent outages and
+oversized report quotations that hide another command. A known resource described
+as unavailable at an airport is not confused with that airport being unavailable.
+Known setup blocks retain the valid reports; unexpected setup failures roll them
+back together. Replays retain the original arrival time and do not repeat unknown
+provider work. The original call allowance still includes interpretation.
+
+The frontend verifies both reports against their immutable response world and
+distinct audit records before acknowledging them or selecting passenger focus.
+Cross-case outage effects cannot expand arrival scope. Malformed pairs remain
+unconfirmed context; spoken acknowledgements identify both facts and the actual
+queued, blocked or replayed result within the existing byte limit.
+
+Final local verification passed **2,921 backend tests and 931 frontend tests
+across 54 files**, TypeScript/production build, formatting and diff checks.
+Authenticated HTTP acceptance tests exercise command → paired reports → durable
+worker → itinerary from the new origin, including unknown-result replay. These
+tests use mocked model/provider transports with outbound access blocked; they do
+not establish a new real spoken or supplier acceptance result. Structured Outputs
+uses the documented nested `anyOf` contract without changing configured models.
+
+Both images were built from the exact committed archive and deployed over the
+existing services after an integrity-checked private backup, with rollback images
+retained. Read-only Chrome QA loaded `index-BZ8n2YOZ.js`, showed Connected and the
+saved EK5 case with its expired provider context, retained the default eight-call
+review allowance, and captured zero console errors. No search was submitted;
+the dialog was closed. The new paired receipt itself has offline test evidence,
+not a new runtime report. Code CI passed on
+[main, run 171](https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41278186888)
+and [codex, run 170](https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41278186804).
+
+The whole world except its clock and all case-job history stayed unchanged:
+version 52, two groups, 25 resources, no active jobs or confirmed offers/resources.
+FR24 remains paused at 81 requests / 3,215 reserved credits; CAB remains two
+receipts / four HTTP calls, recovery steps 27, and saved transfer-profile counts
+zero. No additional paid voice/model/source check was performed. Google account
+administration and separate restricted credentials remain open gates below.
+See [machine-readable release evidence](service-arrival-release.json).
 
 ### Scoped recovery navigation and confirmation accounting — 1 November 2026
 

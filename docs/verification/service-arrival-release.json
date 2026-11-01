@@ -1,0 +1,93 @@
+{
+  "checked_at_utc": "2026-11-01T05:50:52.848522+00:00",
+  "code_revision": "e726929afd03b112f561258704698955ef026c0c",
+  "deployed_api_revision": "e726929afd03b112f561258704698955ef026c0c",
+  "deployed_web_revision": "e726929afd03b112f561258704698955ef026c0c",
+  "url": "http://localhost:8080",
+  "exact_commit_archive_build": true,
+  "additional_app_servers_started": false,
+  "backup_integrity": "ok",
+  "rollback_images_retained": true,
+  "checks": {
+    "backend_tests_passed": 2921,
+    "frontend_tests_passed": 931,
+    "frontend_test_files": 54,
+    "typescript": true,
+    "production_build": true,
+    "format": true,
+    "diff_check": true
+  },
+  "offline_acceptance": {
+    "authenticated_command_to_worker_to_new_origin_plan": true,
+    "atomic_report_rollback": true,
+    "original_world_confirmed_travel_guard": true,
+    "known_setup_block_retains_reports": true,
+    "unknown_provider_result_not_redispatched": true,
+    "literal_omission_guards": true,
+    "cross_case_outage_does_not_expand_arrival_scope": true,
+    "immutable_world_receipt_validation": true,
+    "bounded_spoken_acknowledgements": true,
+    "model_and_provider_transports_mocked": true
+  },
+  "browser": {
+    "bundle": "/assets/index-BZ8n2YOZ.js",
+    "captured_console_errors": 0,
+    "connected": true,
+    "existing_case_loaded": true,
+    "expired_context_shown": true,
+    "review_call_limit": 8,
+    "search_submitted": false,
+    "modal_closed": true,
+    "new_paired_report_executed": false
+  },
+  "operational_state": {
+    "world_version": 52,
+    "groups": 2,
+    "resources": 25,
+    "active_jobs": 0,
+    "confirmed_offers": 0,
+    "confirmed_resources": 0,
+    "traffic_running": false,
+    "whole_world_except_clock_unchanged": true,
+    "all_case_job_history_unchanged": true
+  },
+  "unchanged_usage": {
+    "fr24_requests": 81,
+    "fr24_credits": 3215,
+    "cab_receipts": [
+      2,
+      4
+    ],
+    "recovery_steps": 27,
+    "saved_transfer_profiles": 0,
+    "saved_after_flight_profiles": 0
+  },
+  "maps_admin_audit": {
+    "configured_browser_and_server_keys_identical": true,
+    "console_administration_loaded": false,
+    "billing_health_verified": false,
+    "restrictions_verified": false,
+    "credentials_or_billing_changed": false
+  },
+  "limitations": [
+    "No fresh paid voice/model/flight/transport source acceptance run in this release.",
+    "Prior spoken attempt did not complete end to end; its allowance was not reused.",
+    "New paired receipt was exercised offline, not injected into the live operation.",
+    "Google billing administration and separate restricted credentials remain unverified.",
+    "Full production acceptance remains open as detailed in report.md."
+  ],
+  "code_ci": [
+    {
+      "branch": "main",
+      "number": 171,
+      "status": "success",
+      "url": "https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41278186888"
+    },
+    {
+      "branch": "codex/airport-recovery-live",
+      "number": 170,
+      "status": "success",
+      "url": "https://github.com/ape-x/craiova_hackathon_2026/actions/runs/41278186804"
+    }
+  ]
+}
